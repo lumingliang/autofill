@@ -1,0 +1,14 @@
+[
+  {
+    "session_id": "test_e93b65473ead",
+    "scenario_name": "道路救援场景",
+    "steps": [
+      {
+        "step": 1,
+        "status": "error",
+        "error": "404 Client Error: Not Found for url: http://localhost:9999/api/autofill/llm/fill/step"
+      }
+    ],
+    "timestamp": "2026-05-13T20:06:28.927928"
+  }
+]
