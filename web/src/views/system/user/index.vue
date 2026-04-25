@@ -1,5 +1,5 @@
 <script setup>
-import { h, onMounted, ref, resolveDirective, withDirectives } from 'vue'
+import { computed, h, nextTick, onMounted, ref, resolveDirective, withDirectives, watch } from 'vue'
 import {
   NButton,
   NCheckbox,
@@ -16,6 +16,8 @@ import {
   NLayoutSider,
   NLayoutContent,
   NTreeSelect,
+  NSelect,
+  NTree,
 } from 'naive-ui'
 
 import CommonPage from '@/components/page/CommonPage.vue'
@@ -25,8 +27,8 @@ import CrudTable from '@/components/table/CrudTable.vue'
 
 import { formatDate, renderIcon } from '@/utils'
 import { useCRUD } from '@/composables'
-// import { loginTypeMap, loginTypeOptions } from '@/constant/data'
 import api from '@/api'
+import TenantSelect from '@/components/tenant/TenantSelect.vue'
 import TheIcon from '@/components/icon/TheIcon.vue'
 import { useUserStore } from '@/store'
 
@@ -35,6 +37,9 @@ defineOptions({ name: '用户管理' })
 const $table = ref(null)
 const queryItems = ref({})
 const vPermission = resolveDirective('permission')
+
+const userStore = useUserStore()
+const isSuperUser = computed(() => userStore.isSuperUser)
 
 const {
   modalVisible,
@@ -58,6 +63,7 @@ const {
 
 const roleOption = ref([])
 const deptOption = ref([])
+const tenantRoleOption = ref([]) // 当前租户的角色选项
 
 onMounted(() => {
   $table.value?.handleSearch()
@@ -65,7 +71,17 @@ onMounted(() => {
   api.getDepts().then((res) => (deptOption.value = res.data))
 })
 
-const columns = [
+// 监听租户选择变化，加载对应租户的角色
+watch(() => modalForm.value.tenant_id, async (newTenantId) => {
+  if (newTenantId) {
+    const res = await api.getTenantRoles({ tenant_id: newTenantId })
+    tenantRoleOption.value = res.data
+  } else {
+    tenantRoleOption.value = []
+  }
+})
+
+const columns = computed(() => [
   {
     title: '名称',
     key: 'username',
@@ -95,6 +111,22 @@ const columns = [
       return h('span', group)
     },
   },
+  // 多租户：仅超级管理员可见租户列
+  ...(isSuperUser.value ? [{
+    title: '所属租户',
+    key: 'tenants',
+    width: 80,
+    align: 'center',
+    render(row) {
+      const tenants = row.tenants ?? []
+      const group = []
+      for (let i = 0; i < tenants.length; i++)
+        group.push(
+          h(NTag, { type: 'warning', style: { margin: '2px 3px' } }, { default: () => tenants[i].name })
+        )
+      return h('span', group)
+    },
+  }] : []),
   {
     title: '部门',
     key: 'dept.name',
@@ -168,6 +200,10 @@ const columns = [
                 handleEdit(row)
                 modalForm.value.dept_id = row.dept?.id
                 modalForm.value.role_ids = row.roles.map((e) => (e = e.id))
+                // 多租户：设置租户字段
+                if (isSuperUser.value) {
+                  modalForm.value.tenant_ids = row.tenants?.map((t) => t.id) || []
+                }
                 delete modalForm.value.dept
               },
             },
@@ -182,7 +218,7 @@ const columns = [
           NPopconfirm,
           {
             onPositiveClick: () => handleDelete({ user_id: row.id }, false),
-            onNegativeClick: () => {},
+            onNegativeClick: () => { },
           },
           {
             trigger: () =>
@@ -216,7 +252,7 @@ const columns = [
                 $message.error('重置密码失败: ' + error.message);
               }
             },
-            onNegativeClick: () => {},
+            onNegativeClick: () => { },
           },
           {
             trigger: () =>
@@ -241,7 +277,7 @@ const columns = [
       ]
     },
   },
-]
+])
 
 // 修改用户禁用状态
 async function handleUpdateDisable(row) {
@@ -353,23 +389,10 @@ const validateAddUser = {
 
 <template>
   <NLayout has-sider wh-full>
-    <NLayoutSider
-      bordered
-      content-style="padding: 24px;"
-      :collapsed-width="0"
-      :width="240"
-      show-trigger="arrow-circle"
-    >
+    <NLayoutSider bordered content-style="padding: 24px;" :collapsed-width="0" :width="240" show-trigger="arrow-circle">
       <h1>部门列表</h1>
       <br />
-      <NTree
-        block-line
-        :data="deptOption"
-        key-field="id"
-        label-field="name"
-        default-expand-all
-        :node-props="nodeProps"
-      >
+      <NTree block-line :data="deptOption" key-field="id" label-field="name" default-expand-all :node-props="nodeProps">
       </NTree>
     </NLayoutSider>
     <NLayoutContent>
@@ -380,49 +403,27 @@ const validateAddUser = {
           </NButton>
         </template>
         <!-- 表格 -->
-        <CrudTable
-          ref="$table"
-          v-model:query-items="queryItems"
-          :columns="columns"
-          :get-data="api.getUserList"
-        >
+        <CrudTable ref="$table" v-model:query-items="queryItems" :columns="columns" :get-data="api.getUserList">
           <template #queryBar>
             <QueryBarItem label="名称" :label-width="40">
-              <NInput
-                v-model:value="queryItems.username"
-                clearable
-                type="text"
-                placeholder="请输入用户名称"
-                @keypress.enter="$table?.handleSearch()"
-              />
+              <NInput v-model:value="queryItems.username" clearable type="text" placeholder="请输入用户名称"
+                @keypress.enter="$table?.handleSearch()" />
             </QueryBarItem>
             <QueryBarItem label="邮箱" :label-width="40">
-              <NInput
-                v-model:value="queryItems.email"
-                clearable
-                type="text"
-                placeholder="请输入邮箱"
-                @keypress.enter="$table?.handleSearch()"
-              />
+              <NInput v-model:value="queryItems.email" clearable type="text" placeholder="请输入邮箱"
+                @keypress.enter="$table?.handleSearch()" />
+            </QueryBarItem>
+            <!-- 多租户：仅超级管理员可见租户筛选 -->
+            <QueryBarItem v-if="isSuperUser" label="租户" :label-width="40">
+              <TenantSelect v-model="queryItems.tenant_id" @change="$table?.handleSearch()" />
             </QueryBarItem>
           </template>
         </CrudTable>
 
         <!-- 新增/编辑 弹窗 -->
-        <CrudModal
-          v-model:visible="modalVisible"
-          :title="modalTitle"
-          :loading="modalLoading"
-          @save="handleSave"
-        >
-          <NForm
-            ref="modalFormRef"
-            label-placement="left"
-            label-align="left"
-            :label-width="80"
-            :model="modalForm"
-            :rules="validateAddUser"
-          >
+        <CrudModal v-model:visible="modalVisible" :title="modalTitle" :loading="modalLoading" @save="handleSave">
+          <NForm ref="modalFormRef" label-placement="left" label-align="left" :label-width="80" :model="modalForm"
+            :rules="validateAddUser">
             <NFormItem label="用户名称" path="username">
               <NInput v-model:value="modalForm.username" clearable placeholder="请输入用户名称" />
             </NFormItem>
@@ -430,61 +431,42 @@ const validateAddUser = {
               <NInput v-model:value="modalForm.email" clearable placeholder="请输入邮箱" />
             </NFormItem>
             <NFormItem v-if="modalAction === 'add'" label="密码" path="password">
-              <NInput
-                v-model:value="modalForm.password"
-                show-password-on="mousedown"
-                type="password"
-                clearable
-                placeholder="请输入密码"
-              />
+              <NInput v-model:value="modalForm.password" show-password-on="mousedown" type="password" clearable
+                placeholder="请输入密码" />
             </NFormItem>
             <NFormItem v-if="modalAction === 'add'" label="确认密码" path="confirmPassword">
-              <NInput
-                v-model:value="modalForm.confirmPassword"
-                show-password-on="mousedown"
-                type="password"
-                clearable
-                placeholder="请确认密码"
-              />
+              <NInput v-model:value="modalForm.confirmPassword" show-password-on="mousedown" type="password" clearable
+                placeholder="请确认密码" />
+            </NFormItem>
+            <!-- 多租户：仅超级管理员可见租户选择 -->
+            <NFormItem v-if="isSuperUser" label="所属租户" path="tenant_ids">
+              <TenantSelect v-model="modalForm.tenant_ids" multiple placeholder="请选择租户（可多选）" />
+            </NFormItem>
+            <!-- 多租户：选择租户后显示该租户的角色 -->
+            <NFormItem v-if="isSuperUser && modalForm.tenant_ids?.length === 1" label="租户角色" path="tenant_role_id">
+              <NSelect v-model:value="modalForm.tenant_role_id" :options="tenantRoleOption" placeholder="请选择该租户下的角色"
+                value-field="id" label-field="name" clearable />
+              <span class="text-gray-400 text-xs mt-1">选择租户后，可为该用户分配租户管理员角色</span>
             </NFormItem>
             <NFormItem label="角色" path="role_ids">
               <NCheckboxGroup v-model:value="modalForm.role_ids">
                 <NSpace item-style="display: flex;">
-                  <NCheckbox
-                    v-for="item in roleOption"
-                    :key="item.id"
-                    :value="item.id"
-                    :label="item.name"
-                  />
+                  <NCheckbox v-for="item in roleOption" :key="item.id" :value="item.id" :label="item.name" />
                 </NSpace>
               </NCheckboxGroup>
             </NFormItem>
             <NFormItem label="超级用户" path="is_superuser">
-              <NSwitch
-                v-model:value="modalForm.is_superuser"
-                size="small"
-                :checked-value="true"
-                :unchecked-value="false"
-              ></NSwitch>
+              <NSwitch v-model:value="modalForm.is_superuser" size="small" :checked-value="true"
+                :unchecked-value="false">
+              </NSwitch>
             </NFormItem>
             <NFormItem label="禁用" path="is_active">
-              <NSwitch
-                v-model:value="modalForm.is_active"
-                :checked-value="false"
-                :unchecked-value="true"
-                :default-value="true"
-              />
+              <NSwitch v-model:value="modalForm.is_active" :checked-value="false" :unchecked-value="true"
+                :default-value="true" />
             </NFormItem>
             <NFormItem label="部门" path="dept_id">
-              <NTreeSelect
-                v-model:value="modalForm.dept_id"
-                :options="deptOption"
-                key-field="id"
-                label-field="name"
-                placeholder="请选择部门"
-                clearable
-                default-expand-all
-              ></NTreeSelect>
+              <NTreeSelect v-model:value="modalForm.dept_id" :options="deptOption" key-field="id" label-field="name"
+                placeholder="请选择部门" clearable default-expand-all></NTreeSelect>
             </NFormItem>
           </NForm>
         </CrudModal>

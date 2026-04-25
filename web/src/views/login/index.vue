@@ -49,11 +49,34 @@
         </div>
       </div>
     </div>
+
+    <!-- 租户选择弹窗 -->
+    <n-modal
+      v-model:show="showTenantModal"
+      :mask-closable="false"
+      preset="dialog"
+      title="选择租户"
+      positive-text="确认"
+      negative-text="取消"
+      @positive-click="handleSelectTenant"
+      @negative-click="handleCancelTenant"
+    >
+      <div class="py-4">
+        <p class="mb-4 text-gray-600">您属于多个租户，请选择要登录的租户：</p>
+        <n-select
+          v-model:value="selectedTenantId"
+          :options="tenantOptions"
+          placeholder="请选择租户"
+          value-field="id"
+          label-field="name"
+        />
+      </div>
+    </n-modal>
   </AppPage>
 </template>
 
 <script setup>
-import { lStorage, setToken } from '@/utils'
+import { lStorage, setToken, removeToken } from '@/utils'
 import bgImg from '@/assets/images/login_bg.webp'
 import api from '@/api'
 import { addDynamicRoutes } from '@/router'
@@ -68,6 +91,12 @@ const loginInfo = ref({
   password: '',
 })
 
+// 租户选择相关
+const showTenantModal = ref(false)
+const tenantOptions = ref([])
+const selectedTenantId = ref(null)
+const loginToken = ref('')
+
 initLoginInfo()
 
 function initLoginInfo() {
@@ -79,6 +108,7 @@ function initLoginInfo() {
 }
 
 const loading = ref(false)
+
 async function handleLogin() {
   const { username, password } = loginInfo.value
   if (!username || !password) {
@@ -89,20 +119,72 @@ async function handleLogin() {
     loading.value = true
     $message.loading(t('views.login.message_verifying'))
     const res = await api.login({ username, password: password.toString() })
-    $message.success(t('views.login.message_login_success'))
-    setToken(res.data.access_token)
-    await addDynamicRoutes()
-    if (query.redirect) {
-      const path = query.redirect
-      console.log('path', { path, query })
-      Reflect.deleteProperty(query, 'redirect')
-      router.push({ path, query })
-    } else {
-      router.push('/')
+    
+    // 保存登录信息
+    lStorage.set('loginInfo', { username, password })
+    
+    // 检查是否需要选择租户
+    if (res.data.need_select_tenant && res.data.tenants && res.data.tenants.length > 1) {
+      // 需要选择租户
+      loginToken.value = res.data.access_token
+      tenantOptions.value = res.data.tenants
+      showTenantModal.value = true
+      loading.value = false
+      return
     }
+    
+    // 不需要选择租户，直接登录
+    await completeLogin(res.data.access_token)
   } catch (e) {
-    console.error('login error', e.error)
+    console.error('login error', e)
+    $message.error(e.message || '登录失败')
   }
   loading.value = false
+}
+
+async function handleSelectTenant() {
+  if (!selectedTenantId.value) {
+    $message.warning('请选择租户')
+    return false
+  }
+  
+  try {
+    // 先设置临时token
+    setToken(loginToken.value)
+    
+    // 调用选择租户接口
+    const res = await api.selectTenant({ tenant_id: selectedTenantId.value })
+    
+    // 使用新token完成登录
+    await completeLogin(res.data.access_token)
+    return true
+  } catch (e) {
+    console.error('select tenant error', e)
+    $message.error(e.message || '选择租户失败')
+    removeToken()
+    return false
+  }
+}
+
+function handleCancelTenant() {
+  // 取消选择租户，清除token
+  removeToken()
+  loginToken.value = ''
+  tenantOptions.value = []
+  selectedTenantId.value = null
+}
+
+async function completeLogin(token) {
+  setToken(token)
+  $message.success(t('views.login.message_login_success'))
+  await addDynamicRoutes()
+  if (query.redirect) {
+    const path = query.redirect
+    console.log('path', { path, query })
+    Reflect.deleteProperty(query, 'redirect')
+    router.push({ path, query })
+  } else {
+    router.push('/')
+  }
 }
 </script>

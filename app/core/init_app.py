@@ -160,6 +160,17 @@ async def init_menus():
                 component="/system/auditlog",
                 keepalive=False,
             ),
+            Menu(
+                menu_type=MenuType.MENU,
+                name="租户管理",
+                path="tenant",
+                order=7,
+                parent_id=parent_menu.id,
+                icon="material-symbols:domain",
+                is_hidden=False,
+                component="/system/tenant",
+                keepalive=False,
+            ),
         ]
         await Menu.bulk_create(children_menu)
         await Menu.create(

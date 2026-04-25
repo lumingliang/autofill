@@ -6,6 +6,17 @@ from .base import BaseModel, TimestampMixin
 from .enums import MethodType
 
 
+class Tenant(BaseModel, TimestampMixin):
+    """租户模型"""
+    name = fields.CharField(max_length=50, description="租户名称", index=True)
+    domain = fields.CharField(max_length=100, unique=True, description="租户域名", index=True)
+    is_active = fields.BooleanField(default=True, description="是否启用", index=True)
+    description = fields.CharField(max_length=500, null=True, description="租户描述")
+
+    class Meta:
+        table = "tenant"
+
+
 class User(BaseModel, TimestampMixin):
     username = fields.CharField(max_length=20, unique=True, description="用户名称", index=True)
     alias = fields.CharField(max_length=30, null=True, description="姓名", index=True)
@@ -17,16 +28,23 @@ class User(BaseModel, TimestampMixin):
     last_login = fields.DatetimeField(null=True, description="最后登录时间", index=True)
     roles = fields.ManyToManyField("models.Role", related_name="user_roles")
     dept_id = fields.IntField(null=True, description="部门ID", index=True)
+    # 多租户支持：用户与租户多对多关系
+    tenants = fields.ManyToManyField("models.Tenant", related_name="tenant_users")
+    # 当前选中的租户ID（用于会话）
+    current_tenant_id = fields.IntField(null=True, description="当前租户ID", index=True)
 
     class Meta:
         table = "user"
 
 
 class Role(BaseModel, TimestampMixin):
-    name = fields.CharField(max_length=20, unique=True, description="角色名称", index=True)
+    name = fields.CharField(max_length=20, description="角色名称", index=True)
     desc = fields.CharField(max_length=500, null=True, description="角色描述")
     menus = fields.ManyToManyField("models.Menu", related_name="role_menus")
     apis = fields.ManyToManyField("models.Api", related_name="role_apis")
+    # 多租户支持：角色所属租户，null表示系统级角色
+    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
+    is_system = fields.BooleanField(default=False, description="是否系统角色", index=True)
 
     class Meta:
         table = "role"
@@ -65,6 +83,8 @@ class Dept(BaseModel, TimestampMixin):
     is_deleted = fields.BooleanField(default=False, description="软删除标记", index=True)
     order = fields.IntField(default=0, description="排序", index=True)
     parent_id = fields.IntField(default=0, max_length=10, description="父部门ID", index=True)
+    # 多租户支持
+    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
 
     class Meta:
         table = "dept"
@@ -87,3 +107,5 @@ class AuditLog(BaseModel, TimestampMixin):
     response_time = fields.IntField(default=0, description="响应时间(单位ms)", index=True)
     request_args = fields.JSONField(null=True, description="请求参数")
     response_body = fields.JSONField(null=True, description="返回数据")
+    # 多租户支持
+    tenant_id = fields.IntField(null=True, description="租户ID", index=True)

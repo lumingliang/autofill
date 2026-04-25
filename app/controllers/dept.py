@@ -4,6 +4,7 @@ from tortoise.transactions import atomic
 from app.core.crud import CRUDBase
 from app.models.admin import Dept, DeptClosure
 from app.schemas.depts import DeptCreate, DeptUpdate
+from app.settings.config import settings
 
 
 class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
@@ -16,6 +17,10 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
         q &= Q(is_deleted=False)
         if name:
             q &= Q(name__contains=name)
+        return await self.get_dept_tree_with_query(q)
+
+    async def get_dept_tree_with_query(self, q: Q):
+        """根据查询条件获取部门树"""
         all_depts = await self.model.filter(q).order_by("order")
 
         # 辅助函数，用于递归构建部门树
@@ -53,7 +58,7 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
         # 创建关系
         await DeptClosure.bulk_create(dept_closure_objs)
 
-    @atomic()
+    @atomic(connection_name=settings.DB_TYPE)
     async def create_dept(self, obj_in: DeptCreate):
         # 创建
         if obj_in.parent_id != 0:
@@ -61,7 +66,7 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
         new_obj = await self.create(obj_in=obj_in)
         await self.update_dept_closure(new_obj)
 
-    @atomic()
+    @atomic(connection_name=settings.DB_TYPE)
     async def update_dept(self, obj_in: DeptUpdate):
         dept_obj = await self.get(id=obj_in.id)
         # 更新部门关系
@@ -73,7 +78,7 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
         dept_obj.update_from_dict(obj_in.model_dump(exclude_unset=True))
         await dept_obj.save()
 
-    @atomic()
+    @atomic(connection_name=settings.DB_TYPE)
     async def delete_dept(self, dept_id: int):
         # 删除部门
         obj = await self.get(id=dept_id)
