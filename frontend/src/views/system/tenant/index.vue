@@ -1,19 +1,35 @@
 <template>
-  <div class="tenant-page">
+  <div class="tenant-page crud-page">
     <a-card>
-      <a-form layout="inline" :model="queryParams" class="search-form">
-        <a-form-item label="租户名称">
-          <a-input v-model:value="queryParams.name" placeholder="请输入租户名称" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item label="域名">
-          <a-input v-model:value="queryParams.domain" placeholder="请输入域名" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item>
-          <a-space>
-            <a-button type="primary" @click="handleSearch">查询</a-button>
-            <a-button @click="handleReset">重置</a-button>
-          </a-space>
-        </a-form-item>
+      <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
+        <a-row :gutter="16" class="filter-row">
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="租户名称" class="filter-item">
+              <a-input v-model:value="queryParams.name" placeholder="请输入租户名称" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="域名" class="filter-item">
+              <a-input v-model:value="queryParams.domain" placeholder="请输入域名" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col v-bind="getActionColProps" 
+            class="filter-actions-col"
+            :class="filterItemCount <= 2 ? 'single-line' : 'multi-line'">
+            <a-form-item class="filter-actions">
+              <a-space>
+                <a-button type="primary" @click="handleSearch">
+                  <SearchOutlined />
+                  查询
+                </a-button>
+                <a-button @click="handleReset">
+                  <ReloadOutlined />
+                  重置
+                </a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
       </a-form>
 
       <div class="table-actions">
@@ -24,11 +40,13 @@
       </div>
 
       <a-table
+        class="crud-table"
         :columns="columns"
         :data-source="tableData"
         :loading="loading"
         :pagination="pagination"
         row-key="id"
+        :scroll="{ x: 'max-content' }"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
@@ -96,6 +114,33 @@ const queryParams = reactive<any>({
   domain: '',
 })
 
+// 计算表单项数量（用于控制按钮布局）
+const filterItemCount = 2 // 租户页面固定2个表单项
+
+// 操作按钮列的栅格配置
+// 单行时宽度自适应，多行时占据标准宽度
+const getActionColProps = computed(() => {
+  const isSingleLine = filterItemCount <= 2
+  if (isSingleLine) {
+    // 单行模式：宽度自适应，不设置固定宽度
+    return {
+      xs: 24,
+      sm: 12,
+      md: 'auto',
+      lg: 'auto',
+      xl: 'auto'
+    }
+  }
+  // 多行模式：标准宽度
+  return {
+    xs: 24,
+    sm: 12,
+    md: 8,
+    lg: 6,
+    xl: 6
+  }
+})
+
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const pagination = reactive({
@@ -107,12 +152,12 @@ const pagination = reactive({
 })
 
 const columns = [
-  { title: '租户名称', dataIndex: 'name', key: 'name', ellipsis: true },
-  { title: '域名', dataIndex: 'domain', key: 'domain', ellipsis: true },
-  { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
-  { title: '状态', key: 'is_active', width: 80 },
-  { title: '创建时间', dataIndex: 'created_at', key: 'created_at' },
-  { title: '操作', key: 'action', width: 150 },
+  { title: '租户名称', dataIndex: 'name', key: 'name', width: 150, ellipsis: true, resizable: true },
+  { title: '域名', dataIndex: 'domain', key: 'domain', width: 200, ellipsis: true, resizable: true },
+  { title: '描述', dataIndex: 'description', key: 'description', width: 250, ellipsis: true, resizable: true },
+  { title: '状态', key: 'is_active', width: 80, resizable: true },
+  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180, resizable: true },
+  { title: '操作', key: 'action', width: 150, fixed: 'right' },
 ]
 
 const modalVisible = ref(false)
@@ -231,10 +276,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .tenant-page {
-  .search-form {
-    margin-bottom: 16px;
-  }
-
   .table-actions {
     margin-bottom: 16px;
   }

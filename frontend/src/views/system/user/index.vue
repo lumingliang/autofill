@@ -1,5 +1,5 @@
 <template>
-  <a-layout has-sider class="user-page">
+  <a-layout has-sider class="user-page crud-page">
     <!-- 部门列表：仅普通用户显示，默认收起 -->
     <a-layout-sider v-if="!userStore.isSuperUser" theme="light" :collapsed-width="0" :width="240" collapsible
       default-collapsed style="background: #fff; border-right: 1px solid #f0f0f0">
@@ -11,24 +11,41 @@
     </a-layout-sider>
     <a-layout-content style="padding: 16px">
       <a-card>
-        <a-form layout="inline" :model="queryParams" class="search-form">
-          <a-form-item label="名称">
-            <a-input v-model:value="queryParams.username" placeholder="请输入用户名称" allow-clear
-              @pressEnter="handleSearch" />
-          </a-form-item>
-          <a-form-item label="邮箱">
-            <a-input v-model:value="queryParams.email" placeholder="请输入邮箱" allow-clear @pressEnter="handleSearch" />
-          </a-form-item>
-          <a-form-item v-if="userStore.isSuperUser" label="租户">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear style="width: 180px"
-              :options="tenantOptions" @change="handleSearch" />
-          </a-form-item>
-          <a-form-item>
-            <a-space>
-              <a-button type="primary" @click="handleSearch">查询</a-button>
-              <a-button @click="handleReset">重置</a-button>
-            </a-space>
-          </a-form-item>
+        <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
+          <a-row :gutter="16" class="filter-row">
+            <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+              <a-form-item label="名称" class="filter-item">
+                <a-input v-model:value="queryParams.username" placeholder="请输入用户名称" allow-clear
+                  @pressEnter="handleSearch" />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+              <a-form-item label="邮箱" class="filter-item">
+                <a-input v-model:value="queryParams.email" placeholder="请输入邮箱" allow-clear @pressEnter="handleSearch" />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+              <a-form-item label="租户" class="filter-item">
+                <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
+                  @change="handleSearch" />
+              </a-form-item>
+            </a-col>
+            <a-col v-bind="getActionColProps" class="filter-actions-col"
+              :class="filterItemCount <= 2 ? 'single-line' : 'multi-line'">
+              <a-form-item class="filter-actions">
+                <a-space>
+                  <a-button type="primary" @click="handleSearch">
+                    <SearchOutlined />
+                    查询
+                  </a-button>
+                  <a-button @click="handleReset">
+                    <ReloadOutlined />
+                    重置
+                  </a-button>
+                </a-space>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </a-form>
 
         <div class="table-actions">
@@ -38,8 +55,8 @@
           </a-button>
         </div>
 
-        <a-table :columns="columns" :data-source="tableData" :loading="loading" :pagination="pagination" row-key="id"
-          @change="handleTableChange">
+        <a-table class="crud-table" :columns="columns" :data-source="tableData" :loading="loading"
+          :pagination="pagination" row-key="id" :scroll="{ x: 'max-content' }" @change="handleTableChange">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'roles'">
               <a-tag v-for="role in record.roles" :key="role.id" color="blue" style="margin: 2px 3px">
@@ -167,6 +184,39 @@ const queryParams = reactive<any>({
   tenant_id: undefined,
 })
 
+// 计算表单项数量（用于控制按钮布局）
+const filterItemCount = computed(() => {
+  // 基础字段：名称、邮箱
+  let count = 2
+  // 超级管理员额外显示租户字段
+  if (userStore.isSuperUser) count++
+  return count
+})
+
+// 操作按钮列的栅格配置
+// 单行时宽度自适应，多行时占据标准宽度
+const getActionColProps = computed(() => {
+  const isSingleLine = filterItemCount.value <= 2
+  if (isSingleLine) {
+    // 单行模式：宽度自适应，不设置固定宽度
+    return {
+      xs: 24,
+      sm: 12,
+      md: 'auto',
+      lg: 'auto',
+      xl: 'auto'
+    }
+  }
+  // 多行模式：标准宽度
+  return {
+    xs: 24,
+    sm: 12,
+    md: 8,
+    lg: 6,
+    xl: 6
+  }
+})
+
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const pagination = reactive({
@@ -194,15 +244,15 @@ function formatTreeData(data: any[]): any[] {
 }
 
 const columns = computed(() => [
-  { title: '名称', dataIndex: 'username', key: 'username', ellipsis: true },
-  { title: '邮箱', dataIndex: 'email', key: 'email', ellipsis: true },
-  { title: '用户角色', key: 'roles' },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenants' }] : []),
-  { title: '部门', key: 'dept', ellipsis: true },
-  { title: '超级用户', key: 'is_superuser', width: 90 },
-  { title: '上次登录时间', key: 'last_login', ellipsis: true },
-  { title: '禁用', key: 'is_active', width: 70 },
-  { title: '操作', key: 'action', width: 240 },
+  { title: '名称', dataIndex: 'username', key: 'username', width: 120, ellipsis: true, resizable: true },
+  { title: '邮箱', dataIndex: 'email', key: 'email', width: 180, ellipsis: true, resizable: true },
+  { title: '用户角色', key: 'roles', width: 150, resizable: true },
+  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenants', width: 150, resizable: true }] : []),
+  { title: '部门', key: 'dept', width: 120, ellipsis: true, resizable: true },
+  { title: '超级用户', key: 'is_superuser', width: 90, resizable: true },
+  { title: '上次登录时间', key: 'last_login', width: 180, ellipsis: true, resizable: true },
+  { title: '禁用', key: 'is_active', width: 70, resizable: true },
+  { title: '操作', key: 'action', width: 240, fixed: 'right' },
 ])
 
 const modalVisible = ref(false)
@@ -558,10 +608,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .user-page {
-  .search-form {
-    margin-bottom: 16px;
-  }
-
   .table-actions {
     margin-bottom: 16px;
   }

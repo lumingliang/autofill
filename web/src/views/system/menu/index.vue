@@ -265,31 +265,15 @@ async function getTreeSelect() {
     </template>
 
     <!-- 表格 -->
-    <CrudTable
-      ref="$table"
-      v-model:query-items="queryItems"
-      :is-pagination="false"
-      :columns="columns"
-      :get-data="api.getMenus"
-      :single-line="true"
-    >
+    <CrudTable ref="$table" v-model:query-items="queryItems" :is-pagination="false" :columns="columns"
+      :get-data="api.getMenus" :single-line="true">
     </CrudTable>
 
     <!-- 新增/编辑/查看 弹窗 -->
-    <CrudModal
-      v-model:visible="modalVisible"
-      :title="modalTitle"
-      :loading="modalLoading"
-      @save="handleSave(getTreeSelect)"
-    >
+    <CrudModal v-model:visible="modalVisible" :title="modalTitle" :loading="modalLoading"
+      @save="handleSave(getTreeSelect)">
       <!-- 表单 -->
-      <NForm
-        ref="modalFormRef"
-        label-placement="left"
-        label-align="left"
-        :label-width="80"
-        :model="modalForm"
-      >
+      <NForm ref="modalFormRef" label-placement="left" label-align="left" :label-width="80" :model="modalForm">
         <NFormItem label="菜单类型" path="menu_type">
           <NRadioGroup v-model:value="modalForm.menu_type">
             <NRadio label="目录" value="catalog" />
@@ -297,50 +281,29 @@ async function getTreeSelect() {
           </NRadioGroup>
         </NFormItem>
         <NFormItem label="上级菜单" path="parent_id">
-          <NTreeSelect
-            v-model:value="modalForm.parent_id"
-            key-field="id"
-            label-field="name"
-            :options="menuOptions"
-            default-expand-all="true"
-          />
+          <NTreeSelect v-model:value="modalForm.parent_id" key-field="id" label-field="name" :options="menuOptions"
+            default-expand-all="true" />
         </NFormItem>
-        <NFormItem
-          label="菜单名称"
-          path="name"
-          :rule="{
-            required: true,
-            message: '请输入唯一菜单名称',
-            trigger: ['input', 'blur'],
-          }"
-        >
+        <NFormItem label="菜单名称" path="name" :rule="{
+          required: true,
+          message: '请输入唯一菜单名称',
+          trigger: ['input', 'blur'],
+        }">
           <NInput v-model:value="modalForm.name" placeholder="请输入唯一菜单名称" />
         </NFormItem>
-        <NFormItem
-          label="访问路径"
-          path="path"
-          :rule="{
-            required: true,
-            message: '请输入访问路径',
-            trigger: ['blur'],
-          }"
-        >
+        <NFormItem label="访问路径" path="path" :rule="{
+          required: true,
+          message: '请输入访问路径',
+          trigger: ['blur'],
+        }">
           <NInput v-model:value="modalForm.path" placeholder="请输入访问路径" />
         </NFormItem>
         <NFormItem v-if="modalForm.menu_type === 'menu'" label="组件路径" path="component">
-          <NInput
-            v-model:value="modalForm.component"
-            placeholder="请输入组件路径，例如：/system/user"
-          />
+          <NInput v-model:value="modalForm.component" placeholder="请输入组件路径，例如：/system/user" />
         </NFormItem>
         <NFormItem label="跳转路径" path="redirect">
-          <NInput
-            v-model:value="modalForm.redirect"
-            :disabled="modalForm.parent_id !== 0"
-            :placeholder="
-              modalForm.parent_id !== 0 ? '只有一级菜单可以设置跳转路径' : '请输入跳转路径'
-            "
-          />
+          <NInput v-model:value="modalForm.redirect" :disabled="modalForm.parent_id !== 0" :placeholder="modalForm.parent_id !== 0 ? '只有一级菜单可以设置跳转路径' : '请输入跳转路径'
+            " />
         </NFormItem>
         <NFormItem label="菜单图标" path="icon">
           <IconPicker v-model:value="modalForm.icon" />

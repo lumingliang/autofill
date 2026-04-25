@@ -1,22 +1,40 @@
 <template>
-  <div class="api-page">
+  <div class="api-page crud-page">
     <a-card>
-      <a-form layout="inline" :model="queryParams" class="search-form">
-        <a-form-item label="路径">
-          <a-input v-model:value="queryParams.path" placeholder="请输入API路径" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item label="API简介">
-          <a-input v-model:value="queryParams.summary" placeholder="请输入API简介" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item label="Tags">
-          <a-input v-model:value="queryParams.tags" placeholder="请输入API模块" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item>
-          <a-space>
-            <a-button type="primary" @click="handleSearch">查询</a-button>
-            <a-button @click="handleReset">重置</a-button>
-          </a-space>
-        </a-form-item>
+      <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
+        <a-row :gutter="16" class="filter-row">
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="路径" class="filter-item">
+              <a-input v-model:value="queryParams.path" placeholder="请输入API路径" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="API简介" class="filter-item">
+              <a-input v-model:value="queryParams.summary" placeholder="请输入API简介" allow-clear
+                @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="Tags" class="filter-item">
+              <a-input v-model:value="queryParams.tags" placeholder="请输入API模块" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col v-bind="getActionColProps" class="filter-actions-col"
+            :class="filterItemCount <= 3 ? 'single-line' : 'multi-line'">
+            <a-form-item class="filter-actions">
+              <a-space>
+                <a-button type="primary" @click="handleSearch">
+                  <SearchOutlined />
+                  查询
+                </a-button>
+                <a-button @click="handleReset">
+                  <ReloadOutlined />
+                  重置
+                </a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
       </a-form>
 
       <div class="table-actions">
@@ -30,14 +48,8 @@
         </a-button>
       </div>
 
-      <a-table
-        :columns="columns"
-        :data-source="tableData"
-        :loading="loading"
-        :pagination="pagination"
-        row-key="id"
-        @change="handleTableChange"
-      >
+      <a-table class="crud-table" :columns="columns" :data-source="tableData" :loading="loading"
+        :pagination="pagination" row-key="id" :scroll="{ x: 'max-content' }" @change="handleTableChange">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'method'">
             <a-tag :color="getMethodColor(record.method)">
@@ -46,7 +58,8 @@
           </template>
           <template v-if="column.key === 'action'">
             <a-space>
-              <a-button v-permission="'post/api/v1/api/update'" type="link" size="small" @click="handleEdit(record)">编辑</a-button>
+              <a-button v-permission="'post/api/v1/api/update'" type="link" size="small"
+                @click="handleEdit(record)">编辑</a-button>
               <a-popconfirm title="确定删除该API吗？" @confirm="handleDelete(record)">
                 <a-button v-permission="'delete/api/v1/api/delete'" type="link" danger size="small">删除</a-button>
               </a-popconfirm>
@@ -57,20 +70,10 @@
     </a-card>
 
     <!-- 新增/编辑 弹窗 -->
-    <a-modal
-      v-model:open="modalVisible"
-      :title="modalTitle"
-      :confirm-loading="modalLoading"
-      @ok="handleSave"
-      @cancel="modalVisible = false"
-    >
-      <a-form
-        ref="modalFormRef"
-        :model="modalForm"
-        :rules="modalRules"
-        :label-col="{ span: 6 }"
-        :wrapper-col="{ span: 16 }"
-      >
+    <a-modal v-model:open="modalVisible" :title="modalTitle" :confirm-loading="modalLoading" @ok="handleSave"
+      @cancel="modalVisible = false">
+      <a-form ref="modalFormRef" :model="modalForm" :rules="modalRules" :label-col="{ span: 6 }"
+        :wrapper-col="{ span: 16 }">
         <a-form-item label="API路径" name="path">
           <a-input v-model:value="modalForm.path" placeholder="请输入API路径" />
         </a-form-item>
@@ -99,6 +102,33 @@ const queryParams = reactive<any>({
   tags: '',
 })
 
+// 计算表单项数量（用于控制按钮布局）
+const filterItemCount = 3 // API页面固定3个表单项
+
+// 操作按钮列的栅格配置
+// 单行时宽度自适应，多行时占据标准宽度
+const getActionColProps = computed(() => {
+  const isSingleLine = filterItemCount <= 3
+  if (isSingleLine) {
+    // 单行模式：宽度自适应，不设置固定宽度
+    return {
+      xs: 24,
+      sm: 12,
+      md: 'auto',
+      lg: 'auto',
+      xl: 'auto'
+    }
+  }
+  // 多行模式：标准宽度
+  return {
+    xs: 24,
+    sm: 12,
+    md: 8,
+    lg: 6,
+    xl: 6
+  }
+})
+
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const pagination = reactive({
@@ -110,11 +140,11 @@ const pagination = reactive({
 })
 
 const columns = [
-  { title: 'API路径', dataIndex: 'path', key: 'path', ellipsis: true },
-  { title: '请求方式', dataIndex: 'method', key: 'method', width: 100 },
-  { title: 'API简介', dataIndex: 'summary', key: 'summary', ellipsis: true },
-  { title: 'Tags', dataIndex: 'tags', key: 'tags', ellipsis: true },
-  { title: '操作', key: 'action', width: 150 },
+  { title: 'API路径', dataIndex: 'path', key: 'path', width: 250, ellipsis: true, resizable: true },
+  { title: '请求方式', dataIndex: 'method', key: 'method', width: 100, resizable: true },
+  { title: 'API简介', dataIndex: 'summary', key: 'summary', width: 200, ellipsis: true, resizable: true },
+  { title: 'Tags', dataIndex: 'tags', key: 'tags', width: 150, ellipsis: true, resizable: true },
+  { title: '操作', key: 'action', width: 150, fixed: 'right' },
 ]
 
 const modalVisible = ref(false)
@@ -245,10 +275,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .api-page {
-  .search-form {
-    margin-bottom: 16px;
-  }
-
   .table-actions {
     margin-bottom: 16px;
   }

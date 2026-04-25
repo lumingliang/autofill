@@ -1,62 +1,90 @@
 <template>
-  <div class="auditlog-page">
+  <div class="auditlog-page crud-page">
     <a-card>
-      <a-form layout="inline" :model="queryParams" class="search-form">
-        <a-form-item label="用户名称">
-          <a-input v-model:value="queryParams.username" placeholder="请输入用户名称" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item label="功能模块">
-          <a-input v-model:value="queryParams.module" placeholder="请输入功能模块" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item label="接口概要">
-          <a-input v-model:value="queryParams.summary" placeholder="请输入接口概要" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item label="请求方法">
-          <a-select
-            v-model:value="queryParams.method"
-            placeholder="请选择请求方法"
-            allow-clear
-            style="width: 120px"
-            :options="methodOptions"
-          />
-        </a-form-item>
-        <a-form-item label="请求路径">
-          <a-input v-model:value="queryParams.path" placeholder="请输入请求路径" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item label="状态码">
-          <a-input v-model:value="queryParams.status" placeholder="请输入状态码" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item v-if="userStore.isSuperUser" label="租户">
-          <a-select
-            v-model:value="queryParams.tenant_id"
-            placeholder="请选择租户"
-            allow-clear
-            style="width: 180px"
-            :options="tenantOptions"
-          />
-        </a-form-item>
-        <a-form-item label="操作时间">
-          <a-range-picker
-            v-model:value="dateRange"
-            format="YYYY-MM-DD HH:mm:ss"
-            placeholder="请选择时间范围"
-            @change="handleDateRangeChange"
-          />
-        </a-form-item>
-        <a-form-item>
-          <a-space>
-            <a-button type="primary" @click="handleSearch">查询</a-button>
-            <a-button @click="handleReset">重置</a-button>
-          </a-space>
-        </a-form-item>
+      <a-form :model="queryParams" class="crud-filter-form smart-filter-form multi-row-form">
+        <a-row :gutter="16" class="filter-row">
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="用户名称" class="filter-item">
+              <a-input v-model:value="queryParams.username" placeholder="请输入用户名称" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="功能模块" class="filter-item">
+              <a-input v-model:value="queryParams.module" placeholder="请输入功能模块" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="接口概要" class="filter-item">
+              <a-input v-model:value="queryParams.summary" placeholder="请输入接口概要" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="请求方法" class="filter-item">
+              <a-select
+                v-model:value="queryParams.method"
+                placeholder="请选择请求方法"
+                allow-clear
+                :options="methodOptions"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="请求路径" class="filter-item">
+              <a-input v-model:value="queryParams.path" placeholder="请输入请求路径" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="状态码" class="filter-item">
+              <a-input v-model:value="queryParams.status" placeholder="请输入状态码" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="租户" class="filter-item">
+              <a-select
+                v-model:value="queryParams.tenant_id"
+                placeholder="请选择租户"
+                allow-clear
+                :options="tenantOptions"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="操作时间" class="filter-item">
+              <a-range-picker
+                v-model:value="dateRange"
+                format="YYYY-MM-DD HH:mm:ss"
+                :placeholder="['开始时间', '结束时间']"
+                @change="handleDateRangeChange"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col v-bind="getActionColProps" 
+            class="filter-actions-col multi-line">
+            <a-form-item class="filter-actions">
+              <a-space>
+                <a-button type="primary" @click="handleSearch">
+                  <SearchOutlined />
+                  查询
+                </a-button>
+                <a-button @click="handleReset">
+                  <ReloadOutlined />
+                  重置
+                </a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
       </a-form>
 
       <a-table
+        class="crud-table"
         :columns="columns"
         :data-source="tableData"
         :loading="loading"
         :pagination="pagination"
         row-key="id"
+        :scroll="{ x: 'max-content' }"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
@@ -112,6 +140,25 @@ const queryParams = reactive<any>({
   end_time: '',
 })
 
+// 计算表单项数量（用于控制按钮布局）
+const filterItemCount = computed(() => {
+  // 基础字段：用户名称、功能模块、接口概要、请求方法、请求路径、状态码、操作时间 = 7个
+  let count = 7
+  // 超级管理员额外显示租户字段
+  if (userStore.isSuperUser) count++
+  return count
+})
+
+// 操作按钮列的栅格配置
+// 审计日志是多行表单，使用标准宽度
+const getActionColProps = {
+  xs: 24,
+  sm: 12,
+  md: 8,
+  lg: 6,
+  xl: 6
+}
+
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const pagination = reactive({
@@ -132,16 +179,16 @@ const methodOptions = ref([
 ])
 
 const columns = [
-  { title: '用户名称', dataIndex: 'username', key: 'username', ellipsis: true },
-  { title: '接口概要', dataIndex: 'summary', key: 'summary', ellipsis: true },
-  { title: '功能模块', dataIndex: 'module', key: 'module', ellipsis: true },
-  { title: '请求方法', key: 'method', width: 100 },
-  { title: '请求路径', dataIndex: 'path', key: 'path', ellipsis: true },
-  { title: '状态码', dataIndex: 'status', key: 'status', width: 80 },
-  { title: '请求体', key: 'request_body', width: 80 },
-  { title: '响应体', key: 'response_body', width: 80 },
-  { title: '响应时间(s)', dataIndex: 'response_time', key: 'response_time', width: 120 },
-  { title: '操作时间', key: 'created_at', width: 180 },
+  { title: '用户名称', dataIndex: 'username', key: 'username', width: 120, ellipsis: true, resizable: true },
+  { title: '接口概要', dataIndex: 'summary', key: 'summary', width: 200, ellipsis: true, resizable: true },
+  { title: '功能模块', dataIndex: 'module', key: 'module', width: 120, ellipsis: true, resizable: true },
+  { title: '请求方法', key: 'method', width: 100, resizable: true },
+  { title: '请求路径', dataIndex: 'path', key: 'path', width: 250, ellipsis: true, resizable: true },
+  { title: '状态码', dataIndex: 'status', key: 'status', width: 80, resizable: true },
+  { title: '请求体', key: 'request_body', width: 80, resizable: true },
+  { title: '响应体', key: 'response_body', width: 80, resizable: true },
+  { title: '响应时间(s)', dataIndex: 'response_time', key: 'response_time', width: 120, resizable: true },
+  { title: '操作时间', key: 'created_at', width: 180, resizable: true },
 ]
 
 function getMethodColor(method: string) {
@@ -243,8 +290,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .auditlog-page {
-  .search-form {
-    margin-bottom: 16px;
-  }
+  // 使用通用CRUD样式
 }
 </style>
