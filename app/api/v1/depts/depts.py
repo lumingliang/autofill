@@ -18,10 +18,11 @@ def is_superuser(user: User) -> bool:
 @router.get("/list", summary="查看部门列表")
 async def list_dept(
     name: str = Query(None, description="部门名称"),
+    tenant_id: int = Query(None, description="租户ID（仅超级管理员可用）"),
     token: str = Header(..., description="token验证"),
 ):
     """获取部门列表
-    - 超级管理员：返回所有部门
+    - 超级管理员：返回所有部门，或指定租户的部门
     - 普通用户：返回当前租户的部门
     """
     current_user: User = await AuthControl.is_authed(token)
@@ -38,8 +39,15 @@ async def list_dept(
         else:
             # 如果没有选择租户，返回空列表
             return Success(data=[])
+        # 普通用户不显示租户名称
+        dept_tree = await dept_controller.get_dept_tree_with_query(q, include_tenant=False)
+    else:
+        # 超级管理员可以通过 tenant_id 参数筛选特定租户的部门
+        if tenant_id is not None:
+            q &= Q(tenant_id=tenant_id)
+        # 超级管理员显示租户名称
+        dept_tree = await dept_controller.get_dept_tree_with_query(q, include_tenant=True)
 
-    dept_tree = await dept_controller.get_dept_tree_with_query(q)
     return Success(data=dept_tree)
 
 

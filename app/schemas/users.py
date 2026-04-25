@@ -27,13 +27,13 @@ class UserCreate(BaseModel):
     is_superuser: Optional[bool] = False
     role_ids: Optional[List[int]] = []
     dept_id: Optional[int] = Field(0, description="部门ID")
-    # 多租户字段：用户所属的租户ID列表（仅root可见）
+    # 多租户字段：当前操作租户ID（用于加载该租户的角色和部门）
+    tenant_id: Optional[int] = Field(None, description="当前操作租户ID")
+    # 多租户字段：用户所属的租户ID列表（仅超级管理员可见）
     tenant_ids: Optional[List[int]] = Field([], description="所属租户ID列表")
-    # 多租户字段：为用户分配的当前租户角色（单选）
-    tenant_id: Optional[int] = Field(None, description="当前租户ID（用于查询该租户下的角色）")
 
     def create_dict(self):
-        return self.model_dump(exclude_unset=True, exclude={"role_ids", "tenant_ids", "tenant_id"})
+        return self.model_dump(exclude_unset=True, exclude={"role_ids", "tenant_id", "tenant_ids"})
 
 
 class UserUpdate(BaseModel):
@@ -44,9 +44,10 @@ class UserUpdate(BaseModel):
     is_superuser: Optional[bool] = False
     role_ids: Optional[List[int]] = []
     dept_id: Optional[int] = 0
-    # 多租户字段
+    # 多租户字段：当前操作租户ID（用于加载该租户的角色和部门）
+    tenant_id: Optional[int] = Field(None, description="当前操作租户ID")
+    # 多租户字段：用户所属的租户ID列表（仅超级管理员可见）
     tenant_ids: Optional[List[int]] = Field([], description="所属租户ID列表")
-    tenant_id: Optional[int] = Field(None, description="当前租户ID")
 
 
 class UpdatePassword(BaseModel):

@@ -28,6 +28,7 @@ async def list_user(
     username: str = Query("", description="用户名称，用于搜索"),
     email: str = Query("", description="邮箱地址"),
     dept_id: int = Query(None, description="部门ID"),
+    dept_recursive: bool = Query(True, description="是否递归查询子部门"),
     tenant_id: int = Query(None, description="租户ID（仅root可见）"),
     token: str = Header(..., description="token验证"),
 ):
@@ -38,7 +39,17 @@ async def list_user(
     if email:
         q &= Q(email__contains=email)
     if dept_id is not None:
-        q &= Q(dept_id=dept_id)
+        if dept_recursive:
+            # 递归查询该部门及其所有子部门下的用户
+            from app.models.admin import Dept, DeptClosure
+            # 获取该部门的所有后代部门ID
+            descendant_ids = await DeptClosure.filter(ancestor=dept_id).values_list("descendant", flat=True)
+            if descendant_ids:
+                q &= Q(dept_id__in=descendant_ids)
+            else:
+                q &= Q(dept_id=dept_id)
+        else:
+            q &= Q(dept_id=dept_id)
     
     # 多租户筛选：仅超级管理员可按租户筛选
     if tenant_id is not None and is_superuser(current_user):
@@ -95,9 +106,17 @@ async def create_user(
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
+    
     # 检查权限：只有超级管理员可以指定租户
     if user_in.tenant_ids and not is_superuser(current_user):
         return Fail(code=403, msg="只有超级管理员才能指定租户")
+    
+    # 非超级管理员创建的用户自动绑定当前租户
+    if not is_superuser(current_user):
+        if current_user.current_tenant_id:
+            user_in.tenant_ids = [current_user.current_tenant_id]
+        else:
+            return Fail(code=400, msg="您当前未选择租户，无法创建用户")
 
     user = await user_controller.get_by_email(user_in.email)
     if user:
