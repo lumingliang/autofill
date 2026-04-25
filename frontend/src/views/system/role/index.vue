@@ -1,20 +1,36 @@
 <template>
-  <div class="role-page">
+  <div class="role-page crud-page">
     <a-card>
-      <a-form layout="inline" :model="queryParams" class="search-form">
-        <a-form-item label="角色名">
-          <a-input v-model:value="queryParams.role_name" placeholder="请输入角色名" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item v-if="userStore.isSuperUser" label="租户">
-          <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear style="width: 180px"
-            :options="tenantOptions" @change="handleSearch" />
-        </a-form-item>
-        <a-form-item>
-          <a-space>
-            <a-button type="primary" @click="handleSearch">查询</a-button>
-            <a-button @click="handleReset">重置</a-button>
-          </a-space>
-        </a-form-item>
+      <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
+        <a-row :gutter="16" class="filter-row">
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="角色名" class="filter-item">
+              <a-input v-model:value="queryParams.role_name" placeholder="请输入角色名" allow-clear
+                @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="租户" class="filter-item">
+              <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
+                @change="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col v-bind="getActionColProps" class="filter-actions-col"
+            :class="filterItemCount <= 2 ? 'single-line' : 'multi-line'">
+            <a-form-item class="filter-actions">
+              <a-space>
+                <a-button type="primary" @click="handleSearch">
+                  <SearchOutlined />
+                  查询
+                </a-button>
+                <a-button @click="handleReset">
+                  <ReloadOutlined />
+                  重置
+                </a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
       </a-form>
 
       <div class="table-actions">
@@ -24,8 +40,8 @@
         </a-button>
       </div>
 
-      <a-table :columns="columns" :data-source="tableData" :loading="loading" :pagination="pagination" row-key="id"
-        @change="handleTableChange">
+      <a-table class="crud-table" :columns="columns" :data-source="tableData" :loading="loading"
+        :pagination="pagination" row-key="id" :scroll="{ x: 'max-content' }" @change="handleTableChange">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
             <a-tag color="blue">{{ record.name }}</a-tag>
@@ -124,6 +140,39 @@ const queryParams = reactive<any>({
   tenant_id: undefined,
 })
 
+// 计算表单项数量（用于控制按钮布局）
+const filterItemCount = computed(() => {
+  // 基础字段：角色名
+  let count = 1
+  // 超级管理员额外显示租户字段
+  if (userStore.isSuperUser) count++
+  return count
+})
+
+// 操作按钮列的栅格配置
+// 单行时宽度自适应，多行时占据标准宽度
+const getActionColProps = computed(() => {
+  const isSingleLine = filterItemCount.value <= 2
+  if (isSingleLine) {
+    // 单行模式：宽度自适应，不设置固定宽度
+    return {
+      xs: 24,
+      sm: 12,
+      md: 'auto',
+      lg: 'auto',
+      xl: 'auto'
+    }
+  }
+  // 多行模式：标准宽度
+  return {
+    xs: 24,
+    sm: 12,
+    md: 8,
+    lg: 6,
+    xl: 6
+  }
+})
+
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const pagination = reactive({
@@ -137,11 +186,11 @@ const pagination = reactive({
 const tenantOptions = ref<any[]>([])
 
 const columns = computed(() => [
-  { title: '角色名', dataIndex: 'name', key: 'name' },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name' }] : []),
-  { title: '角色描述', dataIndex: 'desc', key: 'desc' },
-  { title: '创建日期', dataIndex: 'created_at', key: 'created_at' },
-  { title: '操作', key: 'action', width: 200 },
+  { title: '角色名', dataIndex: 'name', key: 'name', width: 150, resizable: true },
+  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name', width: 150, resizable: true }] : []),
+  { title: '角色描述', dataIndex: 'desc', key: 'desc', width: 200, ellipsis: true, resizable: true },
+  { title: '创建日期', dataIndex: 'created_at', key: 'created_at', width: 180, resizable: true },
+  { title: '操作', key: 'action', width: 280, fixed: 'right' },
 ])
 
 const modalVisible = ref(false)
@@ -412,10 +461,6 @@ async function handleSaveAssignUsers() {
 
 <style scoped lang="less">
 .role-page {
-  .search-form {
-    margin-bottom: 16px;
-  }
-
   .table-actions {
     margin-bottom: 16px;
   }

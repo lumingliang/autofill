@@ -1,20 +1,36 @@
 <template>
-  <div class="dept-page">
+  <div class="dept-page crud-page">
     <a-card>
-      <a-form layout="inline" :model="queryParams" class="search-form">
-        <a-form-item label="部门名称">
-          <a-input v-model:value="queryParams.name" placeholder="请输入部门名称" allow-clear @pressEnter="handleSearch" />
-        </a-form-item>
-        <a-form-item v-if="userStore.isSuperUser" label="租户">
-          <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear style="width: 180px"
-            :options="tenantOptions" @change="handleSearch" />
-        </a-form-item>
-        <a-form-item>
-          <a-space>
-            <a-button type="primary" @click="handleSearch">查询</a-button>
-            <a-button @click="handleReset">重置</a-button>
-          </a-space>
-        </a-form-item>
+      <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
+        <a-row :gutter="16" class="filter-row">
+          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="部门名称" class="filter-item">
+              <a-input v-model:value="queryParams.name" placeholder="请输入部门名称" allow-clear @pressEnter="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+            <a-form-item label="租户" class="filter-item">
+              <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear
+                :options="tenantOptions" @change="handleSearch" />
+            </a-form-item>
+          </a-col>
+          <a-col v-bind="getActionColProps" 
+            class="filter-actions-col"
+            :class="filterItemCount <= 2 ? 'single-line' : 'multi-line'">
+            <a-form-item class="filter-actions">
+              <a-space>
+                <a-button type="primary" @click="handleSearch">
+                  <SearchOutlined />
+                  查询
+                </a-button>
+                <a-button @click="handleReset">
+                  <ReloadOutlined />
+                  重置
+                </a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
       </a-form>
 
       <div class="table-actions">
@@ -24,7 +40,15 @@
         </a-button>
       </div>
 
-      <a-table :columns="columns" :data-source="tableData" :loading="loading" :pagination="false" row-key="id">
+      <a-table
+        class="crud-table"
+        :columns="columns"
+        :data-source="tableData"
+        :loading="loading"
+        :pagination="false"
+        row-key="id"
+        :scroll="{ x: 'max-content' }"
+      >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'tenant_name'">
             {{ record.tenant_name || '-' }}
@@ -83,16 +107,49 @@ const queryParams = reactive<any>({
   tenant_id: undefined,
 })
 
+// 计算表单项数量（用于控制按钮布局）
+const filterItemCount = computed(() => {
+  // 基础字段：部门名称
+  let count = 1
+  // 超级管理员额外显示租户字段
+  if (userStore.isSuperUser) count++
+  return count
+})
+
+// 操作按钮列的栅格配置
+// 单行时宽度自适应，多行时占据标准宽度
+const getActionColProps = computed(() => {
+  const isSingleLine = filterItemCount.value <= 2
+  if (isSingleLine) {
+    // 单行模式：宽度自适应，不设置固定宽度
+    return {
+      xs: 24,
+      sm: 12,
+      md: 'auto',
+      lg: 'auto',
+      xl: 'auto'
+    }
+  }
+  // 多行模式：标准宽度
+  return {
+    xs: 24,
+    sm: 12,
+    md: 8,
+    lg: 6,
+    xl: 6
+  }
+})
+
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const deptOptions = ref<any[]>([])
 const tenantOptions = ref<any[]>([])
 
 const columns = computed(() => [
-  { title: '部门名称', dataIndex: 'name', key: 'name' },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name' }] : []),
-  { title: '备注', dataIndex: 'desc', key: 'desc' },
-  { title: '操作', key: 'action', width: 150 },
+  { title: '部门名称', dataIndex: 'name', key: 'name', width: 200, resizable: true },
+  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name', width: 150, resizable: true }] : []),
+  { title: '备注', dataIndex: 'desc', key: 'desc', width: 250, ellipsis: true, resizable: true },
+  { title: '操作', key: 'action', width: 150, fixed: 'right' },
 ])
 
 const modalVisible = ref(false)
@@ -210,10 +267,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .dept-page {
-  .search-form {
-    margin-bottom: 16px;
-  }
-
   .table-actions {
     margin-bottom: 16px;
   }

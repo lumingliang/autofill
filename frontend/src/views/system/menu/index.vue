@@ -1,5 +1,5 @@
 <template>
-  <div class="menu-page">
+  <div class="menu-page crud-page">
     <a-card>
       <div class="table-actions">
         <a-button v-permission="'post/api/v1/menu/create'" type="primary" @click="handleClickAdd">
@@ -9,6 +9,7 @@
       </div>
 
       <a-table
+        class="crud-table"
         :columns="columns"
         :data-source="tableData"
         :loading="loading"
@@ -150,18 +151,17 @@ const tableData = ref<any[]>([])
 const menuOptions = ref<any[]>([])
 
 const columns = [
-  { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
-  { title: '菜单名称', dataIndex: 'name', key: 'name', ellipsis: true },
-  { title: '菜单类型', key: 'menu_type', width: 80 },
-  { title: '图标', key: 'icon', width: 60 },
-  { title: '排序', dataIndex: 'order', key: 'order', width: 60 },
-  { title: '访问路径', dataIndex: 'path', key: 'path', ellipsis: true },
-  { title: '跳转路径', dataIndex: 'redirect', key: 'redirect', ellipsis: true },
-  { title: '组件路径', dataIndex: 'component', key: 'component', ellipsis: true },
-  { title: '保活', key: 'keepalive', width: 70 },
-  { title: '隐藏', key: 'is_hidden', width: 70 },
-  { title: '创建日期', dataIndex: 'created_at', key: 'created_at', ellipsis: true },
-  { title: '操作', key: 'action', width: 180, fixed: 'right' },
+  { title: '菜单名称', dataIndex: 'name', key: 'name', width: 150, ellipsis: true, resizable: true },
+  { title: '菜单类型', key: 'menu_type', width: 80, resizable: true },
+  { title: '图标', key: 'icon', width: 60, resizable: true },
+  { title: '排序', dataIndex: 'order', key: 'order', width: 60, resizable: true },
+  { title: '访问路径', dataIndex: 'path', key: 'path', width: 150, ellipsis: true, resizable: true },
+  { title: '跳转路径', dataIndex: 'redirect', key: 'redirect', width: 150, ellipsis: true, resizable: true },
+  { title: '组件路径', dataIndex: 'component', key: 'component', width: 200, ellipsis: true, resizable: true },
+  { title: '保活', key: 'keepalive', width: 70, resizable: true },
+  { title: '隐藏', key: 'is_hidden', width: 70, resizable: true },
+  { title: '创建日期', dataIndex: 'created_at', key: 'created_at', width: 180, ellipsis: true, resizable: true },
+  { title: '操作', key: 'action', width: 200, fixed: 'right' },
 ]
 
 const modalVisible = ref(false)
@@ -321,6 +321,45 @@ onMounted(() => {
 .menu-page {
   .table-actions {
     margin-bottom: 16px;
+  }
+
+  :deep(.ant-table) {
+    .ant-table-row {
+      &:hover {
+        background-color: #f5f5f5;
+      }
+    }
+
+    // 树形结构展开按钮样式优化
+    .ant-table-cell-with-append {
+      .ant-table-row-expand-icon {
+        width: 16px;
+        height: 16px;
+        line-height: 14px;
+        border: 1px solid #d9d9d9;
+        border-radius: 2px;
+        background: #fff;
+        color: #666;
+        transition: all 0.3s;
+
+        &:hover {
+          border-color: #1890ff;
+          color: #1890ff;
+        }
+      }
+    }
+
+    // 层级缩进样式优化
+    .ant-table-cell {
+      .ant-table-row-indent {
+        padding-left: 8px;
+      }
+    }
+
+    // 操作列按钮间距
+    .ant-space {
+      gap: 8px !important;
+    }
   }
 }
 </style>
