@@ -1,5 +1,5 @@
 <script setup>
-import { h, onMounted, ref, resolveDirective, withDirectives } from 'vue'
+import { computed, h, nextTick, onMounted, ref, resolveDirective, withDirectives, watch } from 'vue'
 import {
   NButton,
   NForm,
@@ -20,11 +20,16 @@ import CommonPage from '@/components/page/CommonPage.vue'
 import QueryBarItem from '@/components/query-bar/QueryBarItem.vue'
 import CrudModal from '@/components/table/CrudModal.vue'
 import CrudTable from '@/components/table/CrudTable.vue'
+import TenantSelect from '@/components/tenant/TenantSelect.vue'
 
 import { formatDate, renderIcon } from '@/utils'
 import { useCRUD } from '@/composables'
 import api from '@/api'
 import TheIcon from '@/components/icon/TheIcon.vue'
+import { useUserStore } from '@/store'
+
+const userStore = useUserStore()
+const isSuperUser = computed(() => userStore.isSuperUser)
 
 defineOptions({ name: '角色管理' })
 
@@ -37,9 +42,9 @@ const {
   modalAction,
   modalTitle,
   modalLoading,
-  handleAdd,
+  handleAdd: originalHandleAdd,
   handleDelete,
-  handleEdit,
+  handleEdit: originalHandleEdit,
   handleSave,
   modalForm,
   modalFormRef,
@@ -52,8 +57,40 @@ const {
   refresh: () => $table.value?.handleSearch(),
 })
 
+// 自定义 handleAdd，打开弹窗后清除校验
+function handleAdd() {
+  originalHandleAdd()
+  nextTick(() => {
+    modalFormRef.value?.restoreValidation()
+  })
+}
+
+// 自定义 handleEdit，打开弹窗后清除校验
+function handleEdit(row) {
+  originalHandleEdit(row)
+  nextTick(() => {
+    modalFormRef.value?.restoreValidation()
+  })
+}
+
+// 表单校验规则
+const validateRole = {
+  tenant_id: {
+    required: true,
+    message: '请选择所属租户',
+    trigger: ['change', 'blur'],
+    type: 'number',
+  },
+  name: {
+    required: true,
+    message: '请输入角色名称',
+    trigger: ['input', 'blur'],
+  },
+}
+
 const pattern = ref('')
 const menuOption = ref([]) // 菜单选项
+
 const active = ref(false)
 const menu_ids = ref([])
 const role_id = ref(0)
@@ -91,7 +128,7 @@ onMounted(() => {
   $table.value?.handleSearch()
 })
 
-const columns = [
+const columns = computed(() => [
   {
     title: '角色名',
     key: 'name',
@@ -102,6 +139,16 @@ const columns = [
       return h(NTag, { type: 'info' }, { default: () => row.name })
     },
   },
+  // 多租户：仅超级管理员可见租户列
+  ...(isSuperUser.value ? [{
+    title: '所属租户',
+    key: 'tenant_name',
+    width: 80,
+    align: 'center',
+    render(row) {
+      return h(NTag, { type: 'warning' }, { default: () => row.tenant_name || '系统角色' })
+    },
+  }] : []),
   {
     title: '角色描述',
     key: 'desc',
@@ -147,7 +194,7 @@ const columns = [
           NPopconfirm,
           {
             onPositiveClick: () => handleDelete({ role_id: row.id }, false),
-            onNegativeClick: () => {},
+            onNegativeClick: () => { },
           },
           {
             trigger: () =>
@@ -210,7 +257,7 @@ const columns = [
       ]
     },
   },
-]
+])
 
 async function updateRoleAuthorized() {
   const checkData = apiTree.value.getCheckedData()
@@ -250,109 +297,58 @@ async function updateRoleAuthorized() {
       </NButton>
     </template>
 
-    <CrudTable
-      ref="$table"
-      v-model:query-items="queryItems"
-      :columns="columns"
-      :get-data="api.getRoleList"
-    >
+    <CrudTable ref="$table" v-model:query-items="queryItems" :columns="columns" :get-data="api.getRoleList">
       <template #queryBar>
         <QueryBarItem label="角色名" :label-width="50">
-          <NInput
-            v-model:value="queryItems.role_name"
-            clearable
-            type="text"
-            placeholder="请输入角色名"
-            @keypress.enter="$table?.handleSearch()"
-          />
+          <NInput v-model:value="queryItems.role_name" clearable type="text" placeholder="请输入角色名"
+            @keypress.enter="$table?.handleSearch()" />
+        </QueryBarItem>
+        <!-- 多租户：仅超级管理员可见租户筛选 -->
+        <QueryBarItem v-if="isSuperUser" label="租户" :label-width="40">
+          <TenantSelect v-model="queryItems.tenant_id" @change="$table?.handleSearch()" />
         </QueryBarItem>
       </template>
     </CrudTable>
 
-    <CrudModal
-      v-model:visible="modalVisible"
-      :title="modalTitle"
-      :loading="modalLoading"
-      @save="handleSave"
-    >
-      <NForm
-        ref="modalFormRef"
-        label-placement="left"
-        label-align="left"
-        :label-width="80"
-        :model="modalForm"
-        :disabled="modalAction === 'view'"
-      >
-        <NFormItem
-          label="角色名"
-          path="name"
-          :rule="{
-            required: true,
-            message: '请输入角色名称',
-            trigger: ['input', 'blur'],
-          }"
-        >
+    <CrudModal v-model:visible="modalVisible" :title="modalTitle" :loading="modalLoading" @save="handleSave">
+      <NForm ref="modalFormRef" label-placement="left" label-align="left" :label-width="80" :model="modalForm"
+        :rules="validateRole" :disabled="modalAction === 'view'">
+        <!-- 多租户：仅超级管理员可见租户选择 -->
+        <NFormItem v-if="isSuperUser" label="所属租户" path="tenant_id">
+          <TenantSelect v-model="modalForm.tenant_id" />
+        </NFormItem>
+        <NFormItem label="角色名" path="name">
           <NInput v-model:value="modalForm.name" placeholder="请输入角色名称" />
         </NFormItem>
+
         <NFormItem label="角色描述" path="desc">
           <NInput v-model:value="modalForm.desc" placeholder="请输入角色描述" />
         </NFormItem>
       </NForm>
     </CrudModal>
 
-    <NDrawer v-model:show="active" placement="right" :width="500"
-      ><NDrawerContent>
+    <NDrawer v-model:show="active" placement="right" :width="500">
+      <NDrawerContent>
         <NGrid x-gap="24" cols="12">
           <NGi span="8">
-            <NInput
-              v-model:value="pattern"
-              type="text"
-              placeholder="筛选"
-              style="flex-grow: 1"
-            ></NInput>
+            <NInput v-model:value="pattern" type="text" placeholder="筛选" style="flex-grow: 1"></NInput>
           </NGi>
           <NGi offset="2">
-            <NButton
-              v-permission="'post/api/v1/role/authorized'"
-              type="info"
-              @click="updateRoleAuthorized"
-              >确定</NButton
-            >
+            <NButton v-permission="'post/api/v1/role/authorized'" type="info" @click="updateRoleAuthorized">确定</NButton>
           </NGi>
         </NGrid>
         <NTabs>
           <NTabPane name="menu" tab="菜单权限" display-directive="show">
             <!-- TODO：级联 -->
-            <NTree
-              :data="menuOption"
-              :checked-keys="menu_ids"
-              :pattern="pattern"
-              :show-irrelevant-nodes="false"
-              key-field="id"
-              label-field="name"
-              checkable
-              :default-expand-all="true"
-              :block-line="true"
-              :selectable="false"
-              @update:checked-keys="(v) => (menu_ids = v)"
-            />
+            <NTree :data="menuOption" :checked-keys="menu_ids" :pattern="pattern" :show-irrelevant-nodes="false"
+              key-field="id" label-field="name" checkable :default-expand-all="true" :block-line="true"
+              :selectable="false" @update:checked-keys="(v) => (menu_ids = v)" />
           </NTabPane>
           <NTabPane name="resource" tab="接口权限" display-directive="show">
-            <NTree
-              ref="apiTree"
-              :data="apiOption"
-              :checked-keys="api_ids"
-              :pattern="pattern"
-              :show-irrelevant-nodes="false"
-              key-field="unique_id"
-              label-field="summary"
-              checkable
-              :default-expand-all="true"
-              :block-line="true"
-              :selectable="false"
-              cascade
-              @update:checked-keys="(v) => (api_ids = v)"
-            />
+            <NTree ref="apiTree" :data="apiOption" :checked-keys="api_ids" :pattern="pattern"
+              :show-irrelevant-nodes="false" key-field="unique_id" label-field="summary" checkable
+              :default-expand-all="true" :block-line="true" :selectable="false" cascade
+              @update:checked-keys="(v) => (api_ids = v)" />
           </NTabPane>
         </NTabs>
         <template #header> 设置权限 </template>

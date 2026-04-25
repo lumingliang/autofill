@@ -1,0 +1,25 @@
+[database]
+# 数据库类型: sqlite, mysql, postgres
+db_type = "mysql"
+
+[database.mysql]
+host = "127.0.0.1"
+port = 3306
+user = "root"
+password = "root123456"
+database = "autofill"
+
+[database.sqlite]
+file_path = "db.sqlite3"
+
+[app]
+# 应用配置
+debug = true
+secret_key = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"
+jwt_access_token_expire_minutes = 10080  # 7天
+
+[app.cors]
+origins = ["*"]
+allow_credentials = true
+allow_methods = ["*"]
+allow_headers = ["*"]
