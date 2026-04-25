@@ -3,6 +3,7 @@ from tortoise.expressions import Q
 
 from app.controllers.api import api_controller
 from app.core.dependency import AuthControl
+from app.core.relation import RelationQuery
 from app.models.admin import Api, Role, User
 from app.schemas import Success, SuccessExtra
 from app.schemas.apis import *
@@ -36,24 +37,25 @@ async def list_api(
     # 获取用户有权限的API ID集合
     allowed_api_ids = set()
     if current_user.is_superuser:
-        # 超级管理员拥有所有API权限
         all_apis = await Api.all()
         allowed_api_ids = {a.id for a in all_apis}
     else:
-        # 普通用户只能看到自己有权限的API
-        role_objs: list[Role] = await current_user.roles
-        for role_obj in role_objs:
-            # 只获取当前租户的角色对应的API
-            if current_user.current_tenant_id and role_obj.tenant_id == current_user.current_tenant_id:
-                apis = await role_obj.apis
-                for api in apis:
-                    allowed_api_ids.add(api.id)
+        # 通过RelationQuery获取用户角色，再批量获取API权限
+        role_ids = await RelationQuery.get_role_ids_by_user_id(current_user.id)
+        if role_ids:
+            roles = await Role.filter(id__in=role_ids).all()
+            target_role_ids = [
+                r.id for r in roles
+                if current_user.current_tenant_id and r.tenant_id == current_user.current_tenant_id
+            ]
+            if target_role_ids:
+                api_rows = await RelationQuery.batch_get_api_ids_by_role_ids(target_role_ids)
+                for aids in api_rows.values():
+                    allowed_api_ids.update(aids)
 
-        # 如果没有权限，返回空列表
         if not allowed_api_ids:
             return SuccessExtra(data=[], total=0, page=page, page_size=page_size)
 
-        # 添加API ID过滤条件
         q &= Q(id__in=allowed_api_ids)
 
     total, api_objs = await api_controller.list(page=page, page_size=page_size, search=q, order=["tags", "id"])

@@ -77,10 +77,18 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def _get_tenant_domain(self, request: Request) -> str:
-        """获取租户域名，默认为 root"""
+        """获取租户域名，优先从token中解析，默认为 root"""
         try:
             token = request.headers.get("token")
             if token:
+                # 优先从token中直接解析域名，避免查数据库
+                import jwt
+                from app.settings import settings
+                decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
+                tenant_domain = decode_data.get("tenant_domain")
+                if tenant_domain:
+                    return tenant_domain
+                # 兼容旧token：从token解析用户后查数据库
                 user_obj: User = await AuthControl.is_authed(token)
                 if user_obj and user_obj.current_tenant_id:
                     from app.models.admin import Tenant
@@ -266,15 +274,26 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         try:
             token = request.headers.get("token")
             user_obj = None
+            tenant_domain = None
             if token:
+                # 优先从token中解析域名，避免查数据库
+                import jwt
+                from app.settings import settings
+                try:
+                    decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
+                    tenant_domain = decode_data.get("tenant_domain")
+                except Exception:
+                    pass
                 user_obj: User = await AuthControl.is_authed(token)
             data["user_id"] = user_obj.id if user_obj else 0
             data["username"] = user_obj.username if user_obj else ""
             # 记录当前租户ID和域名
             tenant_id = user_obj.current_tenant_id if user_obj else None
             data["tenant_id"] = tenant_id
-            # 获取租户域名
-            if tenant_id:
+            # 获取租户域名，优先使用token中的
+            if tenant_domain:
+                data["tenant_domain"] = tenant_domain
+            elif tenant_id:
                 from app.models.admin import Tenant
                 tenant = await Tenant.filter(id=tenant_id).first()
                 data["tenant_domain"] = tenant.domain if tenant else None

@@ -29,3 +29,5 @@ class JWTPayload(BaseModel):
     username: str
     is_superuser: bool
     exp: datetime
+    current_tenant_id: Optional[int] = None
+    tenant_domain: Optional[str] = None

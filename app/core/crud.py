@@ -33,12 +33,27 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     async def update(self, id: int, obj_in: Union[UpdateSchemaType, Dict[str, Any]]) -> ModelType:
         if isinstance(obj_in, Dict):
             obj_dict = obj_in
+            relation_fields = {}
         else:
             obj_dict = obj_in.model_dump(exclude_unset=True, exclude={"id"})
+            relation_fields = self._extract_relation_fields(obj_in)
+
         obj = await self.get(id=id)
         obj = obj.update_from_dict(obj_dict)
         await obj.save()
+
+        if relation_fields:
+            await self._update_relations(obj, relation_fields)
+
         return obj
+
+    def _extract_relation_fields(self, obj_in: UpdateSchemaType) -> Dict[str, Any]:
+        """提取关联字段（如 role_ids, tenant_ids），子类可覆盖"""
+        return {}
+
+    async def _update_relations(self, obj: ModelType, relation_fields: Dict[str, Any]) -> None:
+        """更新关联关系，子类覆盖实现显式关联操作"""
+        pass
 
     async def remove(self, id: int) -> None:
         obj = await self.get(id=id)

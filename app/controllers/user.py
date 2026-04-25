@@ -1,15 +1,14 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi.exceptions import HTTPException
 
 from app.core.crud import CRUDBase
+from app.core.relation import RelationQuery
 from app.models.admin import Tenant, User
 from app.schemas.login import CredentialsSchema
 from app.schemas.users import UserCreate, UserUpdate
 from app.utils.password import get_password_hash, verify_password
-
-from .role import role_controller
 
 
 class UserController(CRUDBase[User, UserCreate, UserUpdate]):
@@ -25,15 +24,32 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
     async def create_user(self, obj_in: UserCreate) -> User:
         obj_in.password = get_password_hash(password=obj_in.password)
         obj = await self.create(obj_in)
-        
-        # 关联租户
+
+        # 显式批量关联角色
+        if obj_in.role_ids:
+            await RelationQuery.replace_user_roles(obj.id, obj_in.role_ids)
+
+        # 显式批量关联租户
         if obj_in.tenant_ids:
-            for tenant_id in obj_in.tenant_ids:
-                tenant = await Tenant.filter(id=tenant_id).first()
-                if tenant:
-                    await obj.tenants.add(tenant)
-        
+            await RelationQuery.replace_user_tenants(obj.id, obj_in.tenant_ids)
+
         return obj
+
+    def _extract_relation_fields(self, obj_in: UserUpdate) -> Dict[str, Any]:
+        """显式提取用户关联字段：role_ids 和 tenant_ids"""
+        relation_fields = {}
+        if hasattr(obj_in, "role_ids") and obj_in.role_ids is not None:
+            relation_fields["role_ids"] = obj_in.role_ids
+        if hasattr(obj_in, "tenant_ids") and obj_in.tenant_ids is not None:
+            relation_fields["tenant_ids"] = obj_in.tenant_ids
+        return relation_fields
+
+    async def _update_relations(self, obj: User, relation_fields: Dict[str, Any]) -> None:
+        """显式更新用户关联关系：先组装数据，再批量插入/删除"""
+        if "role_ids" in relation_fields:
+            await RelationQuery.replace_user_roles(obj.id, relation_fields["role_ids"])
+        if "tenant_ids" in relation_fields:
+            await RelationQuery.replace_user_tenants(obj.id, relation_fields["tenant_ids"])
 
     async def update_last_login(self, id: int) -> None:
         user = await self.model.get(id=id)
@@ -52,24 +68,18 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
         return user
 
     async def update_roles(self, user: User, role_ids: List[int]) -> None:
-        await user.roles.clear()
-        for role_id in role_ids:
-            role_obj = await role_controller.get(id=role_id)
-            await user.roles.add(role_obj)
+        """替换用户的角色关联，采用批量操作"""
+        await RelationQuery.replace_user_roles(user.id, role_ids)
 
     async def update_tenants(self, user: User, tenant_ids: List[int]) -> None:
-        """更新用户关联的租户"""
-        await user.tenants.clear()
-        for tenant_id in tenant_ids:
-            tenant = await Tenant.filter(id=tenant_id).first()
-            if tenant:
-                await user.tenants.add(tenant)
+        """更新用户关联的租户，采用批量操作"""
+        await RelationQuery.replace_user_tenants(user.id, tenant_ids)
 
     async def set_current_tenant(self, user_id: int, tenant_id: int) -> None:
         """设置用户当前选中的租户"""
         user = await self.get(id=user_id)
         # 检查用户是否属于该租户
-        tenant_ids = [t.id for t in await user.tenants.all()]
+        tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user_id)
         if tenant_id not in tenant_ids:
             raise HTTPException(status_code=403, detail="用户不属于该租户")
         user.current_tenant_id = tenant_id
@@ -77,8 +87,7 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
 
     async def get_user_tenants(self, user_id: int) -> List[Tenant]:
         """获取用户所属的所有租户"""
-        user = await self.get(id=user_id)
-        return await user.tenants.all()
+        return await RelationQuery.get_tenants_by_user_id(user_id)
 
     async def reset_password(self, user_id: int):
         user_obj = await self.get(id=user_id)

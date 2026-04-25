@@ -1,12 +1,12 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Header
 from pydantic import BaseModel
 
 from app.controllers.user import user_controller
-from app.core.ctx import CTX_USER_ID
 from app.core.dependency import AuthControl
-from app.models.admin import Api, Menu, Role, Tenant, User
+from app.core.relation import RelationQuery
+from app.models.admin import Api, Menu, Tenant, User
 from app.schemas.base import Fail, Success
 from app.schemas.login import *
 from app.schemas.users import UpdatePassword
@@ -21,19 +21,24 @@ router = APIRouter()
 async def login_access_token(credentials: CredentialsSchema):
     user: User = await user_controller.authenticate(credentials)
     await user_controller.update_last_login(user.id)
-    
+
     # 获取用户所属租户
     tenants = await user_controller.get_user_tenants(user.id)
     tenant_list = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
-    
+
     # 如果用户只有一个租户且没有设置当前租户，自动设置为当前租户
     current_tenant_id = user.current_tenant_id
+    tenant_domain = None
     if len(tenant_list) == 1 and not current_tenant_id:
         current_tenant_id = tenant_list[0]["id"]
+        tenant_domain = tenant_list[0]["domain"]
         await user_controller.set_current_tenant(user.id, current_tenant_id)
-    
-    # 如果用户有多个租户，需要选择租户后才能获取完整token
-    # 这里返回一个临时token，用于租户选择
+    elif current_tenant_id:
+        for t in tenant_list:
+            if t["id"] == current_tenant_id:
+                tenant_domain = t["domain"]
+                break
+
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.now(timezone.utc) + access_token_expires
 
@@ -44,10 +49,11 @@ async def login_access_token(credentials: CredentialsSchema):
                 username=user.username,
                 is_superuser=user.is_superuser,
                 exp=expire,
+                current_tenant_id=current_tenant_id,
+                tenant_domain=tenant_domain,
             )
         ),
         username=user.username,
-        # 多租户字段
         tenants=tenant_list,
         need_select_tenant=len(tenant_list) > 1 and not user.is_superuser,
         current_tenant_id=current_tenant_id,
@@ -65,14 +71,15 @@ async def select_tenant_and_get_token(
 ):
     """用户选择租户后，更新当前租户并返回新的token"""
     try:
-        # 验证token并获取用户
         current_user = await AuthControl.is_authed(token)
         await user_controller.set_current_tenant(current_user.id, schema.tenant_id)
-        
-        # 重新生成token
+
+        tenant = await Tenant.filter(id=schema.tenant_id).first()
+        tenant_domain = tenant.domain if tenant else None
+
         access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
         expire = datetime.now(timezone.utc) + access_token_expires
-        
+
         data = JWTOut(
             access_token=create_access_token(
                 data=JWTPayload(
@@ -80,6 +87,8 @@ async def select_tenant_and_get_token(
                     username=current_user.username,
                     is_superuser=current_user.is_superuser,
                     exp=expire,
+                    current_tenant_id=schema.tenant_id,
+                    tenant_domain=tenant_domain,
                 )
             ),
             username=current_user.username,
@@ -96,7 +105,6 @@ async def get_userinfo(token: str = Header(..., description="token验证")):
     user_id = user.id
     user_obj = await user_controller.get(id=user_id)
     data = await user_obj.to_dict(exclude_fields=["password"])
-    # 如果没有头像，使用默认头像
     if not data.get("avatar"):
         data["avatar"] = "https://avatars.githubusercontent.com/u/54677442?v=4"
 
@@ -108,44 +116,86 @@ async def get_userinfo(token: str = Header(..., description="token验证")):
     return Success(data=data)
 
 
+async def get_all_parent_menus(menu_ids: set[int]) -> set[int]:
+    """递归获取所有父菜单ID
+    
+    根据给定的菜单ID集合，递归查询所有父级菜单ID，直到parent_id为0为止
+    """
+    if not menu_ids:
+        return set()
+    
+    all_menu_ids = set(menu_ids)
+    current_ids = set(menu_ids)
+    
+    while current_ids:
+        # 查询当前这批菜单的父菜单ID
+        menus = await Menu.filter(id__in=current_ids).all()
+        parent_ids = {menu.parent_id for menu in menus if menu.parent_id != 0}
+        
+        # 如果没有新的父菜单，退出循环
+        new_parent_ids = parent_ids - all_menu_ids
+        if not new_parent_ids:
+            break
+            
+        all_menu_ids.update(new_parent_ids)
+        current_ids = new_parent_ids
+    
+    return all_menu_ids
+
+
 @router.get("/usermenu", summary="查看用户菜单")
 async def get_user_menu(token: str = Header(..., description="token验证")):
     user_obj = await AuthControl.is_authed(token)
     user_id = user_obj.id
     menus: list[Menu] = []
-    
+
     if user_obj.is_superuser:
         menus = await Menu.all()
     else:
-        # 如果没有当前租户，获取用户的第一个租户
         current_tenant_id = user_obj.current_tenant_id
         if not current_tenant_id:
             user_tenants = await user_controller.get_user_tenants(user_id)
             if user_tenants:
                 current_tenant_id = user_tenants[0].id
-                # 更新用户的当前租户
                 await user_controller.set_current_tenant(user_id, current_tenant_id)
-        
-        role_objs: list[Role] = await user_obj.roles
-        for role_obj in role_objs:
-            # 多租户：只获取当前租户的角色对应的菜单
-            if current_tenant_id and role_obj.tenant_id == current_tenant_id:
-                menu = await role_obj.menus
-                menus.extend(menu)
-        menus = list(set(menus))
+
+        # 通过RelationQuery获取用户在当前租户下的菜单ID集合
+        menu_ids = await RelationQuery.get_user_menu_ids(user_id, current_tenant_id)
+        if menu_ids:
+            # 递归获取所有父菜单ID
+            all_menu_ids = await get_all_parent_menus(set(menu_ids))
+            menus = await Menu.filter(id__in=all_menu_ids).all()
+
+    # 构建菜单树结构
+    menu_map = {menu.id: await menu.to_dict() for menu in menus}
     
-    parent_menus: list[Menu] = []
+    # 找到所有根菜单（parent_id == 0）
+    root_menus: list[dict] = []
     for menu in menus:
         if menu.parent_id == 0:
-            parent_menus.append(menu)
-    res = []
-    for parent_menu in parent_menus:
-        parent_menu_dict = await parent_menu.to_dict()
-        parent_menu_dict["children"] = []
+            root_menus.append(menu_map[menu.id])
+    
+    # 递归构建子菜单树
+    def build_menu_tree(parent_id: int) -> list[dict]:
+        children = []
         for menu in menus:
-            if menu.parent_id == parent_menu.id:
-                parent_menu_dict["children"].append(await menu.to_dict())
-        res.append(parent_menu_dict)
+            if menu.parent_id == parent_id:
+                menu_dict = menu_map[menu.id]
+                menu_dict["children"] = build_menu_tree(menu.id)
+                children.append(menu_dict)
+        # 按order排序
+        children.sort(key=lambda x: x.get("order", 0))
+        return children
+    
+    # 为每个根菜单构建树
+    res = []
+    for root_menu in root_menus:
+        root_menu["children"] = build_menu_tree(root_menu["id"])
+        res.append(root_menu)
+    
+    # 按order排序根菜单
+    res.sort(key=lambda x: x.get("order", 0))
+    
     return Success(data=res)
 
 
@@ -153,29 +203,26 @@ async def get_user_menu(token: str = Header(..., description="token验证")):
 async def get_user_api(token: str = Header(..., description="token验证")):
     user_obj = await AuthControl.is_authed(token)
     user_id = user_obj.id
-    
+
     if user_obj.is_superuser:
         api_objs: list[Api] = await Api.all()
         apis = [api.method.lower() + api.path for api in api_objs]
         return Success(data=apis)
-    
-    # 如果没有当前租户，获取用户的第一个租户
+
     current_tenant_id = user_obj.current_tenant_id
     if not current_tenant_id:
         user_tenants = await user_controller.get_user_tenants(user_id)
         if user_tenants:
             current_tenant_id = user_tenants[0].id
-            # 更新用户的当前租户
             await user_controller.set_current_tenant(user_id, current_tenant_id)
-    
-    role_objs: list[Role] = await user_obj.roles
-    apis = []
-    for role_obj in role_objs:
-        # 多租户：只获取当前租户的角色对应的API
-        if current_tenant_id and role_obj.tenant_id == current_tenant_id:
-            api_objs: list[Api] = await role_obj.apis
-            apis.extend([api.method.lower() + api.path for api in api_objs])
-    apis = list(set(apis))
+
+    # 通过RelationQuery获取用户在当前租户下的API权限
+    api_ids = await RelationQuery.get_user_api_ids(user_id, current_tenant_id)
+    if not api_ids:
+        return Success(data=[])
+
+    api_objs = await Api.filter(id__in=api_ids).all()
+    apis = list(set(api.method.lower() + api.path for api in api_objs))
     return Success(data=apis)
 
 
@@ -207,44 +254,43 @@ async def quick_login(
     - 如果目标用户有多个租户，需要选择租户
     """
     current_user = await AuthControl.is_authed(token)
-    
-    # 获取目标用户
+
     target_user = await user_controller.get(id=schema.target_user_id)
     if not target_user:
         return Fail(code=404, msg="目标用户不存在")
-    
-    # 不能快捷登录到超级管理员
+
     if target_user.is_superuser:
         return Fail(code=403, msg="不能快捷登录到超级管理员账户")
-    
-    # 检查当前用户是否有权限快捷登录到目标用户（必须在同一租户）
+
     if not current_user.is_superuser:
         current_tenants = await user_controller.get_user_tenants(current_user.id)
         target_tenants = await user_controller.get_user_tenants(target_user.id)
         current_tenant_ids = {t.id for t in current_tenants}
         target_tenant_ids = {t.id for t in target_tenants}
-        
-        # 检查是否有共同租户
+
         if not current_tenant_ids.intersection(target_tenant_ids):
             return Fail(code=403, msg="您没有权限快捷登录到该用户")
-    
-    # 更新目标用户的最后登录时间
+
     await user_controller.update_last_login(target_user.id)
-    
-    # 获取目标用户所属租户
+
     tenants = await user_controller.get_user_tenants(target_user.id)
     tenant_list = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
-    
-    # 如果目标用户只有一个租户且没有设置当前租户，自动设置为当前租户
+
     current_tenant_id = target_user.current_tenant_id
+    tenant_domain = None
     if len(tenant_list) == 1 and not current_tenant_id:
         current_tenant_id = tenant_list[0]["id"]
+        tenant_domain = tenant_list[0]["domain"]
         await user_controller.set_current_tenant(target_user.id, current_tenant_id)
-    
-    # 生成token
+    elif current_tenant_id:
+        for t in tenant_list:
+            if t["id"] == current_tenant_id:
+                tenant_domain = t["domain"]
+                break
+
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.now(timezone.utc) + access_token_expires
-    
+
     data = JWTOut(
         access_token=create_access_token(
             data=JWTPayload(
@@ -252,11 +298,13 @@ async def quick_login(
                 username=target_user.username,
                 is_superuser=target_user.is_superuser,
                 exp=expire,
+                current_tenant_id=current_tenant_id,
+                tenant_domain=tenant_domain,
             )
         ),
         username=target_user.username,
         tenants=tenant_list,
-        need_select_tenant=len(tenant_list) > 1,
+        need_select_tenant=len(tenant_list) > 1 and not target_user.is_superuser,
         current_tenant_id=current_tenant_id,
     )
     return Success(data=data.model_dump())

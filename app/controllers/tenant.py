@@ -3,10 +3,10 @@ from typing import List, Optional
 from fastapi.exceptions import HTTPException
 
 from app.core.crud import CRUDBase
-from app.models.admin import Role, Tenant, User
+from app.core.relation import RelationQuery
+from app.models.admin import Api, Menu, Role, Tenant, User, UserTenant
 from app.schemas.tenants import TenantCreate, TenantUpdate
 
-from .role import role_controller
 from .user import user_controller
 
 
@@ -28,10 +28,8 @@ class TenantController(CRUDBase[Tenant, TenantCreate, TenantUpdate]):
         tenant = await self.create(obj_in)
 
         # 自动创建该租户的管理员角色（拥有所有菜单和API权限）
-        from app.models.admin import Api, Menu
-
-        all_menus = await Menu.all()
-        all_apis = await Api.all()
+        all_menus = await Menu.all().values("id")
+        all_apis = await Api.all().values("id")
 
         admin_role = await Role.create(
             name=f"{tenant.name}管理员",
@@ -40,20 +38,18 @@ class TenantController(CRUDBase[Tenant, TenantCreate, TenantUpdate]):
             is_system=True,
         )
 
-        # 关联所有菜单和API
-        for menu in all_menus:
-            await admin_role.menus.add(menu)
-        for api in all_apis:
-            await admin_role.apis.add(api)
+        # 批量关联所有菜单和API
+        await RelationQuery.batch_add_role_menus([(admin_role.id, m["id"]) for m in all_menus])
+        await RelationQuery.batch_add_role_apis([(admin_role.id, a["id"]) for a in all_apis])
 
         return tenant, admin_role
 
     async def get_tenant_users(self, tenant_id: int) -> List[User]:
         """获取租户下的所有用户"""
-        tenant = await self.get(id=tenant_id)
-        if not tenant:
-            raise HTTPException(status_code=404, detail="租户不存在")
-        return await tenant.tenant_users.all()
+        user_ids = await RelationQuery.get_user_ids_by_tenant_id(tenant_id)
+        if not user_ids:
+            return []
+        return await User.filter(id__in=user_ids).all()
 
     async def add_user_to_tenant(self, tenant_id: int, user_id: int):
         """将用户添加到租户"""
@@ -61,7 +57,7 @@ class TenantController(CRUDBase[Tenant, TenantCreate, TenantUpdate]):
         user = await user_controller.get(id=user_id)
         if not tenant or not user:
             raise HTTPException(status_code=404, detail="租户或用户不存在")
-        await tenant.tenant_users.add(user)
+        await RelationQuery.replace_user_tenants(user_id, [tenant_id])
 
     async def remove_user_from_tenant(self, tenant_id: int, user_id: int):
         """从租户移除用户"""
@@ -69,7 +65,7 @@ class TenantController(CRUDBase[Tenant, TenantCreate, TenantUpdate]):
         user = await user_controller.get(id=user_id)
         if not tenant or not user:
             raise HTTPException(status_code=404, detail="租户或用户不存在")
-        await tenant.tenant_users.remove(user)
+        await UserTenant.filter(user_id=user_id, tenant_id=tenant_id).delete()
 
     async def get_tenant_roles(self, tenant_id: int) -> List[Role]:
         """获取租户下的所有角色"""

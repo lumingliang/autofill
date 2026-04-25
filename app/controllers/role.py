@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import List
 
 from app.core.crud import CRUDBase
+from app.core.relation import RelationQuery
 from app.models.admin import Api, Menu, Role, Tenant
 from app.schemas.roles import RoleCreate, RoleUpdate
 
@@ -24,22 +25,32 @@ class RoleController(CRUDBase[Role, RoleCreate, RoleUpdate]):
         return await self.model.filter(tenant_id=None).all()
 
     async def update_roles(self, role: Role, menu_ids: List[int], api_infos: List[dict]) -> None:
-        await role.menus.clear()
-        for menu_id in menu_ids:
-            menu_obj = await Menu.filter(id=menu_id).first()
-            await role.menus.add(menu_obj)
+        """更新角色的菜单和API权限，采用批量操作"""
+        # 批量替换菜单关联
+        await RelationQuery.replace_role_menus(role.id, menu_ids)
 
-        await role.apis.clear()
-        for item in api_infos:
-            api_obj = await Api.filter(path=item.get("path"), method=item.get("method")).first()
-            await role.apis.add(api_obj)
+        # 查询API IDs（批量查询）
+        api_ids = []
+        if api_infos:
+            conditions = []
+            for item in api_infos:
+                conditions.append(
+                    {"path": item.get("path"), "method": item.get("method")}
+                )
+            # 由于tortoise不支持OR条件批量查询多个path/method组合，这里采用分批IN查询优化
+            paths = [item.get("path") for item in api_infos if item.get("path")]
+            methods = [item.get("method") for item in api_infos if item.get("method")]
+            if paths and methods:
+                api_objs = await Api.filter(path__in=paths, method__in=methods).all()
+                # 精确匹配 path+method 组合
+                target_set = {(item.get("path"), item.get("method")) for item in api_infos}
+                api_ids = [a.id for a in api_objs if (a.path, a.method) in target_set]
+
+        # 批量替换API关联
+        await RelationQuery.replace_role_apis(role.id, api_ids)
 
     async def create_tenant_admin_role(self, tenant: Tenant) -> Role:
         """为租户创建管理员角色"""
-        # 获取所有菜单和API
-        all_menus = await Menu.all()
-        all_apis = await Api.all()
-
         role = await Role.create(
             name=f"{tenant.name}管理员",
             desc=f"{tenant.name}租户的管理员角色，拥有所有权限",
@@ -47,11 +58,11 @@ class RoleController(CRUDBase[Role, RoleCreate, RoleUpdate]):
             is_system=True,
         )
 
-        # 关联所有菜单和API
-        for menu in all_menus:
-            await role.menus.add(menu)
-        for api in all_apis:
-            await role.apis.add(api)
+        # 批量关联所有菜单和API
+        all_menus = await Menu.all().values("id")
+        all_apis = await Api.all().values("id")
+        await RelationQuery.batch_add_role_menus([(role.id, m["id"]) for m in all_menus])
+        await RelationQuery.batch_add_role_apis([(role.id, a["id"]) for a in all_apis])
 
         return role
 

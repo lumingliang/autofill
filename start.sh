@@ -16,10 +16,11 @@ NC='\033[0m' # No Color
 # 项目配置
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WEB_DIR="$PROJECT_DIR/web"
+FRONTEND_DIR="$PROJECT_DIR/frontend"
 BACKEND_PID_FILE="/tmp/autofill_backend.pid"
 FRONTEND_PID_FILE="/tmp/autofill_frontend.pid"
 BACKEND_PORT=9999
-FRONTEND_PORT=3000
+FRONTEND_PORT=3200
 
 # Conda 配置
 CONDA_ENV="autofill"  # 默认 conda 环境名，可根据需要修改
@@ -167,17 +168,24 @@ start_backend() {
 start_frontend() {
     log_info "启动前端服务..."
     
-    # 检查是否在正确的目录
-    if [ ! -d "$WEB_DIR" ]; then
-        log_error "前端目录不存在: $WEB_DIR"
+    # 优先使用新的 frontend 目录，如果不存在则使用 web 目录
+    local target_dir=""
+    if [ -d "$FRONTEND_DIR" ]; then
+        target_dir="$FRONTEND_DIR"
+        log_info "使用新前端目录: $FRONTEND_DIR"
+    elif [ -d "$WEB_DIR" ]; then
+        target_dir="$WEB_DIR"
+        log_info "使用旧前端目录: $WEB_DIR"
+    else
+        log_error "前端目录不存在"
         exit 1
     fi
     
     # 检查 node_modules 是否存在
-    if [ ! -d "$WEB_DIR/node_modules" ]; then
+    if [ ! -d "$target_dir/node_modules" ]; then
         log_warn "node_modules 不存在，正在安装依赖..."
         (
-            cd "$WEB_DIR"
+            cd "$target_dir"
             if command -v pnpm &> /dev/null; then
                 pnpm install
             elif command -v npm &> /dev/null; then
@@ -190,14 +198,14 @@ start_frontend() {
     fi
     
     (
-        cd "$WEB_DIR"
+        cd "$target_dir"
         
-        log_info "启动 Vite 开发服务器..."
+        log_info "启动 Vite 开发服务器 (端口: $FRONTEND_PORT)..."
         
         if command -v pnpm &> /dev/null; then
-            pnpm dev > /tmp/autofill_frontend.log 2>&1 &
+            pnpm dev --port $FRONTEND_PORT > /tmp/autofill_frontend.log 2>&1 &
         elif command -v npm &> /dev/null; then
-            npm run dev > /tmp/autofill_frontend.log 2>&1 &
+            npm run dev -- --port $FRONTEND_PORT > /tmp/autofill_frontend.log 2>&1 &
         else
             log_error "未找到 pnpm 或 npm"
             exit 1
@@ -269,8 +277,8 @@ stop_frontend() {
     local vite_pids=$(pgrep -f "vite" | grep -v grep | xargs)
     if [ -n "$vite_pids" ]; then
         for vite_pid in $vite_pids; do
-            # 检查是否是当前项目的 vite
-            if ps -p "$vite_pid" -o command= | grep -q "$WEB_DIR"; then
+            # 检查是否是当前项目的 vite（frontend 或 web 目录）
+            if ps -p "$vite_pid" -o command= | grep -qE "$FRONTEND_DIR|$WEB_DIR"; then
                 kill -9 "$vite_pid" 2>/dev/null || true
                 stopped=true
             fi

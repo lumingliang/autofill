@@ -5,9 +5,9 @@ from fastapi.exceptions import HTTPException
 from tortoise.expressions import Q
 
 from app.controllers import role_controller
-from app.controllers.user import user_controller
 from app.core.dependency import AuthControl
-from app.models.admin import User
+from app.core.relation import RelationQuery
+from app.models.admin import Api, Menu, Role, Tenant, User, UserRole, UserTenant
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.roles import *
 
@@ -32,30 +32,33 @@ async def list_role(
     q = Q()
     if role_name:
         q &= Q(name__contains=role_name)
-    
+
     # 多租户筛选
     if tenant_id is not None and is_superuser(current_user):
-        # 超级管理员可按租户筛选
         q &= Q(tenant_id=tenant_id)
     elif not is_superuser(current_user):
-        # 非超级管理员只能看到当前租户的角色
         if current_user.current_tenant_id:
             q &= Q(tenant_id=current_user.current_tenant_id)
         else:
-            # 如果没有选择租户，只能看到系统级角色
             q &= Q(tenant_id=None)
 
     total, role_objs = await role_controller.list(page=page, page_size=page_size, search=q)
     data = []
+    tenant_ids = []
     for obj in role_objs:
         role_dict = await obj.to_dict()
-        # 添加租户名称（仅超级管理员可见）
         if is_superuser(current_user) and obj.tenant_id:
-            from app.models.admin import Tenant
-            tenant = await Tenant.filter(id=obj.tenant_id).first()
-            role_dict["tenant_name"] = tenant.name if tenant else None
+            tenant_ids.append(obj.tenant_id)
         data.append(role_dict)
-    
+
+    # 批量查询租户名称
+    if tenant_ids:
+        tenants = await Tenant.filter(id__in=tenant_ids).all()
+        tenant_map = {t.id: t.name for t in tenants}
+        for role_dict, obj in zip(data, role_objs):
+            if is_superuser(current_user) and obj.tenant_id:
+                role_dict["tenant_name"] = tenant_map.get(obj.tenant_id)
+
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
 
 
@@ -68,11 +71,9 @@ async def get_role(
     role_obj = await role_controller.get(id=role_id)
     role_dict = await role_obj.to_dict()
 
-    # 添加租户信息（仅超级管理员可见）
     if is_superuser(current_user):
         role_dict["tenant_id"] = role_obj.tenant_id
         if role_obj.tenant_id:
-            from app.models.admin import Tenant
             tenant = await Tenant.filter(id=role_obj.tenant_id).first()
             role_dict["tenant_name"] = tenant.name if tenant else None
 
@@ -85,11 +86,9 @@ async def create_role(
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
-    # 检查权限：只有超级管理员可以创建带租户的角色
     if role_in.tenant_id and not is_superuser(current_user):
         return Fail(code=403, msg="只有超级管理员才能创建租户角色")
 
-    # 非超级管理员创建的角色自动归属当前租户
     if not is_superuser(current_user):
         role_in.tenant_id = current_user.current_tenant_id
 
@@ -108,10 +107,9 @@ async def update_role(
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
-    # 检查权限
     if role_in.tenant_id and not is_superuser(current_user):
         return Fail(code=403, msg="只有超级管理员才能修改租户")
-    
+
     await role_controller.update(id=role_in.id, obj_in=role_in)
     return Success(msg="更新成功")
 
@@ -124,10 +122,9 @@ async def delete_role(
     current_user = await AuthControl.is_authed(token)
     role_obj = await role_controller.get(id=role_id)
 
-    # 检查权限：非超级管理员不能删除系统角色
     if not is_superuser(current_user) and role_obj.is_system:
         return Fail(code=403, msg="不能删除系统角色")
-    
+
     await role_controller.remove(id=role_id)
     return Success(msg="删除成功")
 
@@ -140,13 +137,21 @@ async def get_role_authorized(
     current_user = await AuthControl.is_authed(token)
     role_obj = await role_controller.get(id=id)
 
-    # 检查权限：非超级管理员只能查看自己租户的角色
     if not is_superuser(current_user):
         if role_obj.tenant_id != current_user.current_tenant_id:
             return Fail(code=403, msg="您没有权限查看该角色")
-    
-    data = await role_obj.to_dict(m2m=True)
-    return Success(data=data)
+
+    role_dict = await role_obj.to_dict()
+    # 通过RelationQuery获取关联的菜单和API
+    menu_ids = await RelationQuery.get_menu_ids_by_role_id(role_obj.id)
+    api_ids = await RelationQuery.get_api_ids_by_role_id(role_obj.id)
+
+    menus = await Menu.filter(id__in=menu_ids).all()
+    apis = await Api.filter(id__in=api_ids).all()
+
+    role_dict["menus"] = [await m.to_dict() for m in menus]
+    role_dict["apis"] = [await a.to_dict() for a in apis]
+    return Success(data=role_dict)
 
 
 @router.post("/authorized", summary="更新角色权限")
@@ -157,28 +162,38 @@ async def update_role_authorized(
     current_user = await AuthControl.is_authed(token)
     role_obj = await role_controller.get(id=role_in.id)
 
-    # 检查权限：非超级管理员只能修改自己租户的角色
     if not is_superuser(current_user):
         if role_obj.tenant_id != current_user.current_tenant_id:
             return Fail(code=403, msg="您没有权限修改该角色")
 
         # 非超级管理员只能分配自己拥有的权限
-        # 获取当前用户拥有的菜单权限
-        user_role_objs: list[Role] = await current_user.roles
-        allowed_menu_ids = set()
-        allowed_api_paths = set()  # 存储 (path, method) 元组
+        # 获取当前用户拥有的角色ID
+        user_role_ids = await RelationQuery.get_role_ids_by_user_id(current_user.id)
+        if not user_role_ids:
+            return Fail(code=403, msg="您没有权限分配权限")
 
-        for user_role_obj in user_role_objs:
-            # 只获取当前租户的角色对应的权限
-            if current_user.current_tenant_id and user_role_obj.tenant_id == current_user.current_tenant_id:
-                # 收集菜单权限
-                menus = await user_role_obj.menus
-                for menu in menus:
-                    allowed_menu_ids.add(menu.id)
-                # 收集API权限
-                apis = await user_role_obj.apis
-                for api in apis:
-                    allowed_api_paths.add((api.path, api.method.lower()))
+        # 批量获取这些角色在当前租户下的菜单和API权限
+        roles = await Role.filter(id__in=user_role_ids).all()
+        target_role_ids = [r.id for r in roles if current_user.current_tenant_id and r.tenant_id == current_user.current_tenant_id]
+
+        allowed_menu_ids = set()
+        allowed_api_paths = set()
+
+        if target_role_ids:
+            # 批量查询菜单权限
+            menu_rows = await RelationQuery.batch_get_menu_ids_by_role_ids(target_role_ids)
+            for mids in menu_rows.values():
+                allowed_menu_ids.update(mids)
+
+            # 批量查询API权限
+            api_rows = await RelationQuery.batch_get_api_ids_by_role_ids(target_role_ids)
+            all_api_ids = set()
+            for aids in api_rows.values():
+                all_api_ids.update(aids)
+
+            if all_api_ids:
+                api_objs = await Api.filter(id__in=all_api_ids).all()
+                allowed_api_paths = {(a.path, a.method.lower()) for a in api_objs}
 
         # 验证要分配的菜单权限是否都在允许范围内
         for menu_id in role_in.menu_ids:
@@ -193,3 +208,77 @@ async def update_role_authorized(
 
     await role_controller.update_roles(role=role_obj, menu_ids=role_in.menu_ids, api_infos=role_in.api_infos)
     return Success(msg="更新成功")
+
+
+@router.get("/users", summary="获取角色已分配的用户")
+async def get_role_users(
+    role_id: int = Query(..., description="角色ID"),
+    token: str = Header(..., description="token验证"),
+):
+    """获取指定角色已分配的用户列表"""
+    current_user = await AuthControl.is_authed(token)
+    role_obj = await role_controller.get(id=role_id)
+
+    # 权限检查
+    if not is_superuser(current_user):
+        if role_obj.tenant_id != current_user.current_tenant_id:
+            return Fail(code=403, msg="您没有权限查看该角色")
+
+    # 获取已分配的用户ID列表
+    user_ids = await RelationQuery.get_user_ids_by_role_id(role_id)
+    return Success(data=user_ids)
+
+
+@router.post("/assign_users", summary="分配用户给角色")
+async def assign_users_to_role(
+    data: RoleAssignUsers,
+    token: str = Header(..., description="token验证"),
+):
+    """为角色分配用户，同时将这些用户关联到角色对应的租户"""
+    current_user = await AuthControl.is_authed(token)
+    role_obj = await role_controller.get(id=data.role_id)
+
+    # 权限检查
+    if not is_superuser(current_user):
+        if role_obj.tenant_id != current_user.current_tenant_id:
+            return Fail(code=403, msg="您没有权限修改该角色")
+
+    # 获取当前已分配的用户
+    current_user_ids = set(await RelationQuery.get_user_ids_by_role_id(data.role_id))
+    new_user_ids = set(data.user_ids)
+
+    # 计算需要添加和删除的用户
+    users_to_add = new_user_ids - current_user_ids
+    users_to_remove = current_user_ids - new_user_ids
+
+    # 获取角色对应的租户ID
+    tenant_id = role_obj.tenant_id
+
+    # 批量添加新的用户-角色关联
+    if users_to_add:
+        pairs = [(uid, data.role_id) for uid in users_to_add]
+        await RelationQuery.batch_add_user_roles(pairs)
+
+        # 如果有租户，将用户添加到租户
+        if tenant_id:
+            tenant_pairs = [(uid, tenant_id) for uid in users_to_add]
+            await RelationQuery.batch_add_user_tenants(tenant_pairs)
+
+    # 删除用户-角色关联
+    if users_to_remove:
+        for user_id in users_to_remove:
+            await UserRole.filter(user_id=user_id, role_id=data.role_id).delete()
+
+        # 如果有租户，检查这些用户是否还有其他角色在该租户下
+        # 如果没有其他角色，则移除用户与租户的关联
+        if tenant_id:
+            for user_id in users_to_remove:
+                # 获取用户在该租户下的其他角色
+                user_role_ids = await RelationQuery.get_role_ids_by_user_id(user_id)
+                if user_role_ids:
+                    roles = await Role.filter(id__in=user_role_ids).all()
+                    has_other_role_in_tenant = any(r.tenant_id == tenant_id for r in roles)
+                    if not has_other_role_in_tenant:
+                        await UserTenant.filter(user_id=user_id, tenant_id=tenant_id).delete()
+
+    return Success(msg="分配成功")

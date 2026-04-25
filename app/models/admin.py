@@ -27,11 +27,7 @@ class User(BaseModel, TimestampMixin):
     is_active = fields.BooleanField(default=True, description="是否激活", index=True)
     is_superuser = fields.BooleanField(default=False, description="是否为超级管理员", index=True)
     last_login = fields.DatetimeField(null=True, description="最后登录时间", index=True)
-    roles = fields.ManyToManyField("models.Role", related_name="user_roles")
     dept_id = fields.IntField(null=True, description="部门ID", index=True)
-    # 多租户支持：用户与租户多对多关系
-    tenants = fields.ManyToManyField("models.Tenant", related_name="tenant_users")
-    # 当前选中的租户ID（用于会话）
     current_tenant_id = fields.IntField(null=True, description="当前租户ID", index=True)
 
     class Meta:
@@ -41,9 +37,6 @@ class User(BaseModel, TimestampMixin):
 class Role(BaseModel, TimestampMixin):
     name = fields.CharField(max_length=20, description="角色名称", index=True)
     desc = fields.CharField(max_length=500, null=True, description="角色描述")
-    menus = fields.ManyToManyField("models.Menu", related_name="role_menus")
-    apis = fields.ManyToManyField("models.Api", related_name="role_apis")
-    # 多租户支持：角色所属租户，null表示系统级角色
     tenant_id = fields.IntField(null=True, description="租户ID", index=True)
     is_system = fields.BooleanField(default=False, description="是否系统角色", index=True)
 
@@ -84,7 +77,6 @@ class Dept(BaseModel, TimestampMixin):
     is_deleted = fields.BooleanField(default=False, description="软删除标记", index=True)
     order = fields.IntField(default=0, description="排序", index=True)
     parent_id = fields.IntField(default=0, max_length=10, description="父部门ID", index=True)
-    # 多租户支持
     tenant_id = fields.IntField(null=True, description="租户ID", index=True)
 
     class Meta:
@@ -108,6 +100,45 @@ class AuditLog(BaseModel, TimestampMixin):
     response_time = fields.IntField(default=0, description="响应时间(单位ms)", index=True)
     request_args = fields.JSONField(null=True, description="请求参数")
     response_body = fields.JSONField(null=True, description="返回数据")
-    # 多租户支持
     tenant_id = fields.IntField(null=True, description="租户ID", index=True)
     tenant_domain = fields.CharField(max_length=255, null=True, description="租户域名", index=True)
+
+
+class UserRole(BaseModel, TimestampMixin):
+    """用户-角色关联表"""
+    user_id = fields.IntField(description="用户ID", index=True)
+    role_id = fields.IntField(description="角色ID", index=True)
+
+    class Meta:
+        table = "user_role"
+        unique_together = ("user_id", "role_id")
+
+
+class RoleMenu(BaseModel, TimestampMixin):
+    """角色-菜单关联表"""
+    role_id = fields.IntField(description="角色ID", index=True)
+    menu_id = fields.IntField(description="菜单ID", index=True)
+
+    class Meta:
+        table = "role_menu"
+        unique_together = ("role_id", "menu_id")
+
+
+class RoleApi(BaseModel, TimestampMixin):
+    """角色-API关联表"""
+    role_id = fields.IntField(description="角色ID", index=True)
+    api_id = fields.IntField(description="API ID", index=True)
+
+    class Meta:
+        table = "role_api"
+        unique_together = ("role_id", "api_id")
+
+
+class UserTenant(BaseModel, TimestampMixin):
+    """用户-租户关联表"""
+    user_id = fields.IntField(description="用户ID", index=True)
+    tenant_id = fields.IntField(description="租户ID", index=True)
+
+    class Meta:
+        table = "user_tenant"
+        unique_together = ("user_id", "tenant_id")
