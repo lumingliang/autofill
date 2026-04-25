@@ -1,5 +1,6 @@
 <script setup>
 import { computed, h, nextTick, onMounted, ref, resolveDirective, withDirectives, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   NButton,
   NCheckbox,
@@ -25,9 +26,10 @@ import QueryBarItem from '@/components/query-bar/QueryBarItem.vue'
 import CrudModal from '@/components/table/CrudModal.vue'
 import CrudTable from '@/components/table/CrudTable.vue'
 
-import { formatDate, renderIcon } from '@/utils'
+import { formatDate, renderIcon, lStorage } from '@/utils'
 import { useCRUD } from '@/composables'
 import api from '@/api'
+import { addDynamicRoutes } from '@/router'
 import TenantSelect from '@/components/tenant/TenantSelect.vue'
 import TheIcon from '@/components/icon/TheIcon.vue'
 import { useUserStore } from '@/store'
@@ -37,6 +39,7 @@ defineOptions({ name: '用户管理' })
 const $table = ref(null)
 const queryItems = ref({})
 const vPermission = resolveDirective('permission')
+const router = useRouter()
 
 const userStore = useUserStore()
 const isSuperUser = computed(() => userStore.isSuperUser)
@@ -274,6 +277,39 @@ const columns = computed(() => [
             default: () => h('div', {}, '确定重置用户密码为123456吗?'),
           }
         ),
+        // 快捷登录按钮
+        !row.is_superuser && h(
+          NPopconfirm,
+          {
+            onPositiveClick: async () => {
+              try {
+                await handleQuickLogin(row);
+              } catch (error) {
+                $message.error('快捷登录失败: ' + error.message);
+              }
+            },
+            onNegativeClick: () => { },
+          },
+          {
+            trigger: () =>
+              withDirectives(
+                h(
+                  NButton,
+                  {
+                    size: 'small',
+                    type: 'info',
+                    style: 'margin-right: 8px;',
+                  },
+                  {
+                    default: () => '快捷登录',
+                    icon: renderIcon('material-symbols:login', { size: 16 }),
+                  }
+                ),
+                [[vPermission, 'post/api/v1/base/quick_login']]
+              ),
+            default: () => h('div', {}, `确定快捷登录到用户 "${row.username}" 吗?`),
+          }
+        ),
       ]
     },
   },
@@ -305,6 +341,58 @@ async function handleUpdateDisable(row) {
     row.is_active = row.is_active === false ? true : false
   } finally {
     row.publishing = false
+  }
+}
+
+// 快捷登录处理函数
+async function handleQuickLogin(row) {
+  const userStore = useUserStore()
+
+  // 不能快捷登录到自己
+  if (userStore.userId === row.id) {
+    $message.error('不能快捷登录到当前用户！')
+    return
+  }
+
+  let loadingMessage = null
+  try {
+    loadingMessage = $message.loading('正在快捷登录...', { duration: 0 })
+    const res = await api.quickLogin({ target_user_id: row.id })
+    if (loadingMessage) {
+      loadingMessage.destroy()
+    }
+
+    if (res.code === 200) {
+      const { access_token, tenants, need_select_tenant, current_tenant_id } = res.data
+
+      // 保存原始用户的token（用于返回）
+      const originalToken = lStorage.get('access_token')
+      lStorage.set('original_token', originalToken)
+
+      // 构建待验证的登录信息
+      const pendingAuth = {
+        token: access_token,
+        tenants,
+        needSelectTenant: need_select_tenant,
+        currentTenantId: current_tenant_id,
+        isQuickLogin: true,
+        targetUser: row.username
+      }
+      lStorage.set('pending_auth', JSON.stringify(pendingAuth))
+
+      // 触发退出登录
+      await userStore.logoutWithoutRedirect()
+
+      // 跳转到登录页
+      router.push('/login')
+    } else {
+      $message.error(res.msg || '快捷登录失败')
+    }
+  } catch (error) {
+    if (loadingMessage) {
+      loadingMessage.destroy()
+    }
+    $message.error('快捷登录失败: ' + error.message)
   }
 }
 
