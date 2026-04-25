@@ -196,7 +196,7 @@ const validateTenant = {
       :get-data="api.getTenantList"
     >
       <template #queryBar>
-        <QueryBarItem label="租户名称" :label-width="70">
+        <QueryBarItem label="租户名称">
           <NInput
             v-model:value="queryItems.name"
             clearable
@@ -205,7 +205,7 @@ const validateTenant = {
             @keypress.enter="$table?.handleSearch()"
           />
         </QueryBarItem>
-        <QueryBarItem label="域名" :label-width="40">
+        <QueryBarItem label="域名">
           <NInput
             v-model:value="queryItems.domain"
             clearable

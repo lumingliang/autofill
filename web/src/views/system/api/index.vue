@@ -205,7 +205,7 @@ const columns = [
       :get-data="api.getApis"
     >
       <template #queryBar>
-        <QueryBarItem label="路径" :label-width="40">
+        <QueryBarItem label="路径">
           <NInput
             v-model:value="queryItems.path"
             clearable
@@ -214,7 +214,7 @@ const columns = [
             @keypress.enter="$table?.handleSearch()"
           />
         </QueryBarItem>
-        <QueryBarItem label="API简介" :label-width="70">
+        <QueryBarItem label="API简介">
           <NInput
             v-model:value="queryItems.summary"
             clearable
@@ -223,7 +223,7 @@ const columns = [
             @keypress.enter="$table?.handleSearch()"
           />
         </QueryBarItem>
-        <QueryBarItem label="Tags" :label-width="40">
+        <QueryBarItem label="Tags">
           <NInput
             v-model:value="queryItems.tags"
             clearable

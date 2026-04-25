@@ -299,12 +299,12 @@ async function updateRoleAuthorized() {
 
     <CrudTable ref="$table" v-model:query-items="queryItems" :columns="columns" :get-data="api.getRoleList">
       <template #queryBar>
-        <QueryBarItem label="角色名" :label-width="50">
+        <QueryBarItem label="角色名">
           <NInput v-model:value="queryItems.role_name" clearable type="text" placeholder="请输入角色名"
             @keypress.enter="$table?.handleSearch()" />
         </QueryBarItem>
         <!-- 多租户：仅超级管理员可见租户筛选 -->
-        <QueryBarItem v-if="isSuperUser" label="租户" :label-width="40">
+        <QueryBarItem v-if="isSuperUser" label="租户">
           <TenantSelect v-model="queryItems.tenant_id" @change="$table?.handleSearch()" />
         </QueryBarItem>
       </template>

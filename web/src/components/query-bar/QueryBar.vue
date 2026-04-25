@@ -1,21 +1,10 @@
 <template>
-  <div
-    bg="#fafafc"
-    min-h-60
-    flex
-    items-start
-    justify-between
-    b-1
-    rounded-8
-    p-15
-    bc-ccc
-    dark:bg-black
-  >
-    <n-space wrap :size="[35, 15]">
+  <div bg="#fafafc" flex flex-wrap items-start justify-between gap-4 b-1 rounded-2 p-4 bc-ccc dark:bg-black>
+    <n-space wrap :size="[16, 12]">
       <slot />
-      <div>
+      <div flex gap-2>
         <n-button secondary type="primary" @click="emit('reset')">重置</n-button>
-        <n-button ml-20 type="primary" @click="emit('search')">搜索</n-button>
+        <n-button type="primary" @click="emit('search')">搜索</n-button>
       </div>
     </n-space>
   </div>

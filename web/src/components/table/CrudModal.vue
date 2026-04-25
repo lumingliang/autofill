@@ -1,16 +1,9 @@
 <template>
-  <n-modal
-    v-model:show="show"
-    :style="{ width }"
-    preset="card"
-    :title="title"
-    size="huge"
-    :bordered="false"
-    :mask-closable="false"
-  >
+  <n-modal v-model:show="show" :style="modalStyle" preset="card" :title="title" size="huge" :bordered="false"
+    :mask-closable="false">
     <slot />
     <template v-if="showFooter" #footer>
-      <footer flex justify-end>
+      <footer flex justify-end gap-2>
         <slot name="footer">
           <n-button @click="show = false">取消</n-button>
           <n-button :loading="loading" ml-20 type="primary" @click="emit('save')">保存</n-button>
@@ -23,8 +16,8 @@
 <script setup>
 const props = defineProps({
   width: {
-    type: String,
-    default: '600px',
+    type: [String, Number],
+    default: null,
   },
   title: {
     type: String,
@@ -52,5 +45,12 @@ const show = computed({
   set(v) {
     emit('update:visible', v)
   },
+})
+
+const modalStyle = computed(() => {
+  if (props.width) {
+    return { width: props.width }
+  }
+  return { width: 'min(90vw, 600px)' }
 })
 </script>

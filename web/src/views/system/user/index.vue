@@ -580,16 +580,16 @@ const validateAddUser = {
         <!-- 表格 -->
         <CrudTable ref="$table" v-model:query-items="queryItems" :columns="columns" :get-data="api.getUserList">
           <template #queryBar>
-            <QueryBarItem label="名称" :label-width="40">
+            <QueryBarItem label="名称">
               <NInput v-model:value="queryItems.username" clearable type="text" placeholder="请输入用户名称"
                 @keypress.enter="$table?.handleSearch()" />
             </QueryBarItem>
-            <QueryBarItem label="邮箱" :label-width="40">
+            <QueryBarItem label="邮箱">
               <NInput v-model:value="queryItems.email" clearable type="text" placeholder="请输入邮箱"
                 @keypress.enter="$table?.handleSearch()" />
             </QueryBarItem>
             <!-- 多租户：仅超级管理员可见租户筛选 -->
-            <QueryBarItem v-if="isSuperUser" label="租户" :label-width="40">
+            <QueryBarItem v-if="isSuperUser" label="租户">
               <NSelect v-model:value="queryItems.tenant_id" :options="tenantOptions" placeholder="请选择租户" clearable
                 class="min-w-120px" @update:value="$table?.handleSearch()" />
             </QueryBarItem>
