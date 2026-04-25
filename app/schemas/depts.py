@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -8,11 +10,15 @@ class BaseDept(BaseModel):
     parent_id: int = Field(0, description="父部门ID")
 
 
-class DeptCreate(BaseDept): ...
+class DeptCreate(BaseDept):
+    # 多租户字段：部门所属租户ID（仅超级管理员可设置）
+    tenant_id: Optional[int] = Field(None, description="租户ID")
 
 
 class DeptUpdate(BaseDept):
     id: int
+    # 多租户字段：部门所属租户ID（仅超级管理员可设置）
+    tenant_id: Optional[int] = Field(None, description="租户ID")
 
     def update_dict(self):
         return self.model_dump(exclude_unset=True, exclude={"id"})

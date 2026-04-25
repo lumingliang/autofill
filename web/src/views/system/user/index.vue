@@ -7,7 +7,6 @@ import {
   NCheckboxGroup,
   NForm,
   NFormItem,
-  NImage,
   NInput,
   NSpace,
   NSwitch,
@@ -30,7 +29,6 @@ import { formatDate, renderIcon, lStorage } from '@/utils'
 import { useCRUD } from '@/composables'
 import api from '@/api'
 import { addDynamicRoutes } from '@/router'
-import TenantSelect from '@/components/tenant/TenantSelect.vue'
 import TheIcon from '@/components/icon/TheIcon.vue'
 import { useUserStore } from '@/store'
 
@@ -43,6 +41,7 @@ const router = useRouter()
 
 const userStore = useUserStore()
 const isSuperUser = computed(() => userStore.isSuperUser)
+const currentTenantId = computed(() => userStore.userInfo?.current_tenant_id)
 
 const {
   modalVisible,
@@ -57,32 +56,82 @@ const {
   handleAdd,
 } = useCRUD({
   name: '用户',
-  initForm: {},
+  initForm: {
+    is_active: true,
+    is_superuser: false,
+    role_ids: [],
+    dept_id: null,
+  },
   doCreate: api.createUser,
   doUpdate: api.updateUser,
   doDelete: api.deleteUser,
   refresh: () => $table.value?.handleSearch(),
 })
 
-const roleOption = ref([])
-const deptOption = ref([])
-const tenantRoleOption = ref([]) // 当前租户的角色选项
+// 选项数据
+const roleOptions = ref([])
+const deptOptions = ref([])
+const tenantOptions = ref([])
 
+// 加载角色列表（根据租户ID）
+const loadRoles = async (tenantId = null) => {
+  const params = { page: 1, page_size: 9999 }
+  if (tenantId) {
+    params.tenant_id = tenantId
+  }
+  const res = await api.getRoleList(params)
+  roleOptions.value = res.data || []
+}
+
+// 加载部门列表（根据租户ID）
+const loadDepts = async (tenantId = null) => {
+  const params = {}
+  if (tenantId) {
+    params.tenant_id = tenantId
+  }
+  const res = await api.getDepts(params)
+  deptOptions.value = res.data || []
+}
+
+// 加载租户列表（仅超级管理员）
+const loadTenants = async () => {
+  if (!isSuperUser.value) return
+  const res = await api.getTenantSelect()
+  tenantOptions.value = (res.data || []).map(item => ({
+    label: item.name,
+    value: item.id
+  }))
+}
+
+// 初始化数据
 onMounted(() => {
   $table.value?.handleSearch()
-  api.getRoleList({ page: 1, page_size: 9999 }).then((res) => (roleOption.value = res.data))
-  api.getDepts().then((res) => (deptOption.value = res.data))
-})
-
-// 监听租户选择变化，加载对应租户的角色
-watch(() => modalForm.value.tenant_id, async (newTenantId) => {
-  if (newTenantId) {
-    const res = await api.getTenantRoles({ tenant_id: newTenantId })
-    tenantRoleOption.value = res.data
-  } else {
-    tenantRoleOption.value = []
+  loadTenants()
+  // 普通用户直接加载当前租户的数据
+  if (!isSuperUser.value && currentTenantId.value) {
+    loadRoles(currentTenantId.value)
+    loadDepts(currentTenantId.value)
   }
 })
+
+// 监听租户选择变化（超级管理员）- 用于新增/编辑时选择操作租户
+watch(() => modalForm.value.tenant_id, async (newTenantId) => {
+  if (!isSuperUser.value) return
+
+  // 清空已选择的角色和部门
+  modalForm.value.role_ids = []
+  modalForm.value.dept_id = null
+
+  // 如果选择了租户，加载该租户的角色和部门
+  if (newTenantId) {
+    await loadRoles(newTenantId)
+    await loadDepts(newTenantId)
+  } else {
+    // 未选时清空选项
+    roleOptions.value = []
+    deptOptions.value = []
+  }
+}, { immediate: false })
 
 const columns = computed(() => [
   {
@@ -199,16 +248,7 @@ const columns = computed(() => [
               size: 'small',
               type: 'primary',
               style: 'margin-right: 8px;',
-              onClick: () => {
-                handleEdit(row)
-                modalForm.value.dept_id = row.dept?.id
-                modalForm.value.role_ids = row.roles.map((e) => (e = e.id))
-                // 多租户：设置租户字段
-                if (isSuperUser.value) {
-                  modalForm.value.tenant_ids = row.tenants?.map((t) => t.id) || []
-                }
-                delete modalForm.value.dept
-              },
+              onClick: () => handleEditUser(row),
             },
             {
               default: () => '编辑',
@@ -315,6 +355,50 @@ const columns = computed(() => [
   },
 ])
 
+// 处理编辑用户
+async function handleEditUser(row) {
+  handleEdit(row)
+
+  // 设置表单值
+  modalForm.value.dept_id = row.dept?.id || null
+  modalForm.value.role_ids = row.roles?.map((e) => e.id) || []
+
+  // 超级管理员设置租户
+  if (isSuperUser.value) {
+    // 存储已分配租户列表（用于展示）
+    modalForm.value.assigned_tenant_ids = row.tenants?.map((t) => t.id) || []
+    // 清空当前选择的操作租户
+    modalForm.value.tenant_id = null
+    // 编辑时默认加载第一个租户的角色和部门（如果有）
+    if (row.tenants?.length > 0) {
+      const tenantId = row.tenants[0].id
+      modalForm.value.tenant_id = tenantId
+      await loadRoles(tenantId)
+      await loadDepts(tenantId)
+    }
+  } else {
+    // 普通用户加载当前租户数据
+    await loadRoles(currentTenantId.value)
+    await loadDepts(currentTenantId.value)
+  }
+
+  delete modalForm.value.dept
+}
+
+// 处理新增用户
+function handleAddUser() {
+  handleAdd()
+  // 清空选项
+  roleOptions.value = []
+  deptOptions.value = []
+
+  // 普通用户自动加载当前租户的角色和部门
+  if (!isSuperUser.value) {
+    loadRoles(currentTenantId.value)
+    loadDepts(currentTenantId.value)
+  }
+}
+
 // 修改用户禁用状态
 async function handleUpdateDisable(row) {
   if (!row.id) return
@@ -405,7 +489,8 @@ const nodeProps = ({ option }) => {
         $table.value?.handleSearch()
         lastClickedNodeId = null
       } else {
-        api.getUserList({ dept_id: option.id }).then((res) => {
+        // 使用递归查询该部门及其所有子部门下的用户
+        api.getUserList({ dept_id: option.id, dept_recursive: true }).then((res) => {
           $table.value.tableData = res.data
           lastClickedNodeId = option.id
         })
@@ -464,7 +549,7 @@ const validateAddUser = {
       },
     },
   ],
-  roles: [
+  role_ids: [
     {
       type: 'array',
       required: true,
@@ -477,16 +562,18 @@ const validateAddUser = {
 
 <template>
   <NLayout has-sider wh-full>
-    <NLayoutSider bordered content-style="padding: 24px;" :collapsed-width="0" :width="240" show-trigger="arrow-circle">
+    <!-- 部门列表：仅普通用户显示，默认收起 -->
+    <NLayoutSider v-if="!isSuperUser" bordered content-style="padding: 24px;" :collapsed-width="0" :width="240"
+      show-trigger="arrow-circle" :default-collapsed="true">
       <h1>部门列表</h1>
       <br />
-      <NTree block-line :data="deptOption" key-field="id" label-field="name" default-expand-all :node-props="nodeProps">
+      <NTree block-line :data="deptOptions" key-field="id" label-field="name" :node-props="nodeProps">
       </NTree>
     </NLayoutSider>
     <NLayoutContent>
       <CommonPage show-footer title="用户列表">
         <template #action>
-          <NButton v-permission="'post/api/v1/user/create'" type="primary" @click="handleAdd">
+          <NButton v-permission="'post/api/v1/user/create'" type="primary" @click="handleAddUser">
             <TheIcon icon="material-symbols:add" :size="18" class="mr-5" />新建用户
           </NButton>
         </template>
@@ -503,7 +590,8 @@ const validateAddUser = {
             </QueryBarItem>
             <!-- 多租户：仅超级管理员可见租户筛选 -->
             <QueryBarItem v-if="isSuperUser" label="租户" :label-width="40">
-              <TenantSelect v-model="queryItems.tenant_id" @change="$table?.handleSearch()" />
+              <NSelect v-model:value="queryItems.tenant_id" :options="tenantOptions" placeholder="请选择租户" clearable
+                class="min-w-120px" @update:value="$table?.handleSearch()" />
             </QueryBarItem>
           </template>
         </CrudTable>
@@ -526,24 +614,36 @@ const validateAddUser = {
               <NInput v-model:value="modalForm.confirmPassword" show-password-on="mousedown" type="password" clearable
                 placeholder="请确认密码" />
             </NFormItem>
-            <!-- 多租户：仅超级管理员可见租户选择 -->
-            <NFormItem v-if="isSuperUser" label="所属租户" path="tenant_ids">
-              <TenantSelect v-model="modalForm.tenant_ids" multiple placeholder="请选择租户（可多选）" />
+
+            <!-- 超级管理员：编辑时显示已分配租户（只读） -->
+            <NFormItem v-if="isSuperUser && modalAction === 'edit'" label="已分配租户">
+              <NSelect :value="modalForm.assigned_tenant_ids" :options="tenantOptions" multiple disabled
+                placeholder="该用户已分配的租户" class="min-w-200px" />
             </NFormItem>
-            <!-- 多租户：选择租户后显示该租户的角色 -->
-            <NFormItem v-if="isSuperUser && modalForm.tenant_ids?.length === 1" label="租户角色" path="tenant_role_id">
-              <NSelect v-model:value="modalForm.tenant_role_id" :options="tenantRoleOption" placeholder="请选择该租户下的角色"
-                value-field="id" label-field="name" clearable />
-              <span class="text-gray-400 text-xs mt-1">选择租户后，可为该用户分配租户管理员角色</span>
+
+            <!-- 超级管理员：选择操作租户（单选） -->
+            <NFormItem v-if="isSuperUser" label="选择租户" path="tenant_id">
+              <NSelect v-model:value="modalForm.tenant_id" :options="tenantOptions" placeholder="请选择要操作的租户" clearable
+                class="min-w-200px" />
             </NFormItem>
+
+            <!-- 角色选择 -->
             <NFormItem label="角色" path="role_ids">
               <NCheckboxGroup v-model:value="modalForm.role_ids">
                 <NSpace item-style="display: flex;">
-                  <NCheckbox v-for="item in roleOption" :key="item.id" :value="item.id" :label="item.name" />
+                  <NCheckbox v-for="item in roleOptions" :key="item.id" :value="item.id" :label="item.name" />
                 </NSpace>
               </NCheckboxGroup>
             </NFormItem>
-            <NFormItem label="超级用户" path="is_superuser">
+
+            <!-- 部门选择 -->
+            <NFormItem label="部门" path="dept_id">
+              <NTreeSelect v-model:value="modalForm.dept_id" :options="deptOptions" key-field="id" label-field="name"
+                placeholder="请选择部门" clearable default-expand-all />
+            </NFormItem>
+
+            <!-- 仅超级管理员可见超级用户开关 -->
+            <NFormItem v-if="isSuperUser" label="超级用户" path="is_superuser">
               <NSwitch v-model:value="modalForm.is_superuser" size="small" :checked-value="true"
                 :unchecked-value="false">
               </NSwitch>
@@ -551,10 +651,6 @@ const validateAddUser = {
             <NFormItem label="禁用" path="is_active">
               <NSwitch v-model:value="modalForm.is_active" :checked-value="false" :unchecked-value="true"
                 :default-value="true" />
-            </NFormItem>
-            <NFormItem label="部门" path="dept_id">
-              <NTreeSelect v-model:value="modalForm.dept_id" :options="deptOption" key-field="id" label-field="name"
-                placeholder="请选择部门" clearable default-expand-all></NTreeSelect>
             </NFormItem>
           </NForm>
         </CrudModal>

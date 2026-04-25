@@ -19,24 +19,42 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
             q &= Q(name__contains=name)
         return await self.get_dept_tree_with_query(q)
 
-    async def get_dept_tree_with_query(self, q: Q):
-        """根据查询条件获取部门树"""
+    async def get_dept_tree_with_query(self, q: Q, include_tenant: bool = False):
+        """根据查询条件获取部门树
+        
+        Args:
+            q: 查询条件
+            include_tenant: 是否包含租户名称（仅超级管理员使用）
+        """
         all_depts = await self.model.filter(q).order_by("order")
+        
+        # 如果需要包含租户信息，预加载租户数据
+        tenant_map = {}
+        if include_tenant:
+            from app.models.admin import Tenant
+            tenant_ids = [dept.tenant_id for dept in all_depts if dept.tenant_id]
+            if tenant_ids:
+                tenants = await Tenant.filter(id__in=tenant_ids)
+                tenant_map = {t.id: t for t in tenants}
 
         # 辅助函数，用于递归构建部门树
         def build_tree(parent_id):
-            return [
-                {
-                    "id": dept.id,
-                    "name": dept.name,
-                    "desc": dept.desc,
-                    "order": dept.order,
-                    "parent_id": dept.parent_id,
-                    "children": build_tree(dept.id),  # 递归构建子部门
-                }
-                for dept in all_depts
-                if dept.parent_id == parent_id
-            ]
+            result = []
+            for dept in all_depts:
+                if dept.parent_id == parent_id:
+                    node = {
+                        "id": dept.id,
+                        "name": dept.name,
+                        "desc": dept.desc,
+                        "order": dept.order,
+                        "parent_id": dept.parent_id,
+                        "children": build_tree(dept.id),  # 递归构建子部门
+                    }
+                    # 添加租户名称
+                    if include_tenant and dept.tenant_id and dept.tenant_id in tenant_map:
+                        node["tenant_name"] = tenant_map[dept.tenant_id].name
+                    result.append(node)
+            return result
 
         # 从顶级部门（parent_id=0）开始构建部门树
         dept_tree = build_tree(0)
