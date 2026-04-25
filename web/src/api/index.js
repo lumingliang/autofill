@@ -63,4 +63,21 @@ export default {
   
   // auditlog
   getAuditLogList: (params = {}) => request.get('/auditlog/list', { params }),
+
+  // upload
+  uploadAvatar: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/upload/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  uploadFile: (file, fileType = 'file') => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('file_type', fileType)
+    return request.post('/upload/file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }

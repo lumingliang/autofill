@@ -40,6 +40,7 @@ class UserUpdate(BaseModel):
     id: int
     email: EmailStr
     username: str
+    avatar: Optional[str] = None
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
     role_ids: Optional[List[int]] = []

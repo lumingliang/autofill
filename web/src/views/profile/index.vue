@@ -1,11 +1,11 @@
 <script setup>
-import { ref } from 'vue'
-import { NButton, NForm, NFormItem, NInput, NTabPane, NTabs, NImage } from 'naive-ui'
+import { ref, watch } from 'vue'
+import { NButton, NForm, NFormItem, NInput, NTabPane, NTabs } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import CommonPage from '@/components/page/CommonPage.vue'
+import { DraggableAvatarUpload } from '@/components/upload'
 import { useUserStore } from '@/store'
 import api from '@/api'
-import { is } from '~/src/utils'
 
 const { t } = useI18n()
 const userStore = useUserStore()
@@ -18,6 +18,19 @@ const infoForm = ref({
   username: userStore.name,
   email: userStore.email,
 })
+
+// 监听 store 中头像变化，同步到表单
+watch(() => userStore.avatar, (newAvatar) => {
+  infoForm.value.avatar = newAvatar
+}, { immediate: true })
+
+// 头像变更处理
+function handleAvatarChange(newAvatarUrl) {
+  infoForm.value.avatar = newAvatarUrl
+  // 同时更新 store 中的头像
+  userStore.setUserInfo({ avatar: newAvatarUrl })
+}
+
 async function updateProfile() {
   isLoading.value = true
   infoFormRef.value?.validate(async (err) => {
@@ -134,7 +147,12 @@ function validatePasswordSame(rule, value) {
             class="w-400"
           >
             <NFormItem :label="$t('views.profile.label_avatar')" path="avatar">
-              <NImage width="100" :src="infoForm.avatar"></NImage>
+              <DraggableAvatarUpload
+                v-model="infoForm.avatar"
+                :size="100"
+                :upload-action="api.uploadAvatar"
+                @change="handleAvatarChange"
+              />
             </NFormItem>
             <NFormItem :label="$t('views.profile.label_username')" path="username">
               <NInput

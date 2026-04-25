@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from datetime import datetime
 from typing import Any, AsyncGenerator
 
@@ -11,6 +12,7 @@ from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.dependency import AuthControl
+from app.log import logger, set_request_id
 from app.models.admin import AuditLog, User
 
 from .bgtask import BgTasks
@@ -46,6 +48,92 @@ class BackGroundTaskMiddleware(SimpleBaseMiddleware):
         await BgTasks.execute_tasks()
 
 
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """请求追踪 ID 中间件"""
+
+    def __init__(self, app):
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        # 从请求头获取或生成请求 ID
+        request_id = request.headers.get("X-Request-ID")
+        if not request_id:
+            request_id = str(uuid.uuid4())
+
+        # 设置到上下文变量
+        set_request_id(request_id)
+
+        # 将请求 ID 添加到响应头
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+
+        return response
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """请求日志记录中间件"""
+
+    def __init__(self, app):
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        # 跳过健康检查和静态资源
+        if self._should_skip_logging(request):
+            return await call_next(request)
+
+        start_time = datetime.now()
+
+        # 获取请求信息
+        client_ip = self._get_client_ip(request)
+        user_agent = request.headers.get("user-agent", "")
+
+        try:
+            response = await call_next(request)
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+
+            # 记录访问日志
+            logger.bind(
+                method=request.method,
+                path=request.url.path,
+                query=str(request.query_params),
+                status_code=response.status_code,
+                duration_ms=round(duration, 2),
+                client_ip=client_ip,
+                user_agent=user_agent,
+            ).info(f"{request.method} {request.url.path} - {response.status_code}")
+
+            return response
+
+        except Exception as exc:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.bind(
+                method=request.method,
+                path=request.url.path,
+                query=str(request.query_params),
+                status_code=500,
+                duration_ms=round(duration, 2),
+                client_ip=client_ip,
+                user_agent=user_agent,
+                error=str(exc),
+            ).error(f"{request.method} {request.url.path} - 500 - {str(exc)}")
+            raise
+
+    def _should_skip_logging(self, request: Request) -> bool:
+        """检查是否应该跳过日志记录"""
+        skip_paths = ["/docs", "/openapi.json", "/redoc", "/health", "/uploads/"]
+        return any(request.url.path.startswith(path) for path in skip_paths)
+
+    def _get_client_ip(self, request: Request) -> str:
+        """获取客户端真实 IP"""
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip
+        return request.client.host if request.client else "unknown"
+
+
 class HttpAuditLogMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, methods: list[str], exclude_paths: list[str]):
         super().__init__(app)
@@ -60,28 +148,40 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         for key, value in request.query_params.items():
             args[key] = value
 
-        # 获取请求体
+        # 获取请求体 - 跳过 multipart/form-data 文件上传
+        content_type = request.headers.get("content-type", "")
         if request.method in ["POST", "PUT", "PATCH"]:
+            # 完全跳过 multipart/form-data 请求，不读取请求体
+            # 因为 request.form() 会消耗请求体，导致后续路由无法读取文件
+            if "multipart/form-data" in content_type:
+                args["_note"] = "multipart/form-data upload"
+                return args
+
             try:
                 body = await request.json()
                 args.update(body)
             except json.JSONDecodeError:
+                # 对于非 multipart 的表单数据，尝试解析
                 try:
                     body = await request.form()
-                    # args.update(body)
                     for k, v in body.items():
                         if hasattr(v, "filename"):  # 文件上传行为
-                            args[k] = v.filename
+                            args[k] = f"<file:{v.filename}>"
                         elif isinstance(v, list) and v and hasattr(v[0], "filename"):
-                            args[k] = [file.filename for file in v]
+                            args[k] = [f"<file:{file.filename}>" for file in v]
                         else:
-                            args[k] = v
+                            args[k] = str(v)
                 except Exception:
                     pass
 
         return args
 
     async def get_response_body(self, request: Request, response: Response) -> Any:
+        # 检查Content-Type，跳过非JSON内容（如图片、文件等）
+        content_type = response.headers.get("content-type", "")
+        if not content_type.startswith("application/json"):
+            return None
+
         # 检查Content-Length
         content_length = response.headers.get("content-length")
         if content_length and int(content_length) > self.max_body_size:

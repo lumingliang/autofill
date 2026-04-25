@@ -10,6 +10,7 @@ from .menus import menus_router
 from .roles import roles_router
 from .tenants import tenant_router
 from .users import users_router
+from .upload import router as upload_router
 
 v1_router = APIRouter()
 
@@ -21,3 +22,4 @@ v1_router.include_router(apis_router, prefix="/api", dependencies=[DependPermiss
 v1_router.include_router(depts_router, prefix="/dept", dependencies=[DependPermission])
 v1_router.include_router(auditlog_router, prefix="/auditlog", dependencies=[DependPermission])
 v1_router.include_router(tenant_router, prefix="/tenant", dependencies=[DependPermission])
+v1_router.include_router(upload_router, prefix="/upload")

@@ -1,13 +1,14 @@
 <template>
   <n-dropdown :options="options" @select="handleSelect">
     <div flex cursor-pointer items-center>
-      <img :src="userStore.avatar" mr10 h-35 w-35 rounded-full />
+      <img :src="avatarUrl" mr10 h-35 w-35 rounded-full />
       <span>{{ userStore.name }}</span>
     </div>
   </n-dropdown>
 </template>
 
 <script setup>
+import { ref, watch } from 'vue'
 import { useUserStore } from '@/store'
 import { renderIcon } from '@/utils'
 import { useRouter } from 'vue-router'
@@ -18,6 +19,22 @@ const { t } = useI18n()
 const router = useRouter()
 
 const userStore = useUserStore()
+
+// 头像 URL，添加时间戳防止缓存
+const avatarUrl = ref('')
+
+// 监听 avatar 变化，更新 URL 时添加时间戳
+watch(() => userStore.avatar, (newAvatar) => {
+  if (!newAvatar) {
+    avatarUrl.value = ''
+    return
+  }
+  // 移除旧的时间戳
+  const baseUrl = newAvatar.split('?')[0]
+  // 添加新的时间戳
+  const timestamp = new Date().getTime()
+  avatarUrl.value = `${baseUrl}?t=${timestamp}`
+}, { immediate: true })
 
 const options = [
   {
