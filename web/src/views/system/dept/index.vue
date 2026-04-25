@@ -199,12 +199,12 @@ const columns = [
     <!-- 表格 -->
     <CrudTable ref="$table" v-model:query-items="queryItems" :columns="columns" :get-data="api.getDepts">
       <template #queryBar>
-        <QueryBarItem label="部门名称" :label-width="80">
+        <QueryBarItem label="部门名称">
           <NInput v-model:value="queryItems.name" clearable type="text" placeholder="请输入部门名称"
             @keypress.enter="$table?.handleSearch()" />
         </QueryBarItem>
         <!-- 多租户：仅超级管理员可见租户筛选 -->
-        <QueryBarItem v-if="isSuperUser" label="租户" :label-width="40">
+        <QueryBarItem v-if="isSuperUser" label="租户">
           <NSelect v-model:value="queryItems.tenant_id" :options="tenantOptions" placeholder="请选择租户" clearable
             class="min-w-120px" @update:value="$table?.handleSearch()" />
         </QueryBarItem>

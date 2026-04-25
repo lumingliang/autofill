@@ -1,20 +1,12 @@
 <template>
-  <div v-bind="$attrs">
-    <QueryBar v-if="$slots.queryBar" mb-30 @search="handleSearch" @reset="handleReset">
+  <div v-bind="$attrs" flex flex-col gap-4>
+    <QueryBar v-if="$slots.queryBar" @search="handleSearch" @reset="handleReset">
       <slot name="queryBar" />
     </QueryBar>
 
-    <n-data-table
-      :remote="remote"
-      :loading="loading"
-      :columns="columns"
-      :data="tableData"
-      :scroll-x="scrollX"
-      :row-key="(row) => row[rowKey]"
-      :pagination="isPagination ? pagination : false"
-      @update:checked-row-keys="onChecked"
-      @update:page="onPageChange"
-    />
+    <n-data-table :remote="remote" :loading="loading" :columns="columns" :data="tableData" :scroll-x="scrollX"
+      :row-key="(row) => row[rowKey]" :pagination="isPagination ? pagination : false" flex-1
+      @update:checked-row-keys="onChecked" @update:page="onPageChange" />
   </div>
 </template>
 
@@ -35,8 +27,8 @@ const props = defineProps({
     default: true,
   },
   scrollX: {
-    type: Number,
-    default: 450,
+    type: [Number, String],
+    default: 'auto',
   },
   rowKey: {
     type: String,
