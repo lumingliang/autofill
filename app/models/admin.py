@@ -110,3 +110,4 @@ class AuditLog(BaseModel, TimestampMixin):
     response_body = fields.JSONField(null=True, description="返回数据")
     # 多租户支持
     tenant_id = fields.IntField(null=True, description="租户ID", index=True)
+    tenant_domain = fields.CharField(max_length=255, null=True, description="租户域名", index=True)
