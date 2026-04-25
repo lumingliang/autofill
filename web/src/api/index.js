@@ -7,6 +7,7 @@ export default {
   getUserInfo: () => request.get('/base/userinfo'),
   getUserMenu: () => request.get('/base/usermenu'),
   getUserApi: () => request.get('/base/userapi'),
+  quickLogin: (data = {}) => request.post('/base/quick_login', data),
   
   // profile
   updatePassword: (data = {}) => request.post('/base/update_password', data),

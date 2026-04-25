@@ -188,3 +188,73 @@ async def update_user_password(req_in: UpdatePassword, token: str = Header(..., 
     user_obj.password = get_password_hash(req_in.new_password)
     await user_obj.save()
     return Success(msg="密码修改成功")
+
+
+class QuickLoginSchema(BaseModel):
+    target_user_id: int
+
+
+@router.post("/quick_login", summary="快捷登录到其他用户")
+async def quick_login(
+    schema: QuickLoginSchema,
+    token: str = Header(..., description="token验证"),
+):
+    """快捷登录功能：允许具有权限的用户快速切换到其他用户
+    - 需要用户具有 'post/api/v1/base/quick_login' 权限
+    - 不能快捷登录到超级管理员
+    - 如果目标用户有多个租户，需要选择租户
+    """
+    current_user = await AuthControl.is_authed(token)
+    
+    # 获取目标用户
+    target_user = await user_controller.get(id=schema.target_user_id)
+    if not target_user:
+        return Fail(code=404, msg="目标用户不存在")
+    
+    # 不能快捷登录到超级管理员
+    if target_user.is_superuser:
+        return Fail(code=403, msg="不能快捷登录到超级管理员账户")
+    
+    # 检查当前用户是否有权限快捷登录到目标用户（必须在同一租户）
+    if not current_user.is_superuser:
+        current_tenants = await user_controller.get_user_tenants(current_user.id)
+        target_tenants = await user_controller.get_user_tenants(target_user.id)
+        current_tenant_ids = {t.id for t in current_tenants}
+        target_tenant_ids = {t.id for t in target_tenants}
+        
+        # 检查是否有共同租户
+        if not current_tenant_ids.intersection(target_tenant_ids):
+            return Fail(code=403, msg="您没有权限快捷登录到该用户")
+    
+    # 更新目标用户的最后登录时间
+    await user_controller.update_last_login(target_user.id)
+    
+    # 获取目标用户所属租户
+    tenants = await user_controller.get_user_tenants(target_user.id)
+    tenant_list = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
+    
+    # 如果目标用户只有一个租户且没有设置当前租户，自动设置为当前租户
+    current_tenant_id = target_user.current_tenant_id
+    if len(tenant_list) == 1 and not current_tenant_id:
+        current_tenant_id = tenant_list[0]["id"]
+        await user_controller.set_current_tenant(target_user.id, current_tenant_id)
+    
+    # 生成token
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + access_token_expires
+    
+    data = JWTOut(
+        access_token=create_access_token(
+            data=JWTPayload(
+                user_id=target_user.id,
+                username=target_user.username,
+                is_superuser=target_user.is_superuser,
+                exp=expire,
+            )
+        ),
+        username=target_user.username,
+        tenants=tenant_list,
+        need_select_tenant=len(tenant_list) > 1,
+        current_tenant_id=current_tenant_id,
+    )
+    return Success(data=data.model_dump())

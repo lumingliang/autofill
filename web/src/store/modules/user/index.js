@@ -68,6 +68,16 @@ export const useUserStore = defineStore('user', {
       this.$reset()
       toLogin()
     },
+    // 退出登录但不跳转（用于快捷登录）
+    async logoutWithoutRedirect() {
+      const { resetTags } = useTagsStore()
+      const { resetPermission } = usePermissionStore()
+      removeToken()
+      resetTags()
+      resetPermission()
+      resetRouter()
+      this.$reset()
+    },
     setUserInfo(userInfo = {}) {
       this.userInfo = { ...this.userInfo, ...userInfo }
     },
@@ -89,11 +99,14 @@ export const useUserStore = defineStore('user', {
         return []
       }
     },
-    // 选择租户
+    // 选择租户（使用base模块的API，属于基础功能）
     async selectTenant(tenantId) {
       try {
-        const res = await api.selectUserTenant({ tenant_id: tenantId })
+        const res = await api.selectTenant({ tenant_id: tenantId })
         if (res.code === 200) {
+          // 更新token
+          const { setToken } = await import('@/utils')
+          setToken(res.data.access_token)
           // 更新当前租户
           const tenant = this.tenants.find(t => t.id === tenantId)
           this.setCurrentTenant(tenant)
