@@ -12,7 +12,7 @@ from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.dependency import AuthControl
-from app.log import logger, set_request_id
+from app.log import logger, set_request_id, set_tenant_domain
 from app.models.admin import AuditLog, User
 
 from .bgtask import BgTasks
@@ -76,6 +76,21 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
 
+    async def _get_tenant_domain(self, request: Request) -> str:
+        """获取租户域名，默认为 root"""
+        try:
+            token = request.headers.get("token")
+            if token:
+                user_obj: User = await AuthControl.is_authed(token)
+                if user_obj and user_obj.current_tenant_id:
+                    from app.models.admin import Tenant
+                    tenant = await Tenant.filter(id=user_obj.current_tenant_id).first()
+                    if tenant and tenant.domain:
+                        return tenant.domain
+        except Exception:
+            pass
+        return "root"
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # 跳过健康检查和静态资源
         if self._should_skip_logging(request):
@@ -86,6 +101,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # 获取请求信息
         client_ip = self._get_client_ip(request)
         user_agent = request.headers.get("user-agent", "")
+        tenant_domain = await self._get_tenant_domain(request)
+
+        # 设置租户域名到上下文变量
+        set_tenant_domain(tenant_domain)
 
         try:
             response = await call_next(request)
@@ -100,6 +119,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 duration_ms=round(duration, 2),
                 client_ip=client_ip,
                 user_agent=user_agent,
+                tenant_domain=tenant_domain,
             ).info(f"{request.method} {request.url.path} - {response.status_code}")
 
             return response
@@ -114,6 +134,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 duration_ms=round(duration, 2),
                 client_ip=client_ip,
                 user_agent=user_agent,
+                tenant_domain=tenant_domain,
                 error=str(exc),
             ).error(f"{request.method} {request.url.path} - 500 - {str(exc)}")
             raise
@@ -249,12 +270,21 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                 user_obj: User = await AuthControl.is_authed(token)
             data["user_id"] = user_obj.id if user_obj else 0
             data["username"] = user_obj.username if user_obj else ""
-            # 记录当前租户ID
-            data["tenant_id"] = user_obj.current_tenant_id if user_obj else None
+            # 记录当前租户ID和域名
+            tenant_id = user_obj.current_tenant_id if user_obj else None
+            data["tenant_id"] = tenant_id
+            # 获取租户域名
+            if tenant_id:
+                from app.models.admin import Tenant
+                tenant = await Tenant.filter(id=tenant_id).first()
+                data["tenant_domain"] = tenant.domain if tenant else None
+            else:
+                data["tenant_domain"] = None
         except Exception:
             data["user_id"] = 0
             data["username"] = ""
             data["tenant_id"] = None
+            data["tenant_domain"] = None
         return data
 
     async def before_request(self, request: Request):
