@@ -21,6 +21,7 @@ from app.core.exceptions import (
     ResponseValidationError,
     ResponseValidationHandle,
 )
+from app.core.relation import RelationQuery
 from app.log import logger
 from app.models.admin import Api, Menu, Role
 from app.schemas.menus import MenuType
@@ -231,17 +232,20 @@ async def init_roles():
             desc="普通用户角色",
         )
 
-        # 分配所有API给管理员角色
-        all_apis = await Api.all()
-        await admin_role.apis.add(*all_apis)
-        # 分配所有菜单给管理员和普通用户
-        all_menus = await Menu.all()
-        await admin_role.menus.add(*all_menus)
-        await user_role.menus.add(*all_menus)
+        # 批量关联所有API给管理员角色
+        all_apis = await Api.all().values("id")
+        await RelationQuery.batch_add_role_apis([(admin_role.id, a["id"]) for a in all_apis])
+
+        # 批量关联所有菜单给管理员和普通用户
+        all_menus = await Menu.all().values("id")
+        admin_menu_pairs = [(admin_role.id, m["id"]) for m in all_menus]
+        user_menu_pairs = [(user_role.id, m["id"]) for m in all_menus]
+        await RelationQuery.batch_add_role_menus(admin_menu_pairs)
+        await RelationQuery.batch_add_role_menus(user_menu_pairs)
 
         # 为普通用户分配基本API
-        basic_apis = await Api.filter(Q(method__in=["GET"]) | Q(tags="基础模块"))
-        await user_role.apis.add(*basic_apis)
+        basic_apis = await Api.filter(Q(method__in=["GET"]) | Q(tags="基础模块")).values("id")
+        await RelationQuery.batch_add_role_apis([(user_role.id, a["id"]) for a in basic_apis])
 
 
 async def init_data():

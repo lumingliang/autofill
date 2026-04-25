@@ -4,14 +4,13 @@ from fastapi import APIRouter, Body, Header, Query
 from tortoise.expressions import Q
 
 from app.controllers.tenant import tenant_controller
-from app.controllers.user import user_controller
 from app.core.dependency import AuthControl
-from app.models.admin import User
+from app.core.relation import RelationQuery
+from app.models.admin import Tenant, User
 from app.schemas.base import Fail, Success, SuccessExtra
-from app.schemas.tenants import TenantCreate, TenantSelect, TenantUpdate, UserTenantSelect
+from app.schemas.tenants import TenantCreate, TenantUpdate
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 
@@ -117,11 +116,14 @@ async def tenant_select(
     current_user = await AuthControl.is_authed(token)
     if is_superuser(current_user):
         # 超级管理员可以看到所有租户
-        from app.models.admin import Tenant
         tenants = await Tenant.filter(is_active=True).all()
     else:
         # 普通用户只能看到自己有权限的租户
-        tenants = await current_user.tenants.filter(is_active=True).all()
+        tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(current_user.id)
+        if not tenant_ids:
+            tenants = []
+        else:
+            tenants = await Tenant.filter(id__in=tenant_ids, is_active=True).all()
 
     data = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
     return Success(data=data)

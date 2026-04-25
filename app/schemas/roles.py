@@ -45,3 +45,9 @@ class RoleQuery(BaseModel):
     name: Optional[str] = None
     # 多租户字段：按租户筛选（仅root可见）
     tenant_id: Optional[int] = Field(None, description="租户ID筛选")
+
+
+class RoleAssignUsers(BaseModel):
+    """角色分配用户"""
+    role_id: int = Field(..., description="角色ID")
+    user_ids: List[int] = Field(default=[], description="用户ID列表")

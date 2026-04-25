@@ -18,7 +18,9 @@ description: "启动、停止、重启前后端项目服务。Invoke when user a
 ## 项目结构
 
 - **后端**: FastAPI 项目，使用 conda 环境，端口 9999
-- **前端**: Vue3 + Vite 项目，使用 pnpm/npm，端口 3000
+- **前端**: Vue3 + Vite 项目，使用 pnpm/npm，端口 3200
+  - 优先使用 `frontend` 目录（新项目）
+  - 回退使用 `web` 目录（旧项目）
 
 ## 使用方法
 

@@ -61,6 +61,8 @@ const {
     is_superuser: false,
     role_ids: [],
     dept_id: null,
+    tenant_ids: [],
+    assigned_tenant_ids: [],
   },
   doCreate: api.createUser,
   doUpdate: api.updateUser,
@@ -363,10 +365,13 @@ async function handleEditUser(row) {
   modalForm.value.dept_id = row.dept?.id || null
   modalForm.value.role_ids = row.roles?.map((e) => e.id) || []
 
+  // 设置已分配租户列表（只读展示用）
+  modalForm.value.assigned_tenant_ids = row.tenants?.map((t) => t.id) || []
+
   // 超级管理员设置租户
   if (isSuperUser.value) {
-    // 存储已分配租户列表（用于展示）
-    modalForm.value.assigned_tenant_ids = row.tenants?.map((t) => t.id) || []
+    // 设置已分配的租户列表（用于提交）
+    modalForm.value.tenant_ids = row.tenants?.map((t) => t.id) || []
     // 清空当前选择的操作租户
     modalForm.value.tenant_id = null
     // 编辑时默认加载第一个租户的角色和部门（如果有）
@@ -377,7 +382,7 @@ async function handleEditUser(row) {
       await loadDepts(tenantId)
     }
   } else {
-    // 普通用户加载当前租户数据
+    // 普通用户/租户管理员加载当前租户数据
     await loadRoles(currentTenantId.value)
     await loadDepts(currentTenantId.value)
   }
@@ -615,16 +620,22 @@ const validateAddUser = {
                 placeholder="请确认密码" />
             </NFormItem>
 
-            <!-- 超级管理员：编辑时显示已分配租户（只读） -->
-            <NFormItem v-if="isSuperUser && modalAction === 'edit'" label="已分配租户">
+            <!-- 租户管理员/超级管理员：显示已分配租户（只读） -->
+            <NFormItem v-if="!isSuperUser && modalAction === 'edit'" label="已分配租户">
               <NSelect :value="modalForm.assigned_tenant_ids" :options="tenantOptions" multiple disabled
                 placeholder="该用户已分配的租户" class="min-w-200px" />
             </NFormItem>
 
-            <!-- 超级管理员：选择操作租户（单选） -->
-            <NFormItem v-if="isSuperUser" label="选择租户" path="tenant_id">
+            <!-- 超级管理员：选择操作租户（单选，用于加载该租户下的角色和部门） -->
+            <NFormItem v-if="isSuperUser" label="选择操作租户" path="tenant_id">
               <NSelect v-model:value="modalForm.tenant_id" :options="tenantOptions" placeholder="请选择要操作的租户" clearable
                 class="min-w-200px" />
+            </NFormItem>
+
+            <!-- 超级管理员：分配租户给用户（多选） -->
+            <NFormItem v-if="isSuperUser" label="分配租户" path="tenant_ids">
+              <NSelect v-model:value="modalForm.tenant_ids" :options="tenantOptions" multiple
+                placeholder="请选择要分配给用户的租户" class="min-w-200px" />
             </NFormItem>
 
             <!-- 角色选择 -->

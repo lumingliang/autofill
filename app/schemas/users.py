@@ -27,13 +27,11 @@ class UserCreate(BaseModel):
     is_superuser: Optional[bool] = False
     role_ids: Optional[List[int]] = []
     dept_id: Optional[int] = Field(0, description="部门ID")
-    # 多租户字段：当前操作租户ID（用于加载该租户的角色和部门）
-    tenant_id: Optional[int] = Field(None, description="当前操作租户ID")
-    # 多租户字段：用户所属的租户ID列表（仅超级管理员可见）
+    # 多租户字段：用户所属的租户ID列表
     tenant_ids: Optional[List[int]] = Field([], description="所属租户ID列表")
 
     def create_dict(self):
-        return self.model_dump(exclude_unset=True, exclude={"role_ids", "tenant_id", "tenant_ids"})
+        return self.model_dump(exclude_unset=True, exclude={"role_ids", "tenant_ids"})
 
 
 class UserUpdate(BaseModel):
@@ -45,9 +43,7 @@ class UserUpdate(BaseModel):
     is_superuser: Optional[bool] = False
     role_ids: Optional[List[int]] = []
     dept_id: Optional[int] = 0
-    # 多租户字段：当前操作租户ID（用于加载该租户的角色和部门）
-    tenant_id: Optional[int] = Field(None, description="当前操作租户ID")
-    # 多租户字段：用户所属的租户ID列表（仅超级管理员可见）
+    # 多租户字段：用户所属的租户ID列表
     tenant_ids: Optional[List[int]] = Field([], description="所属租户ID列表")
 
 
@@ -68,3 +64,10 @@ class UserQuery(BaseModel):
 class UserTenantSelect(BaseModel):
     """用户选择租户"""
     tenant_id: int = Field(description="租户ID")
+
+
+class UserUpdateTenantRoles(BaseModel):
+    """更新用户在指定租户下的角色"""
+    user_id: int = Field(description="用户ID")
+    tenant_id: int = Field(description="租户ID")
+    role_ids: List[int] = Field(default=[], description="角色ID列表")
