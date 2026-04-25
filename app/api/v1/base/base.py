@@ -96,13 +96,15 @@ async def get_userinfo(token: str = Header(..., description="token验证")):
     user_id = user.id
     user_obj = await user_controller.get(id=user_id)
     data = await user_obj.to_dict(exclude_fields=["password"])
-    data["avatar"] = "https://avatars.githubusercontent.com/u/54677442?v=4"
-    
+    # 如果没有头像，使用默认头像
+    if not data.get("avatar"):
+        data["avatar"] = "https://avatars.githubusercontent.com/u/54677442?v=4"
+
     # 添加租户信息
     tenants = await user_controller.get_user_tenants(user_id)
     data["tenants"] = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
     data["current_tenant_id"] = user_obj.current_tenant_id
-    
+
     return Success(data=data)
 
 

@@ -1,6 +1,5 @@
 [database]
-# 数据库类型: sqlite, mysql, postgres
-db_type = "mysql"
+# 数据库配置 - 仅支持 MySQL
 
 [database.mysql]
 host = "127.0.0.1"
@@ -8,9 +7,6 @@ port = 3306
 user = "root"
 password = "root123456"
 database = "autofill"
-
-[database.sqlite]
-file_path = "db.sqlite3"
 
 [app]
 # 应用配置
@@ -23,3 +19,33 @@ origins = ["*"]
 allow_credentials = true
 allow_methods = ["*"]
 allow_headers = ["*"]
+
+[upload]
+# 上传文件保存目录
+upload_dir = "./uploads"
+# 头像保存子目录
+avatar_dir = "./uploads/avatars"
+# 允许的文件类型
+allowed_extensions = ["jpg", "jpeg", "png", "gif", "webp"]
+# 最大文件大小 (MB)
+max_file_size = 5
+# 文件访问URL前缀
+file_url_prefix = "/uploads"
+
+[logging]
+# 日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL
+level = "INFO"
+# 日志文件路径
+log_file = "./logs/app.log"
+# 日志文件最大大小 (MB)
+max_bytes = 10
+# 备份文件数量
+backup_count = 5
+# 是否输出到控制台
+console_output = true
+# 是否输出到文件
+file_output = true
+# 日志格式: text, json
+format = "json"
+# 是否启用请求追踪 ID
+enable_request_id = true

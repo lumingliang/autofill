@@ -23,6 +23,7 @@ class User(BaseModel, TimestampMixin):
     email = fields.CharField(max_length=255, unique=True, description="邮箱", index=True)
     phone = fields.CharField(max_length=20, null=True, description="电话", index=True)
     password = fields.CharField(max_length=128, null=True, description="密码")
+    avatar = fields.CharField(max_length=500, null=True, description="头像URL", index=True)
     is_active = fields.BooleanField(default=True, description="是否激活", index=True)
     is_superuser = fields.BooleanField(default=False, description="是否为超级管理员", index=True)
     last_login = fields.DatetimeField(null=True, description="最后登录时间", index=True)

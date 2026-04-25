@@ -18,6 +18,7 @@
     "@vueuse/core": "^10.3.0",
     "@zclzone/eslint-config": "^0.0.4",
     "axios": "^1.4.0",
+    "cropperjs": "^1.6.1",
     "dayjs": "^1.11.9",
     "dotenv": "^16.3.1",
     "eslint": "^8.46.0",

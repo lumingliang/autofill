@@ -26,14 +26,29 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 day
     DATETIME_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 
-    # 数据库配置
-    DB_TYPE: str = "sqlite"
+    # 数据库配置 - 仅支持 MySQL
     MYSQL_HOST: str = "127.0.0.1"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "root"
     MYSQL_PASSWORD: str = "root123456"
     MYSQL_DATABASE: str = "autofill"
-    SQLITE_FILE_PATH: str = "db.sqlite3"
+
+    # 上传配置
+    UPLOAD_DIR: str = "./uploads"
+    AVATAR_DIR: str = "./uploads/avatars"
+    ALLOWED_EXTENSIONS: list = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+    MAX_FILE_SIZE: int = 5  # MB
+    FILE_URL_PREFIX: str = "/uploads"
+
+    # 日志配置
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: str = "./logs/app.log"
+    LOG_MAX_BYTES: int = 10  # MB
+    LOG_BACKUP_COUNT: int = 5
+    LOG_CONSOLE_OUTPUT: bool = True
+    LOG_FILE_OUTPUT: bool = True
+    LOG_FORMAT: str = "json"  # text 或 json
+    LOG_ENABLE_REQUEST_ID: bool = True
 
     # Tortoise ORM 配置（会在初始化时生成）
     TORTOISE_ORM: dict = {}
@@ -51,22 +66,14 @@ class Settings(BaseSettings):
                 with open(config_path, "r", encoding="utf-8") as f:
                     config = toml.load(f)
 
-                # 加载数据库配置
-                if "database" in config:
-                    db_config = config["database"]
-                    self.DB_TYPE = db_config.get("db_type", "sqlite")
-
-                    if self.DB_TYPE == "mysql" and "mysql" in db_config:
-                        mysql_config = db_config["mysql"]
-                        self.MYSQL_HOST = mysql_config.get("host", "127.0.0.1")
-                        self.MYSQL_PORT = mysql_config.get("port", 3306)
-                        self.MYSQL_USER = mysql_config.get("user", "root")
-                        self.MYSQL_PASSWORD = mysql_config.get("password", "root123456")
-                        self.MYSQL_DATABASE = mysql_config.get("database", "autofill")
-
-                    if self.DB_TYPE == "sqlite" and "sqlite" in db_config:
-                        sqlite_config = db_config["sqlite"]
-                        self.SQLITE_FILE_PATH = sqlite_config.get("file_path", "db.sqlite3")
+                # 加载数据库配置 - 仅 MySQL
+                if "database" in config and "mysql" in config["database"]:
+                    mysql_config = config["database"]["mysql"]
+                    self.MYSQL_HOST = mysql_config.get("host", "127.0.0.1")
+                    self.MYSQL_PORT = mysql_config.get("port", 3306)
+                    self.MYSQL_USER = mysql_config.get("user", "root")
+                    self.MYSQL_PASSWORD = mysql_config.get("password", "root123456")
+                    self.MYSQL_DATABASE = mysql_config.get("database", "autofill")
 
                 # 加载应用配置
                 if "app" in config:
@@ -85,24 +92,44 @@ class Settings(BaseSettings):
                         self.CORS_ALLOW_METHODS = cors_config.get("allow_methods", ["*"])
                         self.CORS_ALLOW_HEADERS = cors_config.get("allow_headers", ["*"])
 
+                # 加载上传配置
+                if "upload" in config:
+                    upload_config = config["upload"]
+                    self.UPLOAD_DIR = upload_config.get("upload_dir", "./uploads")
+                    self.AVATAR_DIR = upload_config.get("avatar_dir", "./uploads/avatars")
+                    # 确保扩展名带有点号
+                    extensions = upload_config.get("allowed_extensions", [".jpg", ".jpeg", ".png", ".gif", ".webp"])
+                    self.ALLOWED_EXTENSIONS = [ext if ext.startswith(".") else f".{ext}" for ext in extensions]
+                    self.MAX_FILE_SIZE = upload_config.get("max_file_size", 5)
+                    self.FILE_URL_PREFIX = upload_config.get("file_url_prefix", "/uploads")
+
+                # 加载日志配置
+                if "logging" in config:
+                    logging_config = config["logging"]
+                    self.LOG_LEVEL = logging_config.get("level", "INFO")
+                    # 将相对路径转换为基于项目根目录的绝对路径
+                    log_file = logging_config.get("log_file", "./logs/app.log")
+                    if log_file.startswith("./") or log_file.startswith("../"):
+                        self.LOG_FILE = os.path.join(self.BASE_DIR, log_file)
+                    else:
+                        self.LOG_FILE = log_file
+                    self.LOG_MAX_BYTES = logging_config.get("max_bytes", 10)
+                    self.LOG_BACKUP_COUNT = logging_config.get("backup_count", 5)
+                    self.LOG_CONSOLE_OUTPUT = logging_config.get("console_output", True)
+                    self.LOG_FILE_OUTPUT = logging_config.get("file_output", True)
+                    self.LOG_FORMAT = logging_config.get("format", "json")
+                    self.LOG_ENABLE_REQUEST_ID = logging_config.get("enable_request_id", True)
+
             except Exception as e:
                 print(f"Warning: Failed to load TOML config: {e}")
 
     def _init_tortoise_orm(self):
-        """初始化 Tortoise ORM 配置"""
-        sqlite_path = os.path.join(self.BASE_DIR, self.SQLITE_FILE_PATH)
-
+        """初始化 Tortoise ORM 配置 - 仅 MySQL"""
         object.__setattr__(
             self,
             "TORTOISE_ORM",
             {
                 "connections": {
-                    # SQLite configuration
-                    "sqlite": {
-                        "engine": "tortoise.backends.sqlite",
-                        "credentials": {"file_path": sqlite_path},
-                    },
-                    # MySQL/MariaDB configuration
                     "mysql": {
                         "engine": "tortoise.backends.mysql",
                         "credentials": {
@@ -117,7 +144,7 @@ class Settings(BaseSettings):
                 "apps": {
                     "models": {
                         "models": ["app.models", "aerich.models"],
-                        "default_connection": self.DB_TYPE,
+                        "default_connection": "mysql",
                     },
                 },
                 "use_tz": False,

@@ -31,6 +31,7 @@ export default defineConfig(({ command, mode }) => {
       proxy: VITE_USE_PROXY
         ? {
             [VITE_BASE_API]: PROXY_CONFIG[VITE_BASE_API],
+            '/uploads': PROXY_CONFIG['/uploads'],
           }
         : undefined,
     },
