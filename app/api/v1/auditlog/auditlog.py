@@ -1,12 +1,18 @@
 from datetime import datetime
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query
 from tortoise.expressions import Q
 
-from app.models.admin import AuditLog
+from app.core.dependency import AuthControl
+from app.models.admin import AuditLog, User
 from app.schemas import SuccessExtra
 from app.schemas.apis import *
 
 router = APIRouter()
+
+
+def is_superuser(user: User) -> bool:
+    """检查是否为超级管理员"""
+    return user.is_superuser
 
 
 @router.get("/list", summary="查看操作日志")
@@ -19,9 +25,12 @@ async def get_audit_log_list(
     summary: str = Query("", description="接口描述"),
     path: str = Query("", description="请求路径"),
     status: int = Query(None, description="状态码"),
+    tenant_id: int = Query(None, description="租户ID（仅超级管理员可见）"),
     start_time: datetime = Query("", description="开始时间"),
     end_time: datetime = Query("", description="结束时间"),
+    token: str = Header(..., description="token验证"),
 ):
+    current_user = await AuthControl.is_authed(token)
     q = Q()
     if username:
         q &= Q(username__icontains=username)
@@ -41,6 +50,13 @@ async def get_audit_log_list(
         q &= Q(created_at__gte=start_time)
     elif end_time:
         q &= Q(created_at__lte=end_time)
+    
+    # 多租户筛选：仅超级管理员可按租户筛选
+    if tenant_id is not None and is_superuser(current_user):
+        q &= Q(tenant_id=tenant_id)
+    elif not is_superuser(current_user):
+        # 非超级管理员只能看到当前租户的数据
+        q &= Q(tenant_id=current_user.current_tenant_id)
 
     audit_log_objs = await AuditLog.filter(q).offset((page - 1) * page_size).limit(page_size).order_by("-created_at")
     total = await AuditLog.filter(q).count()

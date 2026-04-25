@@ -149,9 +149,12 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                 user_obj: User = await AuthControl.is_authed(token)
             data["user_id"] = user_obj.id if user_obj else 0
             data["username"] = user_obj.username if user_obj else ""
+            # 记录当前租户ID
+            data["tenant_id"] = user_obj.current_tenant_id if user_obj else None
         except Exception:
             data["user_id"] = 0
             data["username"] = ""
+            data["tenant_id"] = None
         return data
 
     async def before_request(self, request: Request):

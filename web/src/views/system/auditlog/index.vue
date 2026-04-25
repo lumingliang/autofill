@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { NInput, NSelect, NPopover } from 'naive-ui'
 import TheIcon from '@/components/icon/TheIcon.vue'
 
@@ -8,14 +8,30 @@ import QueryBarItem from '@/components/query-bar/QueryBarItem.vue'
 import CrudTable from '@/components/table/CrudTable.vue'
 
 import api from '@/api'
+import { useUserStore } from '@/store'
 
 defineOptions({ name: '审计日志' })
 
 const $table = ref(null)
 const queryItems = ref({})
+const tenantOptions = ref([])
+
+const userStore = useUserStore()
+const isSuperUser = computed(() => userStore.isSuperUser)
+
+// 加载租户列表（仅超级管理员）
+const loadTenants = async () => {
+  if (!isSuperUser.value) return
+  const res = await api.getTenantSelect()
+  tenantOptions.value = (res.data || []).map(item => ({
+    label: item.name,
+    value: item.id
+  }))
+}
 
 onMounted(() => {
   $table.value?.handleSearch()
+  loadTenants()
 })
 
 function formatTimestamp(timestamp) {
@@ -81,7 +97,7 @@ const methodOptions = [
 
 function formatJSON(data) {
   try {
-    return typeof data === 'string' 
+    return typeof data === 'string'
       ? JSON.stringify(JSON.parse(data), null, 2)
       : JSON.stringify(data, null, 2)
   } catch (e) {
@@ -209,75 +225,40 @@ const columns = [
   <!-- 业务页面 -->
   <CommonPage>
     <!-- 表格 -->
-    <CrudTable
-      ref="$table"
-      v-model:query-items="queryItems"
-      :columns="columns"
-      :get-data="api.getAuditLogList"
-    >
+    <CrudTable ref="$table" v-model:query-items="queryItems" :columns="columns" :get-data="api.getAuditLogList">
       <template #queryBar>
         <QueryBarItem label="用户名称" :label-width="70">
-          <NInput
-            v-model:value="queryItems.username"
-            clearable
-            type="text"
-            placeholder="请输入用户名称"
-            @keypress.enter="$table?.handleSearch()"
-          />
+          <NInput v-model:value="queryItems.username" clearable type="text" placeholder="请输入用户名称"
+            @keypress.enter="$table?.handleSearch()" />
         </QueryBarItem>
         <QueryBarItem label="功能模块" :label-width="70">
-          <NInput
-            v-model:value="queryItems.module"
-            clearable
-            type="text"
-            placeholder="请输入功能模块"
-            @keypress.enter="$table?.handleSearch()"
-          />
+          <NInput v-model:value="queryItems.module" clearable type="text" placeholder="请输入功能模块"
+            @keypress.enter="$table?.handleSearch()" />
         </QueryBarItem>
         <QueryBarItem label="接口概要" :label-width="70">
-          <NInput
-            v-model:value="queryItems.summary"
-            clearable
-            type="text"
-            placeholder="请输入接口概要"
-            @keypress.enter="$table?.handleSearch()"
-          />
+          <NInput v-model:value="queryItems.summary" clearable type="text" placeholder="请输入接口概要"
+            @keypress.enter="$table?.handleSearch()" />
         </QueryBarItem>
         <QueryBarItem label="请求方法" :label-width="70">
-          <NSelect
-            v-model:value="queryItems.method"
-            style="width: 180px"
-            :options="methodOptions"
-            clearable
-            placeholder="请选择请求方法"
-          />
+          <NSelect v-model:value="queryItems.method" style="width: 180px" :options="methodOptions" clearable
+            placeholder="请选择请求方法" />
         </QueryBarItem>
         <QueryBarItem label="请求路径" :label-width="70">
-          <NInput
-            v-model:value="queryItems.path"
-            clearable
-            type="text"
-            placeholder="请输入请求路径"
-            @keypress.enter="$table?.handleSearch()"
-          />
+          <NInput v-model:value="queryItems.path" clearable type="text" placeholder="请输入请求路径"
+            @keypress.enter="$table?.handleSearch()" />
         </QueryBarItem>
         <QueryBarItem label="状态码" :label-width="60">
-          <NInput
-            v-model:value="queryItems.status"
-            clearable
-            type="text"
-            placeholder="请输入状态码"
-            @keypress.enter="$table?.handleSearch()"
-          />
+          <NInput v-model:value="queryItems.status" clearable type="text" placeholder="请输入状态码"
+            @keypress.enter="$table?.handleSearch()" />
+        </QueryBarItem>
+        <!-- 多租户：仅超级管理员可见租户筛选 -->
+        <QueryBarItem v-if="isSuperUser" label="租户" :label-width="40">
+          <NSelect v-model:value="queryItems.tenant_id" :options="tenantOptions" placeholder="请选择租户" clearable
+            class="min-w-120px" @update:value="$table?.handleSearch()" />
         </QueryBarItem>
         <QueryBarItem label="操作时间" :label-width="70">
-          <NDatePicker
-            v-model:value="datetimeRange"
-            type="datetimerange"
-            clearable
-            placeholder="请选择时间范围"
-            @update:value="handleDateRangeChange"
-          />
+          <NDatePicker v-model:value="datetimeRange" type="datetimerange" clearable placeholder="请选择时间范围"
+            @update:value="handleDateRangeChange" />
         </QueryBarItem>
       </template>
     </CrudTable>
