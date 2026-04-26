@@ -57,7 +57,7 @@ class TenantController(CRUDBase[Tenant, TenantCreate, TenantUpdate]):
         user = await user_controller.get(id=user_id)
         if not tenant or not user:
             raise HTTPException(status_code=404, detail="租户或用户不存在")
-        await RelationQuery.replace_user_tenants(user_id, [tenant_id])
+        await RelationQuery.replace_user_tenants(user_id, tenant_id)
 
     async def remove_user_from_tenant(self, tenant_id: int, user_id: int):
         """从租户移除用户"""

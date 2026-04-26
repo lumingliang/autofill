@@ -5,6 +5,7 @@ from fastapi.exceptions import HTTPException
 from tortoise.expressions import Q
 
 from app.controllers import role_controller
+from app.controllers.user import user_controller
 from app.core.dependency import AuthControl
 from app.core.relation import RelationQuery
 from app.models.admin import Api, Menu, Role, Tenant, User, UserRole, UserTenant
@@ -42,7 +43,7 @@ async def list_role(
         else:
             q &= Q(tenant_id=None)
 
-    total, role_objs = await role_controller.list(page=page, page_size=page_size, search=q)
+    total, role_objs = await role_controller.list(page=page, page_size=page_size, search=q, order=["-updated_at"])
     data = []
     tenant_ids = []
     for obj in role_objs:
@@ -172,9 +173,11 @@ async def update_role_authorized(
         if not user_role_ids:
             return Fail(code=403, msg="您没有权限分配权限")
 
-        # 批量获取这些角色在当前租户下的菜单和API权限
-        roles = await Role.filter(id__in=user_role_ids).all()
-        target_role_ids = [r.id for r in roles if current_user.current_tenant_id and r.tenant_id == current_user.current_tenant_id]
+        # 批量获取这些角色在当前租户下的菜单和API权限（使用表字段过滤）
+        target_role_ids = await Role.filter(
+            id__in=user_role_ids,
+            tenant_id=current_user.current_tenant_id
+        ).values_list("id", flat=True)
 
         allowed_menu_ids = set()
         allowed_api_paths = set()
@@ -229,6 +232,54 @@ async def get_role_users(
     return Success(data=user_ids)
 
 
+@router.get("/available_users", summary="获取可分配给角色的用户列表")
+async def get_available_users_for_role(
+    role_id: int = Query(..., description="角色ID"),
+    page: int = Query(1, description="页码"),
+    page_size: int = Query(10, description="每页数量"),
+    username: str = Query("", description="用户名搜索"),
+    token: str = Header(..., description="token验证"),
+):
+    """
+    获取可分配给角色的用户列表
+    - 如果角色有租户ID，则返回该租户下的用户
+    - 如果角色是系统角色（无租户），则返回所有用户（仅超级管理员）或当前租户下的用户
+    """
+    current_user = await AuthControl.is_authed(token)
+    role_obj = await role_controller.get(id=role_id)
+
+    # 权限检查
+    if not is_superuser(current_user):
+        if role_obj.tenant_id != current_user.current_tenant_id:
+            return Fail(code=403, msg="您没有权限查看该角色")
+
+    # 构建查询条件
+    q = Q()
+    if username:
+        q &= Q(username__contains=username)
+
+    # 根据角色的租户ID筛选用户
+    if role_obj.tenant_id is not None:
+        # 角色属于特定租户
+        if not is_superuser(current_user):
+            # 非超级管理员只返回该租户下的用户
+            tenant_user_ids = await RelationQuery.get_user_ids_by_tenant_id(role_obj.tenant_id)
+            q &= Q(id__in=tenant_user_ids)
+        # 超级管理员可以查看所有用户，不做限制
+    else:
+        # 系统角色（无租户）
+        if not is_superuser(current_user):
+            # 非超级管理员只能看到当前租户下的用户
+            if current_user.current_tenant_id:
+                tenant_user_ids = await RelationQuery.get_user_ids_by_tenant_id(current_user.current_tenant_id)
+                q &= Q(id__in=tenant_user_ids)
+
+    total, user_objs = await user_controller.list(page=page, page_size=page_size, search=q)
+    data = [await obj.to_dict(exclude_fields=["password"]) for obj in user_objs]
+
+    return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
+
+
 @router.post("/assign_users", summary="分配用户给角色")
 async def assign_users_to_role(
     data: RoleAssignUsers,
@@ -256,7 +307,7 @@ async def assign_users_to_role(
 
     # 批量添加新的用户-角色关联
     if users_to_add:
-        pairs = [(uid, data.role_id) for uid in users_to_add]
+        pairs = [(uid, data.role_id, tenant_id) for uid in users_to_add]
         await RelationQuery.batch_add_user_roles(pairs)
 
         # 如果有租户，将用户添加到租户
@@ -273,11 +324,13 @@ async def assign_users_to_role(
         # 如果没有其他角色，则移除用户与租户的关联
         if tenant_id:
             for user_id in users_to_remove:
-                # 获取用户在该租户下的其他角色
+                # 获取用户在该租户下的其他角色（使用表字段过滤）
                 user_role_ids = await RelationQuery.get_role_ids_by_user_id(user_id)
                 if user_role_ids:
-                    roles = await Role.filter(id__in=user_role_ids).all()
-                    has_other_role_in_tenant = any(r.tenant_id == tenant_id for r in roles)
+                    has_other_role_in_tenant = await Role.filter(
+                        id__in=user_role_ids,
+                        tenant_id=tenant_id
+                    ).exists()
                     if not has_other_role_in_tenant:
                         await UserTenant.filter(user_id=user_id, tenant_id=tenant_id).delete()
 

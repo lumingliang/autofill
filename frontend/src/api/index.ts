@@ -33,6 +33,7 @@ export default {
   updateRoleAuthorized: (data: any = {}) => request.post('/role/authorized', data),
   getRoleAuthorized: (params: any = {}) => request.get('/role/authorized', { params }),
   getRoleUsers: (params: any = {}) => request.get('/role/users', { params }),
+  getRoleAvailableUsers: (params: any = {}) => request.get('/role/available_users', { params }),
   assignUsersToRole: (data: any = {}) => request.post('/role/assign_users', data),
 
   // menus

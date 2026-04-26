@@ -25,9 +25,12 @@ class RoleController(CRUDBase[Role, RoleCreate, RoleUpdate]):
         return await self.model.filter(tenant_id=None).all()
 
     async def update_roles(self, role: Role, menu_ids: List[int], api_infos: List[dict]) -> None:
-        """更新角色的菜单和API权限，采用批量操作"""
+        """更新角色的菜单和API权限，采用批量操作，自动填充tenant_id"""
+        # 从role获取tenant_id
+        tenant_id = role.tenant_id
+
         # 批量替换菜单关联
-        await RelationQuery.replace_role_menus(role.id, menu_ids)
+        await RelationQuery.replace_role_menus(role.id, menu_ids, tenant_id=tenant_id)
 
         # 查询API IDs（批量查询）
         api_ids = []
@@ -47,7 +50,7 @@ class RoleController(CRUDBase[Role, RoleCreate, RoleUpdate]):
                 api_ids = [a.id for a in api_objs if (a.path, a.method) in target_set]
 
         # 批量替换API关联
-        await RelationQuery.replace_role_apis(role.id, api_ids)
+        await RelationQuery.replace_role_apis(role.id, api_ids, tenant_id=tenant_id)
 
     async def create_tenant_admin_role(self, tenant: Tenant) -> Role:
         """为租户创建管理员角色"""
@@ -58,11 +61,17 @@ class RoleController(CRUDBase[Role, RoleCreate, RoleUpdate]):
             is_system=True,
         )
 
-        # 批量关联所有菜单和API
+        # 批量关联所有菜单和API，填充tenant_id
         all_menus = await Menu.all().values("id")
         all_apis = await Api.all().values("id")
-        await RelationQuery.batch_add_role_menus([(role.id, m["id"]) for m in all_menus])
-        await RelationQuery.batch_add_role_apis([(role.id, a["id"]) for a in all_apis])
+        await RelationQuery.batch_add_role_menus(
+            [(role.id, m["id"]) for m in all_menus],
+            tenant_id=tenant.id
+        )
+        await RelationQuery.batch_add_role_apis(
+            [(role.id, a["id"]) for a in all_apis],
+            tenant_id=tenant.id
+        )
 
         return role
 

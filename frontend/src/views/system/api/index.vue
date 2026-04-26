@@ -93,7 +93,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SyncOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import api from '@/api'
 
 const queryParams = reactive<any>({

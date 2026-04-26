@@ -108,6 +108,7 @@ class UserRole(BaseModel, TimestampMixin):
     """用户-角色关联表"""
     user_id = fields.IntField(description="用户ID", index=True)
     role_id = fields.IntField(description="角色ID", index=True)
+    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
 
     class Meta:
         table = "user_role"
@@ -118,6 +119,7 @@ class RoleMenu(BaseModel, TimestampMixin):
     """角色-菜单关联表"""
     role_id = fields.IntField(description="角色ID", index=True)
     menu_id = fields.IntField(description="菜单ID", index=True)
+    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
 
     class Meta:
         table = "role_menu"
@@ -128,6 +130,7 @@ class RoleApi(BaseModel, TimestampMixin):
     """角色-API关联表"""
     role_id = fields.IntField(description="角色ID", index=True)
     api_id = fields.IntField(description="API ID", index=True)
+    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
 
     class Meta:
         table = "role_api"
