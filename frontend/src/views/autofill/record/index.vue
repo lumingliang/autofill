@@ -55,8 +55,17 @@
         <a-table class="crud-table" :columns="columns" :data-source="tableData" :loading="loading"
           :pagination="pagination" row-key="id" :scroll="{ x: 'max-content' }" @change="handleTableChange">
           <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'status'">
+              <a-tag :color="getStatusColor(record.status)">
+                {{ getStatusText(record.status) }}
+              </a-tag>
+            </template>
             <template v-if="column.key === 'data'">
               <a-button type="link" size="small" @click="viewData(record)">查看数据</a-button>
+            </template>
+            <template v-if="column.key === 'result'">
+              <a-button v-if="record.result" type="link" size="small" @click="viewResult(record)">查看结果</a-button>
+              <span v-else>-</span>
             </template>
             <template v-if="column.key === 'created_at'">
               <span v-if="record.created_at">{{ formatDateTime(record.created_at) }}</span>
@@ -78,6 +87,31 @@
       <!-- 查看数据弹窗 -->
       <a-modal v-model:open="viewModalVisible" title="填单数据" width="700px" :footer="null">
         <pre class="json-viewer">{{ JSON.stringify(currentRecord?.data, null, 2) }}</pre>
+      </a-modal>
+
+      <!-- 查看AI结果弹窗 -->
+      <a-modal v-model:open="resultModalVisible" title="AI填单结果" width="700px" :footer="null">
+        <div v-if="currentRecord?.result">
+          <a-descriptions :column="1" bordered>
+            <a-descriptions-item label="处理状态">
+              <a-tag :color="getStatusColor(currentRecord.status)">
+                {{ getStatusText(currentRecord.status) }}
+              </a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item label="处理时间" v-if="currentRecord.processed_at">
+              {{ formatDateTime(currentRecord.processed_at) }}
+            </a-descriptions-item>
+            <a-descriptions-item label="错误信息" v-if="currentRecord.error_msg">
+              <span style="color: red">{{ currentRecord.error_msg }}</span>
+            </a-descriptions-item>
+            <a-descriptions-item label="AI结果数据">
+              <pre class="json-viewer">{{ JSON.stringify(currentRecord.result, null, 2) }}</pre>
+            </a-descriptions-item>
+          </a-descriptions>
+        </div>
+        <div v-else>
+          <a-empty description="暂无AI结果数据" />
+        </div>
       </a-modal>
 
       <!-- 编辑数据弹窗 -->
@@ -147,7 +181,9 @@ const columns = [
   { title: '用户标识', dataIndex: 'user_unique_id', key: 'user_unique_id', ellipsis: true },
   { title: '用户名称', dataIndex: 'user_name', key: 'user_name' },
   { title: '应用名称', dataIndex: 'app_name', key: 'app_name' },
+  { title: 'AI状态', key: 'status', width: 100 },
   { title: '填单数据', key: 'data', width: 100 },
+  { title: 'AI结果', key: 'result', width: 100 },
   { title: '创建时间', key: 'created_at', width: 180 },
   { title: '操作', key: 'action', width: 150, fixed: 'right' },
 ]
@@ -163,7 +199,26 @@ const pagination = reactive({
 })
 
 const viewModalVisible = ref(false)
+const resultModalVisible = ref(false)
 const currentRecord = ref<any>(null)
+
+// 状态映射
+const statusMap: Record<string, { text: string; color: string }> = {
+  pending: { text: '待处理', color: 'default' },
+  queued: { text: '队列中', color: 'orange' },
+  processing: { text: '处理中', color: 'blue' },
+  completed: { text: '已完成', color: 'green' },
+  failed: { text: '失败', color: 'red' },
+  timeout: { text: '超时', color: 'red' },
+}
+
+const getStatusText = (status?: string) => {
+  return statusMap[status || 'pending']?.text || status || '待处理'
+}
+
+const getStatusColor = (status?: string) => {
+  return statusMap[status || 'pending']?.color || 'default'
+}
 
 const editModalVisible = ref(false)
 const editLoading = ref(false)
@@ -252,6 +307,11 @@ const handleTableChange = (pag: any) => {
 const viewData = (record: any) => {
   currentRecord.value = record
   viewModalVisible.value = true
+}
+
+const viewResult = (record: any) => {
+  currentRecord.value = record
+  resultModalVisible.value = true
 }
 
 const handleEdit = (record: any) => {
