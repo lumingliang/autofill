@@ -38,7 +38,7 @@ async def list_tenant(
     if domain:
         q &= Q(domain__contains=domain)
 
-    total, tenant_objs = await tenant_controller.list(page=page, page_size=page_size, search=q)
+    total, tenant_objs = await tenant_controller.list(page=page, page_size=page_size, search=q, order=["-updated_at"])
     data = [await obj.to_dict() for obj in tenant_objs]
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
 

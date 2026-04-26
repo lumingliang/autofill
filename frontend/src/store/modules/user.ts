@@ -27,13 +27,13 @@ export const useUserStore = defineStore('user', () => {
         await logout()
         return
       }
-      const { id, username, email: uEmail, avatar: uAvatar, roles, is_superuser, is_active, tenants: ts, current_tenant_id } = res.data
+      const { id, username, email: uEmail, avatar: uAvatar, roles, is_superuser, is_active, tenants: ts, current_tenant_id } = res.data || res
       userInfo.value = { id, username, email: uEmail, avatar: uAvatar, roles, is_superuser, is_active, current_tenant_id }
       tenants.value = ts || []
       if (current_tenant_id && ts) {
         currentTenant.value = ts.find((t: any) => t.id === current_tenant_id) || null
       }
-      return res.data
+      return res.data || res
     } catch (error) {
       return error
     }

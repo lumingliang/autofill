@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ALLOWED_EXTENSIONS: list = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
     MAX_FILE_SIZE: int = 5  # MB
     FILE_URL_PREFIX: str = "/uploads"
+    BASE_URL: str = "http://localhost:8000"  # 用于构建完整文件URL
 
     # 日志配置
     LOG_LEVEL: str = "INFO"
