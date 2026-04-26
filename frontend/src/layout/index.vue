@@ -8,7 +8,7 @@
       class="layout-sider"
     >
       <div class="logo-container">
-        <img src="/favicon.svg" class="logo-img" />
+        <img src="/logo.svg" class="logo-img" />
         <span v-show="!appStore.collapsed" class="logo-title">AI 平台</span>
       </div>
       <LayoutMenu />
