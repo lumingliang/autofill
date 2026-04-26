@@ -4,6 +4,7 @@ from app.core.dependency import DependPermission
 
 from .apis import apis_router
 from .auditlog import auditlog_router
+from .autofill import app_router, template_router, dropdown_router, record_router
 from .base import base_router
 from .depts import depts_router
 from .menus import menus_router
@@ -23,3 +24,9 @@ v1_router.include_router(depts_router, prefix="/dept", dependencies=[DependPermi
 v1_router.include_router(auditlog_router, prefix="/auditlog", dependencies=[DependPermission])
 v1_router.include_router(tenant_router, prefix="/tenant", dependencies=[DependPermission])
 v1_router.include_router(upload_router, prefix="/upload")
+
+# 智能填单模块 - 分别设置 tags
+v1_router.include_router(app_router, prefix="/autofill", dependencies=[DependPermission], tags=["应用管理"])
+v1_router.include_router(template_router, prefix="/autofill", dependencies=[DependPermission], tags=["总结模板管理"])
+v1_router.include_router(dropdown_router, prefix="/autofill", dependencies=[DependPermission], tags=["下拉选项管理"])
+v1_router.include_router(record_router, prefix="/autofill", dependencies=[DependPermission], tags=["填单记录管理"])

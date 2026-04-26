@@ -32,6 +32,18 @@ max_file_size = 5
 # 文件访问URL前缀
 file_url_prefix = "/uploads"
 
+[redis]
+# Redis配置 - 全局缓存组件
+host = "127.0.0.1"
+port = 6379
+password = "redis123456"
+db = 3
+key_prefix = "auto_fill"
+
+[dify]
+# Dify AI 服务配置
+dify_timeout = 180
+
 [logging]
 # 日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL
 level = "INFO"

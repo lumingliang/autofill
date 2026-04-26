@@ -85,4 +85,53 @@ export default {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+
+  // autofill - 应用管理
+  getAppList: (params: any = {}) => request.get('/autofill/app/list', { params }),
+  getAppById: (params: any = {}) => request.get('/autofill/app/get', { params }),
+  createApp: (data: any = {}) => request.post('/autofill/app/create', data),
+  updateApp: (data: any = {}) => request.post('/autofill/app/update', data),
+  deleteApp: (params: any = {}) => request.delete('/autofill/app/delete', { params }),
+  getAppSelect: (params: any = {}) => request.get('/autofill/app/select', { params }),
+
+  // autofill - 总结模板管理
+  getTemplateList: (params: any = {}) => request.get('/autofill/template/list', { params }),
+  getTemplateById: (params: any = {}) => request.get('/autofill/template/get', { params }),
+  createTemplate: (data: any = {}) => request.post('/autofill/template/create', data),
+  updateTemplate: (data: any = {}) => request.post('/autofill/template/update', data),
+  deleteTemplate: (params: any = {}) => request.delete('/autofill/template/delete', { params }),
+  importTemplateFromCsv: (file: File, appName: string, tenantId?: number) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const params: any = { app_name: appName }
+    if (tenantId) params.tenant_id = tenantId
+    return request.post('/autofill/template/import', formData, {
+      params,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  // autofill - 下拉选项管理
+  getDropdownList: (params: any = {}) => request.get('/autofill/dropdown/list', { params }),
+  getDropdownTree: (params: any = {}) => request.get('/autofill/dropdown/tree', { params }),
+  getDropdownById: (params: any = {}) => request.get('/autofill/dropdown/get', { params }),
+  createDropdown: (data: any = {}) => request.post('/autofill/dropdown/create', data),
+  updateDropdown: (data: any = {}) => request.post('/autofill/dropdown/update', data),
+  deleteDropdown: (params: any = {}) => request.delete('/autofill/dropdown/delete', { params }),
+  importDropdownFromCsv: (file: File, appName: string, tenantId?: number) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const params: any = { app_name: appName }
+    if (tenantId) params.tenant_id = tenantId
+    return request.post('/autofill/dropdown/import', formData, {
+      params,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  // autofill - 填单记录管理
+  getRecordList: (params: any = {}) => request.get('/autofill/record/list', { params }),
+  getRecordById: (params: any = {}) => request.get('/autofill/record/get', { params }),
+  updateRecord: (data: any = {}) => request.post('/autofill/record/update', data),
+  deleteRecord: (params: any = {}) => request.delete('/autofill/record/delete', { params }),
 }

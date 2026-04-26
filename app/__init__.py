@@ -12,6 +12,7 @@ from app.core.init_app import (
     register_exceptions,
     register_routers,
 )
+from app.core.redis import redis_client
 from app.settings.config import settings
 
 try:
@@ -22,8 +23,21 @@ except ImportError:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 初始化 Redis 连接
+    try:
+        await redis_client.init()
+    except Exception as e:
+        print(f"Warning: Redis connection failed: {e}")
+    
     await init_data()
     yield
+    
+    # 关闭 Redis 连接
+    try:
+        await redis_client.close()
+    except Exception:
+        pass
+    
     await Tortoise.close_connections()
 
 
