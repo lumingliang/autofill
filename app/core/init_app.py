@@ -21,10 +21,12 @@ from app.core.exceptions import (
     ResponseValidationError,
     ResponseValidationHandle,
 )
+from app.core.kafka.consumer import get_consumer_manager
 from app.core.relation import RelationQuery
 from app.log import logger
 from app.models.admin import Api, Menu, Role
 from app.schemas.menus import MenuType
+from app.services.ai_fill_service import AIFillService, get_ai_fill_service
 from app.settings.config import settings
 
 from .middlewares import (
@@ -307,6 +309,47 @@ async def init_roles():
         # 为普通用户分配基本API
         basic_apis = await Api.filter(Q(method__in=["GET"]) | Q(tags="基础模块")).values("id")
         await RelationQuery.batch_add_role_apis([(user_role.id, a["id"]) for a in basic_apis])
+
+
+async def init_kafka_consumers():
+    """初始化 Kafka 消费者"""
+    try:
+        logger.info("[KAFKA INIT] Starting Kafka consumers initialization...")
+        manager = get_consumer_manager()
+        logger.info(f"[KAFKA INIT] Consumer manager created")
+
+        # 注册 AI 填单消费者
+        service = get_ai_fill_service()
+        topic = AIFillService.AI_FILL_TOPIC
+        logger.info(f"[KAFKA INIT] Registering consumer for topic: {topic}")
+
+        manager.register_consumer(
+            name="ai_fill_consumer",
+            topics=[topic],
+            message_handler=service.process_kafka_message,
+        )
+        logger.info(f"[KAFKA INIT] Consumer registered successfully")
+
+        # 启动所有消费者
+        logger.info(f"[KAFKA INIT] Starting all consumers...")
+        import asyncio
+        loop = asyncio.get_event_loop()
+        logger.info(f"[KAFKA INIT] Got event loop: {loop}")
+        manager.start_all(loop=loop)
+        logger.info("[KAFKA INIT] Kafka consumers initialized successfully")
+    except Exception as e:
+        logger.error(f"[KAFKA INIT] Failed to initialize Kafka consumers: {e}", exc_info=True)
+        # 不阻塞应用启动，只是记录错误
+
+
+async def shutdown_kafka():
+    """关闭 Kafka 消费者"""
+    try:
+        from app.core.kafka.consumer import shutdown_kafka_consumers
+        shutdown_kafka_consumers()
+        logger.info("Kafka consumers shutdown successfully")
+    except Exception as e:
+        logger.error(f"Error shutting down Kafka consumers: {e}")
 
 
 async def init_data():
