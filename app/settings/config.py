@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     MYSQL_PASSWORD: str = "root123456"
     MYSQL_DATABASE: str = "autofill"
 
+    # Redis配置
+    REDIS_HOST: str = "127.0.0.1"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str = ""
+    REDIS_DB: int = 0
+    REDIS_KEY_PREFIX: str = "autofill"
+
+    # Dify AI 服务配置
+    DIFY_TIMEOUT: float = 60.0
+
     # 上传配置
     UPLOAD_DIR: str = "./uploads"
     AVATAR_DIR: str = "./uploads/avatars"
@@ -103,6 +113,20 @@ class Settings(BaseSettings):
                     self.ALLOWED_EXTENSIONS = [ext if ext.startswith(".") else f".{ext}" for ext in extensions]
                     self.MAX_FILE_SIZE = upload_config.get("max_file_size", 5)
                     self.FILE_URL_PREFIX = upload_config.get("file_url_prefix", "/uploads")
+
+                # 加载Redis配置
+                if "redis" in config:
+                    redis_config = config["redis"]
+                    self.REDIS_HOST = redis_config.get("host", "127.0.0.1")
+                    self.REDIS_PORT = redis_config.get("port", 6379)
+                    self.REDIS_PASSWORD = redis_config.get("password", "")
+                    self.REDIS_DB = redis_config.get("db", 0)
+                    self.REDIS_KEY_PREFIX = redis_config.get("key_prefix", "autofill")
+
+                # 加载Dify配置
+                if "dify" in config:
+                    dify_config = config["dify"]
+                    self.DIFY_TIMEOUT = dify_config.get("dify_timeout", 60.0)
 
                 # 加载日志配置
                 if "logging" in config:

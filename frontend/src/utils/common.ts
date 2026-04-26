@@ -24,3 +24,7 @@ export function isEmpty(val: unknown): boolean {
   }
   return false
 }
+
+export function copyToClipboard(text: string): Promise<void> {
+  return navigator.clipboard.writeText(text)
+}
