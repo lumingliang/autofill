@@ -58,7 +58,7 @@ async def list_api(
 
         q &= Q(id__in=allowed_api_ids)
 
-    total, api_objs = await api_controller.list(page=page, page_size=page_size, search=q, order=["tags", "id"])
+    total, api_objs = await api_controller.list(page=page, page_size=page_size, search=q, order=["-updated_at"])
     data = [await obj.to_dict() for obj in api_objs]
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
 
