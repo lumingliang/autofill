@@ -148,6 +148,11 @@ class FillDataRecordOut(BaseModel):
     app_name: str
     tenant_id: int
     data: Optional[Dict[str, Any]]
+    # AI填单相关字段
+    status: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None
+    error_msg: Optional[str] = None
+    processed_at: Optional[str] = None
     created_at: Optional[str]
     updated_at: Optional[str]
 
