@@ -8,7 +8,7 @@ from app.controllers.role import role_controller
 from app.controllers.user import user_controller
 from app.core.dependency import AuthControl
 from app.core.relation import RelationQuery
-from app.models.admin import Role, Tenant, User, UserTenant
+from app.models.admin import Role, Tenant, User, UserRole, UserTenant
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.users import *
 
@@ -58,12 +58,27 @@ async def list_user(
             tenant_user_ids = await RelationQuery.get_user_ids_by_tenant_id(current_user.current_tenant_id)
             q &= Q(id__in=tenant_user_ids)
 
-    total, user_objs = await user_controller.list(page=page, page_size=page_size, search=q)
+    total, user_objs = await user_controller.list(page=page, page_size=page_size, search=q, order=["-updated_at"])
     data = [await obj.to_dict(exclude_fields=["password"]) for obj in user_objs]
+
+    # 批量获取用户ID列表
+    user_ids = [item["id"] for item in data]
+
+    # 批量获取角色信息
+    user_role_map = await RelationQuery.batch_get_role_ids_by_user_ids(user_ids)
+    all_role_ids = set()
+    for rids in user_role_map.values():
+        all_role_ids.update(rids)
+    role_map = {}
+    if all_role_ids:
+        roles = await Role.filter(id__in=all_role_ids).all()
+        role_map = {r.id: {"id": r.id, "name": r.name, "tenant_id": r.tenant_id} for r in roles}
+
+    for item in data:
+        item["roles"] = [role_map.get(rid) for rid in user_role_map.get(item["id"], []) if role_map.get(rid)]
 
     # 批量获取租户信息（仅超级管理员可见）
     if is_superuser(current_user):
-        user_ids = [item["id"] for item in data]
         user_tenant_map = await RelationQuery.batch_get_tenant_ids_by_user_ids(user_ids)
         all_tenant_ids = set()
         for tids in user_tenant_map.values():
@@ -106,25 +121,25 @@ async def create_user(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    if user_in.tenant_ids and not is_superuser(current_user):
-        return Fail(code=403, msg="只有超级管理员才能指定租户")
-
-    # 普通用户（非超级管理员）从JWT获取租户ID
-    if not is_superuser(current_user):
+    # 确定租户ID
+    target_tenant_id = None
+    if is_superuser(current_user):
+        # 超管使用传参的tenant_id
+        target_tenant_id = user_in.tenant_id
+    else:
+        # 普通用户从JWT获取租户ID
         import jwt
         from app.settings import settings
         decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
-        current_tenant_id = decode_data.get("current_tenant_id")
-        if current_tenant_id:
-            user_in.tenant_ids = [current_tenant_id]
-        else:
+        target_tenant_id = decode_data.get("current_tenant_id")
+        if not target_tenant_id:
             return Fail(code=400, msg="您当前未选择租户，无法创建用户")
 
     user = await user_controller.get_by_email(user_in.email)
     if user:
         return Fail(code=400, msg="该邮箱已被注册")
 
-    await user_controller.create_user(obj_in=user_in)
+    await user_controller.create_user(obj_in=user_in, tenant_id=target_tenant_id)
 
     return Success(msg="创建成功")
 
@@ -135,8 +150,6 @@ async def update_user(
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
-    if user_in.tenant_ids and not is_superuser(current_user):
-        return Fail(code=403, msg="只有超级管理员才能修改租户")
 
     await user_controller.update(id=user_in.id, obj_in=user_in)
 
@@ -234,41 +247,43 @@ async def update_user_tenant_roles(
     token: str = Header(..., description="token验证"),
 ):
     """更新用户在指定租户下的角色分配
-    - 先删除用户在该租户下的所有角色关联
-    - 然后添加新的角色关联
-    - 如果用户不在该租户下，将用户添加到该租户
+    - 超管账号使用传参的tenant_id
+    - 普通账号使用JWT中的current_tenant_id
+    - 批量替换该租户下用户的角色绑定
     """
     current_user = await AuthControl.is_authed(token)
 
-    # 权限检查
-    if not is_superuser(current_user):
-        # 检查当前用户是否有权限操作该租户
-        user_tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(current_user.id)
-        if data.tenant_id not in user_tenant_ids:
-            return Fail(code=403, msg="您没有该租户的权限")
+    # 确定要操作的租户ID
+    if is_superuser(current_user):
+        # 超管使用传参的tenant_id
+        if not data.tenant_id:
+            return Fail(code=400, msg="请指定租户ID")
+        target_tenant_id = data.tenant_id
+    else:
+        # 普通账号使用JWT中的current_tenant_id
+        target_tenant_id = current_user.current_tenant_id
+        if not target_tenant_id:
+            return Fail(code=400, msg="您当前未选择租户")
 
-    # 获取用户当前的所有角色
-    user_role_ids = await RelationQuery.get_role_ids_by_user_id(data.user_id)
+    # 验证所有角色是否都属于该租户（单次查询，同时过滤id和tenant_id）
+    if data.role_ids:
+        # 去重role_ids
+        unique_role_ids = list(set(data.role_ids))
+        # 单次查询：id在列表中且tenant_id匹配
+        valid_roles = await Role.filter(
+            id__in=unique_role_ids,
+            tenant_id=target_tenant_id
+        ).all()
+        # 验证数量是否一致
+        if len(valid_roles) != len(unique_role_ids):
+            return Fail(code=400, msg="部分角色不存在或不属于该租户")
 
-    # 获取该租户下的所有角色
-    tenant_roles = await role_controller.get_by_tenant(data.tenant_id)
-    tenant_role_ids = {r.id for r in tenant_roles}
-
-    # 保留不属于该租户的角色
-    other_tenant_role_ids = []
-    if user_role_ids:
-        roles = await Role.filter(id__in=user_role_ids).all()
-        other_tenant_role_ids = [r.id for r in roles if r.tenant_id != data.tenant_id]
-
-    # 合并角色：其他租户的角色 + 新分配的角色
-    final_role_ids = other_tenant_role_ids + data.role_ids
-
-    # 更新用户角色关联
-    await RelationQuery.replace_user_roles(data.user_id, final_role_ids)
+    # 更新用户角色关联（带tenant_id）
+    await RelationQuery.replace_user_roles(data.user_id, data.role_ids, target_tenant_id)
 
     # 如果用户不在该租户下，将用户添加到该租户
     user_tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(data.user_id)
-    if data.tenant_id not in user_tenant_ids:
-        await UserTenant.create(user_id=data.user_id, tenant_id=data.tenant_id)
+    if target_tenant_id not in user_tenant_ids:
+        await UserTenant.create(user_id=data.user_id, tenant_id=target_tenant_id)
 
     return Success(msg="更新成功")

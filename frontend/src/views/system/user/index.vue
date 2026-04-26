@@ -124,14 +124,14 @@
             <a-input-password v-model:value="modalForm.confirmPassword" placeholder="请确认密码" />
           </a-form-item>
 
-          <!-- 编辑时显示已分配租户（只读）：超级管理员和租户管理员都可见 -->
-          <a-form-item v-if="modalAction === 'edit'" label="已分配租户">
+          <!-- 编辑时显示已分配租户（只读）：仅超级管理员可见 -->
+          <a-form-item v-if="modalAction === 'edit' && userStore.isSuperUser" label="已分配租户">
             <a-select :value="modalForm.assigned_tenant_ids" :options="tenantOptions" mode="multiple" disabled
               placeholder="该用户已分配的租户" />
           </a-form-item>
 
-          <!-- 选择操作租户（单选）：仅管理员可见，普通用户不可见 -->
-          <a-form-item v-if="userStore.isSuperUser || userStore.isTenantAdmin" label="选择租户" name="tenant_id"
+          <!-- 选择操作租户（单选）：仅超级管理员可见 -->
+          <a-form-item v-if="userStore.isSuperUser" label="选择租户" name="tenant_id"
             :rules="[{ required: modalAction === 'edit', message: '请选择租户', trigger: 'change', type: 'number' }]">
             <a-select v-model:value="modalForm.tenant_id" placeholder="请选择要操作的租户" allow-clear :options="tenantOptions"
               @change="handleModalTenantChange" />
@@ -170,7 +170,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useUserStore } from '@/store'
 import api from '@/api'
 import { formatDateTime } from '@/utils'
@@ -397,6 +397,17 @@ async function handleEditUser(record: any) {
 
   roleOptions.value = []
   deptOptions.value = []
+
+  // 普通用户（非超管）自动加载当前租户的角色和部门
+  if (!userStore.isSuperUser && userStore.currentTenantId) {
+    await loadRoles(userStore.currentTenantId)
+    await loadDepts(userStore.currentTenantId)
+    // 从record.roles中提取当前租户下的角色ID
+    modalForm.role_ids = record.roles
+      ?.filter((r: any) => r.tenant_id === userStore.currentTenantId)
+      ?.map((r: any) => r.id) || []
+  }
+
   modalVisible.value = true
 }
 
@@ -405,13 +416,18 @@ async function handleSave() {
     await modalFormRef.value.validate()
     modalLoading.value = true
 
-    // 编辑用户且选择了租户时，使用新的单租户角色更新接口
-    if (modalAction.value === 'edit' && modalForm.tenant_id) {
-      const res: any = await api.updateUserTenantRoles({
+    // 编辑用户时使用单租户角色更新接口
+    if (modalAction.value === 'edit') {
+      // 普通用户不需要传tenant_id，后端会从JWT获取
+      const params: any = {
         user_id: modalForm.id,
-        tenant_id: modalForm.tenant_id,
         role_ids: modalForm.role_ids || [],
-      })
+      }
+      // 超管账号才传tenant_id
+      if (userStore.isSuperUser) {
+        params.tenant_id = modalForm.tenant_id
+      }
+      const res: any = await api.updateUserTenantRoles(params)
       if (res.code === 200) {
         window.$message?.success('编辑成功')
         modalVisible.value = false
@@ -422,34 +438,23 @@ async function handleSave() {
       return
     }
 
-    // 新增用户或编辑但未选择租户时，使用原有接口
+    // 新增用户使用原有接口
     const data = { ...modalForm }
-    if (modalAction.value === 'edit') {
-      delete data.password
-      delete data.confirmPassword
-    }
+    delete data.confirmPassword
     delete data.dept
 
-    // 合并租户ID：已分配租户 + 当前选择的租户
-    const assignedTenantIds = modalForm.assigned_tenant_ids || []
-    const selectedTenantId = modalForm.tenant_id
-    const mergedTenantIds = [...assignedTenantIds]
-    if (selectedTenantId && !mergedTenantIds.includes(selectedTenantId)) {
-      mergedTenantIds.push(selectedTenantId)
-    }
-    data.tenant_ids = mergedTenantIds
+    // 租户ID：使用当前选择的租户
+    data.tenant_id = modalForm.tenant_id
 
     // 角色ID
     data.role_ids = modalForm.role_ids || []
 
     // 删除前端临时字段
     delete data.assigned_tenant_ids
-    delete data.tenant_id
 
-    const apiFn = modalAction.value === 'add' ? api.createUser : api.updateUser
-    const res: any = await apiFn(data)
+    const res: any = await api.createUser(data)
     if (res.code === 200) {
-      window.$message?.success(modalAction.value === 'add' ? '新增成功' : '编辑成功')
+      window.$message?.success('新增成功')
       modalVisible.value = false
       loadData()
     }

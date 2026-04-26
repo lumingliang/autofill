@@ -128,7 +128,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useUserStore } from '@/store'
 import api from '@/api'
 import { formatDateTime } from '@/utils'
@@ -399,13 +399,13 @@ onMounted(() => {
   loadTenants()
 })
 
-// 加载用户列表（用于下拉选择）
-async function loadUserOptions(tenantId?: number) {
-  const params: any = { page: 1, page_size: 9999 }
-  if (tenantId) {
-    params.tenant_id = tenantId
-  }
-  const res: any = await api.getUserList(params)
+// 加载用户列表（用于下拉选择）- 使用角色可用用户接口
+async function loadUserOptions(roleId: number) {
+  const res: any = await api.getRoleAvailableUsers({
+    role_id: roleId,
+    page: 1,
+    page_size: 9999,
+  })
   userOptions.value = (res.data || []).map((item: any) => ({
     label: `${item.username} (${item.email})`,
     value: item.id,
@@ -424,8 +424,8 @@ async function handleAssignUsers(record: any) {
   selectedUserIds.value = []
 
   try {
-    // 加载用户列表
-    await loadUserOptions(record.tenant_id)
+    // 加载角色可用用户列表
+    await loadUserOptions(record.id)
 
     // 获取当前角色已分配的用户
     const res: any = await api.getRoleUsers({ role_id: record.id })

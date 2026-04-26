@@ -27,11 +27,11 @@ class UserCreate(BaseModel):
     is_superuser: Optional[bool] = False
     role_ids: Optional[List[int]] = []
     dept_id: Optional[int] = Field(0, description="部门ID")
-    # 多租户字段：用户所属的租户ID列表
-    tenant_ids: Optional[List[int]] = Field([], description="所属租户ID列表")
+    # 多租户字段：超管指定租户ID，普通用户从JWT获取
+    tenant_id: Optional[int] = Field(None, description="租户ID（仅超管有效）")
 
     def create_dict(self):
-        return self.model_dump(exclude_unset=True, exclude={"role_ids", "tenant_ids"})
+        return self.model_dump(exclude_unset=True, exclude={"role_ids", "tenant_id"})
 
 
 class UserUpdate(BaseModel):
@@ -41,10 +41,7 @@ class UserUpdate(BaseModel):
     avatar: Optional[str] = None
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
-    role_ids: Optional[List[int]] = []
     dept_id: Optional[int] = 0
-    # 多租户字段：用户所属的租户ID列表
-    tenant_ids: Optional[List[int]] = Field([], description="所属租户ID列表")
 
 
 class UpdatePassword(BaseModel):
@@ -67,7 +64,10 @@ class UserTenantSelect(BaseModel):
 
 
 class UserUpdateTenantRoles(BaseModel):
-    """更新用户在指定租户下的角色"""
+    """更新用户在指定租户下的角色
+    - 超管账号：使用传参的tenant_id
+    - 普通账号：使用JWT中的current_tenant_id，传参的tenant_id会被忽略
+    """
     user_id: int = Field(description="用户ID")
-    tenant_id: int = Field(description="租户ID")
+    tenant_id: Optional[int] = Field(default=None, description="租户ID（仅超管有效）")
     role_ids: List[int] = Field(default=[], description="角色ID列表")

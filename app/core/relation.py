@@ -30,25 +30,33 @@ class RelationQuery:
         return result
 
     @staticmethod
-    async def replace_user_roles(user_id: int, role_ids: List[int]) -> None:
-        """替换用户的角色关联（先删除再批量插入）"""
-        await UserRole.filter(user_id=user_id).delete()
+    async def replace_user_roles(user_id: int, role_ids: List[int], tenant_id: int = None) -> None:
+        """替换用户的角色关联（先删除再批量插入），支持tenant_id"""
+        # 根据tenant_id过滤删除范围
+        if tenant_id is not None:
+            await UserRole.filter(user_id=user_id, tenant_id=tenant_id).delete()
+        else:
+            await UserRole.filter(user_id=user_id).delete()
+
         if role_ids:
             await UserRole.bulk_create(
-                [UserRole(user_id=user_id, role_id=rid) for rid in set(role_ids)]
+                [UserRole(user_id=user_id, role_id=rid, tenant_id=tenant_id)
+                 for rid in set(role_ids)]
             )
 
     @staticmethod
-    async def batch_add_user_roles(user_id_role_id_pairs: List[Tuple[int, int]]) -> None:
-        """批量添加用户-角色关联（自动去重）"""
+    async def batch_add_user_roles(user_id_role_id_pairs: List[Tuple[int, int, int]]) -> None:
+        """批量添加用户-角色关联（自动去重），支持tenant_id"""
         if not user_id_role_id_pairs:
             return
-        existing = await UserRole.all().values("user_id", "role_id")
+        # 只查询相关用户的数据，减少查询范围
+        user_ids = list(set(uid for uid, _, _ in user_id_role_id_pairs))
+        existing = await UserRole.filter(user_id__in=user_ids).values("user_id", "role_id")
         existing_set = {(r["user_id"], r["role_id"]) for r in existing}
         to_create = []
-        for uid, rid in user_id_role_id_pairs:
+        for uid, rid, tid in user_id_role_id_pairs:
             if (uid, rid) not in existing_set:
-                to_create.append(UserRole(user_id=uid, role_id=rid))
+                to_create.append(UserRole(user_id=uid, role_id=rid, tenant_id=tid))
                 existing_set.add((uid, rid))
         if to_create:
             await UserRole.bulk_create(to_create)
@@ -77,25 +85,32 @@ class RelationQuery:
         return result
 
     @staticmethod
-    async def replace_role_menus(role_id: int, menu_ids: List[int]) -> None:
-        """替换角色的菜单关联（先删除再批量插入）"""
-        await RoleMenu.filter(role_id=role_id).delete()
+    async def replace_role_menus(role_id: int, menu_ids: List[int], tenant_id: int = None) -> None:
+        """替换角色的菜单关联（先删除再批量插入），支持tenant_id"""
+        # 根据tenant_id过滤删除范围
+        if tenant_id is not None:
+            await RoleMenu.filter(role_id=role_id, tenant_id=tenant_id).delete()
+        else:
+            await RoleMenu.filter(role_id=role_id).delete()
+        
         if menu_ids:
             await RoleMenu.bulk_create(
-                [RoleMenu(role_id=role_id, menu_id=mid) for mid in set(menu_ids)]
+                [RoleMenu(role_id=role_id, menu_id=mid, tenant_id=tenant_id) for mid in set(menu_ids)]
             )
 
     @staticmethod
-    async def batch_add_role_menus(role_id_menu_id_pairs: List[Tuple[int, int]]) -> None:
-        """批量添加角色-菜单关联（自动去重）"""
+    async def batch_add_role_menus(role_id_menu_id_pairs: List[Tuple[int, int]], tenant_id: int = None) -> None:
+        """批量添加角色-菜单关联（自动去重），支持tenant_id"""
         if not role_id_menu_id_pairs:
             return
-        existing = await RoleMenu.all().values("role_id", "menu_id")
+        # 只查询相关角色的数据，减少查询范围
+        role_ids = list(set(rid for rid, _ in role_id_menu_id_pairs))
+        existing = await RoleMenu.filter(role_id__in=role_ids).values("role_id", "menu_id")
         existing_set = {(r["role_id"], r["menu_id"]) for r in existing}
         to_create = []
         for rid, mid in role_id_menu_id_pairs:
             if (rid, mid) not in existing_set:
-                to_create.append(RoleMenu(role_id=rid, menu_id=mid))
+                to_create.append(RoleMenu(role_id=rid, menu_id=mid, tenant_id=tenant_id))
                 existing_set.add((rid, mid))
         if to_create:
             await RoleMenu.bulk_create(to_create)
@@ -124,25 +139,32 @@ class RelationQuery:
         return result
 
     @staticmethod
-    async def replace_role_apis(role_id: int, api_ids: List[int]) -> None:
-        """替换角色的API关联（先删除再批量插入）"""
-        await RoleApi.filter(role_id=role_id).delete()
+    async def replace_role_apis(role_id: int, api_ids: List[int], tenant_id: int = None) -> None:
+        """替换角色的API关联（先删除再批量插入），支持tenant_id"""
+        # 根据tenant_id过滤删除范围
+        if tenant_id is not None:
+            await RoleApi.filter(role_id=role_id, tenant_id=tenant_id).delete()
+        else:
+            await RoleApi.filter(role_id=role_id).delete()
+        
         if api_ids:
             await RoleApi.bulk_create(
-                [RoleApi(role_id=role_id, api_id=aid) for aid in set(api_ids)]
+                [RoleApi(role_id=role_id, api_id=aid, tenant_id=tenant_id) for aid in set(api_ids)]
             )
 
     @staticmethod
-    async def batch_add_role_apis(role_id_api_id_pairs: List[Tuple[int, int]]) -> None:
-        """批量添加角色-API关联（自动去重）"""
+    async def batch_add_role_apis(role_id_api_id_pairs: List[Tuple[int, int]], tenant_id: int = None) -> None:
+        """批量添加角色-API关联（自动去重），支持tenant_id"""
         if not role_id_api_id_pairs:
             return
-        existing = await RoleApi.all().values("role_id", "api_id")
+        # 只查询相关角色的数据，减少查询范围
+        role_ids = list(set(rid for rid, _ in role_id_api_id_pairs))
+        existing = await RoleApi.filter(role_id__in=role_ids).values("role_id", "api_id")
         existing_set = {(r["role_id"], r["api_id"]) for r in existing}
         to_create = []
         for rid, aid in role_id_api_id_pairs:
             if (rid, aid) not in existing_set:
-                to_create.append(RoleApi(role_id=rid, api_id=aid))
+                to_create.append(RoleApi(role_id=rid, api_id=aid, tenant_id=tenant_id))
                 existing_set.add((rid, aid))
         if to_create:
             await RoleApi.bulk_create(to_create)
@@ -171,20 +193,20 @@ class RelationQuery:
         return result
 
     @staticmethod
-    async def replace_user_tenants(user_id: int, tenant_ids: List[int]) -> None:
-        """替换用户的租户关联（先删除再批量插入）"""
+    async def replace_user_tenants(user_id: int, tenant_id: int) -> None:
+        """替换用户的租户关联（先删除再插入单个租户）"""
         await UserTenant.filter(user_id=user_id).delete()
-        if tenant_ids:
-            await UserTenant.bulk_create(
-                [UserTenant(user_id=user_id, tenant_id=tid) for tid in set(tenant_ids)]
-            )
+        if tenant_id:
+            await UserTenant.create(user_id=user_id, tenant_id=tenant_id)
 
     @staticmethod
     async def batch_add_user_tenants(user_id_tenant_id_pairs: List[Tuple[int, int]]) -> None:
         """批量添加用户-租户关联（自动去重）"""
         if not user_id_tenant_id_pairs:
             return
-        existing = await UserTenant.all().values("user_id", "tenant_id")
+        # 只查询相关用户的数据，减少查询范围
+        user_ids = list(set(uid for uid, _ in user_id_tenant_id_pairs))
+        existing = await UserTenant.filter(user_id__in=user_ids).values("user_id", "tenant_id")
         existing_set = {(r["user_id"], r["tenant_id"]) for r in existing}
         to_create = []
         for uid, tid in user_id_tenant_id_pairs:
