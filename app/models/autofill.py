@@ -62,6 +62,11 @@ class FillDataRecord(BaseModel, TimestampMixin):
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
     data = fields.JSONField(null=True, description="填单数据")
+    # AI填单相关字段
+    status = fields.CharField(max_length=32, default="pending", description="处理状态: pending/queued/processing/completed/failed/timeout", index=True)
+    result = fields.JSONField(null=True, description="AI填单结果数据")
+    error_msg = fields.TextField(null=True, description="错误信息")
+    processed_at = fields.DatetimeField(null=True, description="处理完成时间")
 
     class Meta:
         table = "fill_data_record"

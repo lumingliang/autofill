@@ -8,6 +8,8 @@ from tortoise import Tortoise
 from app.core.exceptions import SettingNotFound
 from app.core.init_app import (
     init_data,
+    init_kafka_consumers,
+    shutdown_kafka,
     make_middlewares,
     register_exceptions,
     register_routers,
@@ -28,16 +30,23 @@ async def lifespan(app: FastAPI):
         await redis_client.init()
     except Exception as e:
         print(f"Warning: Redis connection failed: {e}")
-    
+
     await init_data()
+
+    # 初始化 Kafka 消费者
+    await init_kafka_consumers()
+
     yield
-    
+
+    # 关闭 Kafka 消费者
+    await shutdown_kafka()
+
     # 关闭 Redis 连接
     try:
         await redis_client.close()
     except Exception:
         pass
-    
+
     await Tortoise.close_connections()
 
 

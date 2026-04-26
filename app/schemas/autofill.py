@@ -185,3 +185,9 @@ class RecordFillDataRequest(BaseModel):
 class AIFillDataRequest(BaseModel):
     session_id: str
     data: Dict[str, Any]
+    response_mode: str = "sync"  # sync 或 async
+
+
+class AIFillDataResultRequest(BaseModel):
+    """查询AI填单结果请求"""
+    session_id: str

@@ -17,6 +17,7 @@ from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
 from app.schemas.base import Fail, Success
 from app.schemas.autofill import *
+from app.services.ai_fill_service import get_ai_fill_service
 from app.settings.config import settings
 
 logger = logging.getLogger(__name__)
@@ -247,59 +248,76 @@ async def get_ai_fill_data_handler(
 ):
     """
     获取AI填单数据处理逻辑
+    支持同步(sync)和异步(async)两种模式
     """
     # 使用通用参数解析组件获取参数
     params = await parse_request_params(request, AIFillDataRequest)
-    
+
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
-
-    # 1. 存储原始数据到数据库
-    await fill_data_record_controller.save_original_data(
-        session_id=params["session_id"],
-        tenant_id=tenant_id,
-        app_name=app_name,
-        data=params["data"]
-    )
-
-    # 2. 转发请求到 Dify
     dify_url = auth_info["dify_url"]
     dify_api_key = auth_info["dify_api_key"]
-    dify_timeout = settings.DIFY_TIMEOUT
 
     if not dify_url or not dify_api_key:
         raise HTTPException(status_code=500, detail="Dify configuration not found")
 
-    # 构建转发请求
-    headers = {
-        "Authorization": f"Bearer {dify_api_key}",
-        "Content-Type": "application/json"
-    }
+    # 获取服务实例
+    service = get_ai_fill_service()
 
-    payload = {
-        "inputs": {
-            "data": params["data"],
-        },
-        "response_mode": "blocking",
-        "conversation_id": "",
-        "user": params["session_id"]
-    }
+    # 根据响应模式选择处理方式
+    response_mode = params.get("response_mode", "sync")
 
-    try:
-        async with httpx.AsyncClient(timeout=dify_timeout) as client:
-            response = await client.post(
-                dify_url,
-                headers=headers,
-                json=payload
-            )
-            response.raise_for_status()
-            return Success(data=response.json())
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Dify service timeout")
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Dify service error: {e.response.status_code}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+    if response_mode == "async":
+        # 异步模式：将请求发送到 Kafka 队列
+        result = await service.process_async(
+            session_id=params["session_id"],
+            tenant_id=tenant_id,
+            app_name=app_name,
+            data=params["data"],
+            dify_url=dify_url,
+            dify_api_key=dify_api_key
+        )
+        return Success(data=result)
+    else:
+        # 同步模式：直接调用 Dify
+        result = await service.process_sync(
+            session_id=params["session_id"],
+            tenant_id=tenant_id,
+            app_name=app_name,
+            data=params["data"],
+            dify_url=dify_url,
+            dify_api_key=dify_api_key
+        )
+        return Success(data=result)
+
+
+async def get_ai_fill_data_result_handler(
+    request: Request,
+    auth_info: dict
+):
+    """
+    查询AI填单异步处理结果
+    """
+    # 使用通用参数解析组件获取参数
+    params = await parse_request_params(request, AIFillDataResultRequest)
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+
+    # 获取服务实例
+    service = get_ai_fill_service()
+
+    # 查询结果
+    result = await service.get_result(
+        session_id=params["session_id"],
+        tenant_id=tenant_id,
+        app_name=app_name
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    return Success(data=result)
 
 
 @autofill_public_router.get("/autofill/get_ai_fill_data", summary="获取AI填单数据")
@@ -312,5 +330,20 @@ async def get_ai_fill_data(
     三方应用调用: 接收请求 -> 存储数据 -> 转发Dify -> 返回响应
     支持 GET 和 POST 方法
     支持参数传递方式: Query / Form-Data / JSON Body
+    支持 response_mode 参数: sync(同步) 或 async(异步)
     """
     return await get_ai_fill_data_handler(request, auth_info)
+
+
+@autofill_public_router.get("/autofill/get_ai_fill_data_result", summary="查询AI填单异步结果")
+@autofill_public_router.post("/autofill/get_ai_fill_data_result", summary="查询AI填单异步结果")
+async def get_ai_fill_data_result(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    查询AI填单异步处理结果
+    支持 GET 和 POST 方法
+    支持参数传递方式: Query / Form-Data / JSON Body
+    """
+    return await get_ai_fill_data_result_handler(request, auth_info)

@@ -1,6 +1,4 @@
-[database]
-# 数据库配置 - 仅支持 MySQL
-
+# 数据库配置
 [database.mysql]
 host = "127.0.0.1"
 port = 3306
@@ -8,42 +6,19 @@ user = "root"
 password = "root123456"
 database = "autofill"
 
-[app]
-# 应用配置
-debug = true
-secret_key = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"
-jwt_access_token_expire_minutes = 10080  # 7天
-
-[app.cors]
-origins = ["*"]
-allow_credentials = true
-allow_methods = ["*"]
-allow_headers = ["*"]
-
-[upload]
-# 上传文件保存目录
-upload_dir = "./uploads"
-# 头像保存子目录
-avatar_dir = "./uploads/avatars"
-# 允许的文件类型
-allowed_extensions = ["jpg", "jpeg", "png", "gif", "webp"]
-# 最大文件大小 (MB)
-max_file_size = 5
-# 文件访问URL前缀
-file_url_prefix = "/uploads"
-
+# Redis 配置
 [redis]
-# Redis配置 - 全局缓存组件
 host = "127.0.0.1"
 port = 6379
-password = "redis123456"
-db = 3
-key_prefix = "auto_fill"
+password = ""
+db = 0
+key_prefix = "autofill"
 
-[dify]
 # Dify AI 服务配置
-dify_timeout = 180
+[dify]
+dify_timeout = 60.0
 
+# Kafka 配置
 [kafka]
 # Kafka 连接配置
 bootstrap_servers = "localhost:9092"
@@ -69,20 +44,33 @@ name = "autofill.ai.requests"
 partitions = 3
 replication_factor = 1
 
+# 应用配置
+[app]
+debug = true
+secret_key = "your-secret-key-here"
+jwt_access_token_expire_minutes = 10080
+
+[app.cors]
+origins = ["*"]
+allow_credentials = true
+allow_methods = ["*"]
+allow_headers = ["*"]
+
+# 上传配置
+[upload]
+upload_dir = "./uploads"
+avatar_dir = "./uploads/avatars"
+allowed_extensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+max_file_size = 5
+file_url_prefix = "/uploads"
+
+# 日志配置
 [logging]
-# 日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL
 level = "INFO"
-# 日志文件路径
 log_file = "./logs/app.log"
-# 日志文件最大大小 (MB)
 max_bytes = 10
-# 备份文件数量
 backup_count = 5
-# 是否输出到控制台
 console_output = true
-# 是否输出到文件
 file_output = true
-# 日志格式: text, json
 format = "json"
-# 是否启用请求追踪 ID
 enable_request_id = true

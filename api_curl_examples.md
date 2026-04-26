@@ -218,6 +218,121 @@ curl -X POST "http://localhost:9999/api/autofill/get_ai_fill_data" \
 
 ---
 
+## 异步调用示例
+
+### 1. 发送异步请求
+
+添加 `response_mode=async` 参数，将请求放入 Kafka 队列异步处理：
+
+```bash
+curl -X POST "http://localhost:9999/api/autofill/get_ai_fill_data" \
+  -H "Authorization: Bearer af_1fzDujUFl7SLg9L3CWMSV5upBT4GU1bR" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "sess_async_001",
+    "response_mode": "async",
+    "data": {
+      "chat_messages": [
+        {"type": "user", "msg": "我的车空调不制冷，风也不凉", "timestamp": "2024-01-15T10:00:00Z"},
+        {"type": "assistant", "msg": "您好，我是比亚迪客服，请问您的车系和车架号是多少？", "timestamp": "2024-01-15T10:00:05Z"},
+        {"type": "user", "msg": "汉EV，车架号LGXCE6CB5L1234567", "timestamp": "2024-01-15T10:00:15Z"},
+        {"type": "assistant", "msg": "好的，请问您车辆目前行驶里程是多少？空调是从什么时候开始不制冷的？", "timestamp": "2024-01-15T10:00:25Z"},
+        {"type": "user", "msg": "行驶了3万多公里，昨天开始不制冷的", "timestamp": "2024-01-15T10:00:35Z"},
+        {"type": "assistant", "msg": "了解了，请问您设置的空调温度是多少度？风量档位开到最大了吗？", "timestamp": "2024-01-15T10:00:45Z"},
+        {"type": "user", "msg": "设置18度，风量最大了，吹出来的还是热风", "timestamp": "2024-01-15T10:00:55Z"},
+        {"type": "assistant", "msg": "收到，我已记录您的问题。空调制冷异常，车系汉EV，车架号LGXCE6CB5L1234567，行驶3万公里，昨天开始出现不制冷现象，设置18度最大风量仍出热风。我们会安排技师为您检修。", "timestamp": "2024-01-15T10:01:00Z"}
+      ],
+      "user_info": {"name": "李四", "phone": "13912345678"},
+      "vehicle_info": {"model": "汉EV", "vin": "LGXCE6CB5L1234567", "mileage": "30000"},
+      "issue_summary": "空调不制冷，设置18度最大风量仍出热风"
+    }
+  }'
+```
+
+**返回示例（异步模式）：**
+```json
+{
+  "code": 200,
+  "data": {
+    "session_id": "sess_async_001",
+    "status": "queued",
+    "message": "Request has been queued for async processing"
+  },
+  "msg": "success"
+}
+```
+
+### 2. 查询异步处理结果
+
+使用 `session_id` 查询处理结果：
+
+```bash
+curl -X POST "http://localhost:9999/api/autofill/get_ai_fill_data_result" \
+  -H "Authorization: Bearer af_1fzDujUFl7SLg9L3CWMSV5upBT4GU1bR" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "sess_async_001"
+  }'
+```
+
+**返回示例（处理中）：**
+```json
+{
+  "code": 200,
+  "data": {
+    "session_id": "sess_async_001",
+    "status": "processing",
+    "data": {
+      "original_data": {
+        "chat_messages": [...]
+      }
+    },
+    "result": null,
+    "error_msg": null,
+    "created_at": "2024-01-15T10:00:00",
+    "processed_at": null
+  },
+  "msg": "success"
+}
+```
+
+**返回示例（已完成）：**
+```json
+{
+  "code": 200,
+  "data": {
+    "session_id": "sess_async_001",
+    "status": "completed",
+    "data": {
+      "original_data": {
+        "chat_messages": [...]
+      }
+    },
+    "result": {
+      "answer": "AI 处理结果...",
+      "conversation_id": "xxx"
+    },
+    "error_msg": null,
+    "created_at": "2024-01-15T10:00:00",
+    "processed_at": "2024-01-15T10:00:05"
+  },
+  "msg": "success"
+}
+```
+
+### 3. 状态流转说明
+
+| 状态 | 说明 |
+|------|------|
+| `pending` | 待处理 - 已写入数据库，等待发送到 Kafka |
+| `queued` | 已入队 - 已发送到 Kafka 队列 |
+| `processing` | 处理中 - 消费者正在调用 Dify |
+| `completed` | 已完成 - 成功获取 Dify 结果 |
+| `failed` | 失败 - 处理过程中出错 |
+| `timeout` | 超时 - Dify 请求超时 |
+
+---
+
 ## 接口说明
 
 | 序号 | 接口路径 | 功能说明 |
