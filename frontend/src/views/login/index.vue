@@ -2,7 +2,7 @@
   <div class="login-page">
     <div class="login-box">
       <div class="login-header">
-        <img src="/favicon.svg" class="logo" />
+        <img src="/logo.svg" class="logo" />
         <h2>AI平台</h2>
       </div>
 
