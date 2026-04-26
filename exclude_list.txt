@@ -1,0 +1,103 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE - 保留 .vscode
+.idea/
+*.swp
+*.swo
+*~
+
+# Database
+db.sqlite3
+db.sqlite3-journal
+db.sqlite3-shm
+db.sqlite3-wal
+*.db
+
+# Logs
+logs/
+*.log
+
+# Uploads
+uploads/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Cache
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.cache/
+*.cache
+
+# OS
+.DS_Store
+._.DS_Store
+Thumbs.db
+
+# Git - 保留 .gitignore
+.git/
+
+# Docker
+.dockerignore
+
+# Migration files (optional)
+migrations/
+
+# Frontend build
+frontend/dist/
+frontend/node_modules/
+frontendback/node_modules/
+frontendback/apps/*/node_modules/
+frontendback/apps/*/.output/
+frontendback/apps/*/.nitro/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Large media files
+*.mp4
+*.mov
+*.avi
+*.wmv
+*.flv
+*.mkv
