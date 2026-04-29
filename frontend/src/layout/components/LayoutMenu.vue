@@ -1,12 +1,6 @@
 <template>
-  <a-menu
-    v-model:selectedKeys="selectedKeys"
-    v-model:openKeys="openKeys"
-    mode="inline"
-    theme="dark"
-    :inline-collapsed="appStore.collapsed"
-    @click="handleMenuClick"
-  >
+  <a-menu v-model:selectedKeys="selectedKeys" v-model:openKeys="openKeys" mode="inline" theme="dark"
+    :inline-collapsed="appStore.collapsed" @click="handleMenuClick">
     <template v-for="menu in menuList" :key="menu.key">
       <a-sub-menu v-if="menu.children && menu.children.length" :key="menu.key">
         <template #title>
@@ -28,20 +22,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, h } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { useAppStore, usePermissionStore } from '@/store'
 import {
-  MenuOutlined,
-  SettingOutlined,
-  TeamOutlined,
-  FileTextOutlined,
   ApartmentOutlined,
   ApiOutlined,
-  SafetyOutlined,
-  UserOutlined,
+  FileTextOutlined,
   HomeOutlined,
+  MenuOutlined,
+  SafetyOutlined,
+  SettingOutlined,
+  TeamOutlined,
+  UserOutlined,
 } from '@ant-design/icons-vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,8 +98,11 @@ function buildMenuItem(route: any, basePath = ''): MenuItem {
 
   if (!visibleChildren.length) return menuItem
 
-  if (visibleChildren.length === 1) {
-    // 单个子路由，直接提升
+  // 检查当前路由是否是目录类型（有Layout组件且有多个子路由或明确是catalog类型）
+  const isCatalog = route.path?.startsWith('/') && visibleChildren.length > 0
+
+  if (visibleChildren.length === 1 && !isCatalog) {
+    // 单个子路由，直接提升（仅对非目录类型）
     const singleRoute = visibleChildren[0]
     menuItem = {
       ...menuItem,

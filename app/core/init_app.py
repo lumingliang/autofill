@@ -28,6 +28,8 @@ from app.models.admin import Api, Menu, Role
 from app.schemas.menus import MenuType
 from app.services.ai_fill_service import AIFillService, get_ai_fill_service
 from app.settings.config import settings
+from app.core.menu_registry import menu_registry
+from app.core.menu_config import register_all_menus
 
 from .middlewares import (
     BackGroundTaskMiddleware,
@@ -90,173 +92,15 @@ async def init_superuser():
 
 
 async def init_menus():
-    menus = await Menu.exists()
-    if not menus:
-        parent_menu = await Menu.create(
-            menu_type=MenuType.CATALOG,
-            name="系统管理",
-            path="/system",
-            order=1,
-            parent_id=0,
-            icon="carbon:gui-management",
-            is_hidden=False,
-            component="Layout",
-            keepalive=False,
-            redirect="/system/user",
-        )
-        children_menu = [
-            Menu(
-                menu_type=MenuType.MENU,
-                name="用户管理",
-                path="user",
-                order=1,
-                parent_id=parent_menu.id,
-                icon="material-symbols:person-outline-rounded",
-                is_hidden=False,
-                component="/system/user",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="角色管理",
-                path="role",
-                order=2,
-                parent_id=parent_menu.id,
-                icon="carbon:user-role",
-                is_hidden=False,
-                component="/system/role",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="菜单管理",
-                path="menu",
-                order=3,
-                parent_id=parent_menu.id,
-                icon="material-symbols:list-alt-outline",
-                is_hidden=False,
-                component="/system/menu",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="API管理",
-                path="api",
-                order=4,
-                parent_id=parent_menu.id,
-                icon="ant-design:api-outlined",
-                is_hidden=False,
-                component="/system/api",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="部门管理",
-                path="dept",
-                order=5,
-                parent_id=parent_menu.id,
-                icon="mingcute:department-line",
-                is_hidden=False,
-                component="/system/dept",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="审计日志",
-                path="auditlog",
-                order=6,
-                parent_id=parent_menu.id,
-                icon="ph:clipboard-text-bold",
-                is_hidden=False,
-                component="/system/auditlog",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="租户管理",
-                path="tenant",
-                order=7,
-                parent_id=parent_menu.id,
-                icon="material-symbols:domain",
-                is_hidden=False,
-                component="/system/tenant",
-                keepalive=False,
-            ),
-        ]
-        await Menu.bulk_create(children_menu)
-        await Menu.create(
-            menu_type=MenuType.MENU,
-            name="一级菜单",
-            path="/top-menu",
-            order=2,
-            parent_id=0,
-            icon="material-symbols:featured-play-list-outline",
-            is_hidden=False,
-            component="/top-menu",
-            keepalive=False,
-            redirect="",
-        )
+    """
+    初始化菜单系统
+    使用新的菜单注册中心实现增量同步
+    """
+    # 注册所有菜单配置
+    register_all_menus()
 
-        # 创建智能填单菜单
-        autofill_menu = await Menu.create(
-            menu_type=MenuType.CATALOG,
-            name="智能填单",
-            path="/autofill",
-            order=3,
-            parent_id=0,
-            icon="material-symbols:smart-toy-outline",
-            is_hidden=False,
-            component="Layout",
-            keepalive=False,
-            redirect="/autofill/app",
-        )
-        autofill_children = [
-            Menu(
-                menu_type=MenuType.MENU,
-                name="应用管理",
-                path="app",
-                order=1,
-                parent_id=autofill_menu.id,
-                icon="material-symbols:apps-outline",
-                is_hidden=False,
-                component="/autofill/app",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="总结模板",
-                path="template",
-                order=2,
-                parent_id=autofill_menu.id,
-                icon="material-symbols:description-outline",
-                is_hidden=False,
-                component="/autofill/template",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="下拉选项",
-                path="dropdown",
-                order=3,
-                parent_id=autofill_menu.id,
-                icon="material-symbols:arrow-drop-down-circle-outline",
-                is_hidden=False,
-                component="/autofill/dropdown",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="填单记录",
-                path="record",
-                order=4,
-                parent_id=autofill_menu.id,
-                icon="material-symbols:history-outline",
-                is_hidden=False,
-                component="/autofill/record",
-                keepalive=False,
-            ),
-        ]
-        await Menu.bulk_create(autofill_children)
+    # 同步到数据库（自动处理新增、更新）
+    await menu_registry.sync_to_database()
 
 
 async def init_apis():
