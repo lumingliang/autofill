@@ -180,51 +180,77 @@ class LLMProxyService:
                 HumanMessage(content=human_prompt),
             ]
 
-            # 对于某些API（如魔搭社区），需要使用流式输出
+            # 对于OpenAI兼容的API（如魔搭社区），使用ChatOpenAI的流式输出+工具调用
             if config.model_provider in ["modelscope"]:
-                # 魔搭社区API只支持流式输出，直接使用OpenAI客户端
-                from openai import AsyncOpenAI
+                from langchain_openai import ChatOpenAI
 
-                client = AsyncOpenAI(
-                    api_key=config.api_key,
-                    base_url=config.api_base
-                )
-
-                # 转换消息格式
-                openai_messages = []
-                for msg in messages:
-                    if hasattr(msg, 'content'):
-                        role = "system" if msg.type == "system" else "user"
-                        openai_messages.append({"role": role, "content": msg.content})
-
-                # 使用流式输出
-                stream = await client.chat.completions.create(
+                # 创建ChatOpenAI实例，启用流式输出
+                chat_model = ChatOpenAI(
                     model=config.model_name,
-                    messages=openai_messages,
+                    api_key=config.api_key,
+                    base_url=config.api_base,
                     temperature=config.temperature,
                     max_tokens=config.max_tokens,
-                    stream=True
+                    top_p=config.top_p,
+                    streaming=True,
                 )
 
-                # 收集流式输出内容
-                content = ""
-                async for chunk in stream:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        content += chunk.choices[0].delta.content
+                # 将function_schema转换为tool格式
+                tools = [function_schema]
 
-                # 解析JSON
-                try:
-                    result = json.loads(content)
-                    return result
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON from stream: {e}")
-                    # 尝试提取JSON部分
-                    import re
-                    json_match = re.search(r'\{.*\}', content, re.DOTALL)
-                    if json_match:
-                        result = json.loads(json_match.group())
-                        return result
-                    raise
+                # 使用流式输出+工具调用
+                content = ""
+                tool_calls_data = {}
+
+                async for chunk in chat_model.astream(messages, tools=tools, tool_choice="auto"):
+                    if chunk.content:
+                        content += chunk.content
+                    # 收集工具调用参数
+                    if chunk.tool_calls:
+                        for tc in chunk.tool_calls:
+                            index = tc.get('index', 0)
+                            if index not in tool_calls_data:
+                                tool_calls_data[index] = {'id': tc.get('id', ''), 'name': tc.get('name', ''), 'arguments': ''}
+                            if tc.get('function', {}).get('arguments'):
+                                tool_calls_data[index]['arguments'] += tc['function']['arguments']
+
+                # 如果有工具调用，解析参数
+                if tool_calls_data:
+                    # 获取第一个工具调用的参数
+                    first_tool = tool_calls_data[0]
+                    args_str = first_tool['arguments']
+
+                    # 解析JSON参数
+                    try:
+                        result = json.loads(args_str)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse tool call arguments: {e}, args: {args_str}")
+                        raise ValueError(f"无法解析工具调用参数: {args_str}")
+
+                    # 使用Pydantic模型验证结果
+                    validated_result = output_model(**result)
+                    return validated_result.model_dump()
+                else:
+                    # 没有工具调用，尝试从content中解析JSON
+                    try:
+                        result = json.loads(content)
+                    except json.JSONDecodeError:
+                        # 尝试从markdown代码块中提取JSON
+                        import re
+                        json_match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
+                        if json_match:
+                            result = json.loads(json_match.group(1))
+                        else:
+                            # 尝试匹配第一个JSON对象
+                            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                            if json_match:
+                                result = json.loads(json_match.group())
+                            else:
+                                raise ValueError(f"无法从响应中解析JSON: {content}")
+
+                    # 使用Pydantic模型验证结果
+                    validated_result = output_model(**result)
+                    return validated_result.model_dump()
             else:
                 # 使用with_structured_output
                 structured_llm = chat_model.with_structured_output(output_model)
