@@ -21,9 +21,12 @@ class ApiController(CRUDBase[Api, ApiCreate, ApiUpdate]):
         if len(route.dependencies) == 0:
             return False
         # 只管理 /api/v1 开头的 API (后台管理接口)
-        # 排除 /api/autofill/ 开头的公开接口
+        # 排除 /api/autofill/ 开头的公开接口 (智能填单公开接口)
+        # 排除 /api/llm/ 开头的公开接口 (LLM代理公开接口)
         path = route.path_format
         if path.startswith("/api/autofill/"):
+            return False
+        if path.startswith("/api/llm/"):
             return False
         if not path.startswith("/api/v1/"):
             return False
