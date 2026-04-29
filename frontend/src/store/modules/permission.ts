@@ -23,7 +23,7 @@ function buildRoutes(routes: any[] = []) {
 
     if (e.children && e.children.length > 0) {
       route.children = e.children.map((child: any) => {
-        const componentPath = `/src/views${child.component}/index.vue`
+        const componentPath = `/src/views/${child.component}/index.vue`
         const component = vueModules[componentPath]
         if (!component) {
           console.warn(`Component not found: ${componentPath}`)
@@ -41,7 +41,7 @@ function buildRoutes(routes: any[] = []) {
         }
       })
     } else {
-      const componentPath = `/src/views${e.component}/index.vue`
+      const componentPath = `/src/views/${e.component}/index.vue`
       const component = vueModules[componentPath]
       if (!component) {
         console.warn(`Component not found: ${componentPath}`)

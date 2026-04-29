@@ -23,7 +23,7 @@ BACKEND_PORT=9999
 FRONTEND_PORT=3200
 
 # Conda 配置
-CONDA_ENV="autofill"  # 默认 conda 环境名，可根据需要修改
+CONDA_ENV="dev"  # 默认 conda 环境名，可根据需要修改
 
 # 日志函数
 log_info() {
@@ -44,7 +44,12 @@ log_error() {
 
 # 检查 conda 是否安装
 check_conda() {
-    if ! command -v conda &> /dev/null; then
+    if [ -f "$HOME/miniforge3/bin/conda" ]; then
+        export PATH="$HOME/miniforge3/bin:$PATH"
+        return 0
+    elif command -v conda &> /dev/null; then
+        return 0
+    else
         log_error "conda 未安装，请先安装 Anaconda 或 Miniconda"
         exit 1
     fi
@@ -53,7 +58,9 @@ check_conda() {
 # 获取 conda 的 shell 钩子
 get_conda_hook() {
     # 尝试不同的 conda 初始化方式
-    if [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
+    if [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
+        echo "$HOME/miniforge3/etc/profile.d/conda.sh"
+    elif [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
         echo "$HOME/anaconda3/etc/profile.d/conda.sh"
     elif [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
         echo "$HOME/miniconda3/etc/profile.d/conda.sh"
@@ -144,7 +151,7 @@ start_backend() {
         log_info "使用 conda 环境: $CONDA_ENV"
         log_info "启动 FastAPI 服务 (端口: $BACKEND_PORT)..."
         
-        python run.py &
+        "$HOME/miniforge3/envs/$CONDA_ENV/bin/python" run.py &
         local pid=$!
         save_pid "$pid" "$BACKEND_PID_FILE"
 
