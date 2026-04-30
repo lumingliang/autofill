@@ -1,5 +1,6 @@
 import CrudTable from './index.vue'
-import FilterItem from './FilterItem.vue'
+import type { ColumnType, PaginationConfig } from './index.vue'
 
-export { CrudTable, FilterItem }
+export { CrudTable }
+export type { ColumnType, PaginationConfig }
 export default CrudTable

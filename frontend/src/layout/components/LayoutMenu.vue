@@ -2,7 +2,7 @@
   <a-menu v-model:selectedKeys="selectedKeys" v-model:openKeys="openKeys" mode="inline" theme="dark"
     :inline-collapsed="appStore.collapsed" @click="handleMenuClick">
     <template v-for="menu in menuList" :key="menu.key">
-      <a-sub-menu v-if="menu.children && menu.children.length" :key="menu.key">
+      <a-sub-menu v-if="menu.children && menu.children.length" :key="menu.key + '-sub'">
         <template #title>
           <span>
             <component :is="getIcon(menu.icon)" v-if="menu.icon" />
@@ -13,7 +13,7 @@
           {{ child.label }}
         </a-menu-item>
       </a-sub-menu>
-      <a-menu-item v-else :key="menu.key">
+      <a-menu-item v-else :key="menu.key + '-item'">
         <component :is="getIcon(menu.icon)" v-if="menu.icon" />
         <span>{{ menu.label }}</span>
       </a-menu-item>

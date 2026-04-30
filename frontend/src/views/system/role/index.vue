@@ -1,90 +1,72 @@
 <template>
-  <div class="role-page crud-page">
-    <a-card>
-      <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
-        <a-row :gutter="16" class="filter-row">
-          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-            <a-form-item label="角色名" class="filter-item">
-              <a-input v-model:value="queryParams.role_name" placeholder="请输入角色名" allow-clear
-                @pressEnter="handleSearch" />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-            <a-form-item label="租户" class="filter-item">
-              <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-                @change="handleSearch" />
-            </a-form-item>
-          </a-col>
-          <a-col v-bind="getActionColProps" class="filter-actions-col"
-            :class="filterItemCount <= 2 ? 'single-line' : 'multi-line'">
-            <a-form-item class="filter-actions">
-              <a-space>
-                <a-button type="primary" @click="handleSearch">
-                  <SearchOutlined />
-                  查询
-                </a-button>
-                <a-button @click="handleReset">
-                  <ReloadOutlined />
-                  重置
-                </a-button>
-              </a-space>
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-form>
+  <div class="role-page">
+    <CrudTable ref="crudTableRef" :columns="columns" :data-source="tableData" :loading="loading"
+      :pagination="pagination" :filter-model="queryParams" :filter-item-count="filterItemCount" show-modal
+      :modal-title="modalTitle" :modal-loading="modalLoading" :modal-form="modalForm" :modal-rules="modalRules"
+      @search="handleSearch" @reset="handleReset" @table-change="handleTableChange" @modal-ok="handleSave">
+      <!-- 筛选条件 -->
+      <template #filter-items>
+        <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+          <a-form-item label="角色名" class="filter-item">
+            <a-input v-model:value="queryParams.role_name" placeholder="请输入角色名" allow-clear
+              @pressEnter="handleSearch" />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+          <a-form-item label="租户" class="filter-item">
+            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
+              @change="handleSearch" />
+          </a-form-item>
+        </a-col>
+      </template>
 
-      <div class="table-actions">
+      <!-- 操作按钮 -->
+      <template #actions>
         <a-button v-permission="'post/api/v1/role/create'" type="primary" @click="handleAdd">
           <PlusOutlined />
           新建角色
         </a-button>
-      </div>
+      </template>
 
-      <a-table class="crud-table" :columns="columns" :data-source="tableData" :loading="loading"
-        :pagination="pagination" row-key="id" :scroll="{ x: 'max-content' }" @change="handleTableChange">
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a-tag color="blue">{{ record.name }}</a-tag>
-          </template>
-          <template v-if="column.key === 'tenant_name'">
-            <a-tag color="orange">{{ record.tenant_name || '系统角色' }}</a-tag>
-          </template>
-          <template v-if="column.key === 'created_at'">
-            {{ formatDateTime(record.created_at) }}
-          </template>
-          <template v-if="column.key === 'action'">
-            <a-space>
-              <a-button v-permission="'post/api/v1/role/update'" type="link" size="small"
-                @click="handleEdit(record)">编辑</a-button>
-              <a-popconfirm title="确定删除该角色吗？" @confirm="handleDelete(record)">
-                <a-button v-permission="'delete/api/v1/role/delete'" type="link" danger size="small">删除</a-button>
-              </a-popconfirm>
-              <a-button v-permission="'get/api/v1/role/authorized'" type="link" size="small"
-                @click="handleSetPermission(record)">设置权限</a-button>
-              <a-button v-permission="'post/api/v1/role/assign_users'" type="link" size="small"
-                @click="handleAssignUsers(record)">分配用户</a-button>
-            </a-space>
-          </template>
+      <!-- 表格列自定义 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'name'">
+          <a-tag color="blue">{{ record.name }}</a-tag>
         </template>
-      </a-table>
-    </a-card>
+        <template v-if="column.key === 'tenant_name'">
+          <a-tag color="orange">{{ record.tenant_name || '系统角色' }}</a-tag>
+        </template>
+        <template v-if="column.key === 'created_at'">
+          {{ formatDateTime(record.created_at) }}
+        </template>
+        <template v-if="column.key === 'action'">
+          <a-space>
+            <a-button v-permission="'post/api/v1/role/update'" type="link" size="small"
+              @click="handleEdit(record)">编辑</a-button>
+            <a-popconfirm title="确定删除该角色吗？" @confirm="handleDelete(record)">
+              <a-button v-permission="'delete/api/v1/role/delete'" type="link" danger size="small">删除</a-button>
+            </a-popconfirm>
+            <a-button v-permission="'get/api/v1/role/authorized'" type="link" size="small"
+              @click="handleSetPermission(record)">设置权限</a-button>
+            <a-button v-permission="'post/api/v1/role/assign_users'" type="link" size="small"
+              @click="handleAssignUsers(record)">分配用户</a-button>
+          </a-space>
+        </template>
+      </template>
 
-    <!-- 新增/编辑 弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="modalTitle" :confirm-loading="modalLoading" @ok="handleSave"
-      @cancel="modalVisible = false">
-      <a-form ref="modalFormRef" :model="modalForm" :rules="modalRules" :label-col="{ span: 6 }"
-        :wrapper-col="{ span: 16 }">
+      <!-- 弹窗表单 -->
+      <template #modal-form="{ form, action }">
         <a-form-item v-if="userStore.isSuperUser" label="所属租户" name="tenant_id">
-          <a-select v-model:value="modalForm.tenant_id" placeholder="请选择所属租户" :options="tenantOptions" />
+          <a-select v-model:value="form.tenant_id" placeholder="请选择所属租户" :options="tenantOptions" />
         </a-form-item>
         <a-form-item label="角色名" name="name">
-          <a-input v-model:value="modalForm.name" placeholder="请输入角色名称" />
+          <a-input v-model:value="form.name" placeholder="请输入角色名称" />
         </a-form-item>
         <a-form-item label="角色描述" name="desc">
-          <a-input v-model:value="modalForm.desc" placeholder="请输入角色描述" />
+          <a-input v-model:value="form.desc" placeholder="请输入角色描述" />
         </a-form-item>
-      </a-form>
-    </a-modal>
+      </template>
+    </CrudTable>
 
     <!-- 设置权限 Drawer -->
     <a-drawer v-model:open="drawerVisible" title="设置权限" placement="right" :width="500"
@@ -127,83 +109,58 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
-import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { useUserStore } from '@/store'
 import api from '@/api'
+import CrudTable from '@/components/CrudTable/index.vue'
+import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
+import { PlusOutlined } from '@ant-design/icons-vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 const userStore = useUserStore()
+const crudTableRef = ref<InstanceType<typeof CrudTable>>()
 
-const queryParams = reactive<any>({
+// 查询参数
+const queryParams = reactive({
   role_name: '',
-  tenant_id: undefined,
+  tenant_id: undefined as number | undefined,
 })
 
-// 计算表单项数量（用于控制按钮布局）
+// 计算表单项数量
 const filterItemCount = computed(() => {
-  // 基础字段：角色名
   let count = 1
-  // 超级管理员额外显示租户字段
   if (userStore.isSuperUser) count++
   return count
 })
 
-// 操作按钮列的栅格配置
-// 单行时宽度自适应，多行时占据标准宽度
-const getActionColProps = computed(() => {
-  const isSingleLine = filterItemCount.value <= 2
-  if (isSingleLine) {
-    // 单行模式：宽度自适应，不设置固定宽度
-    return {
-      xs: 24,
-      sm: 12,
-      md: 'auto',
-      lg: 'auto',
-      xl: 'auto'
-    }
-  }
-  // 多行模式：标准宽度
-  return {
-    xs: 24,
-    sm: 12,
-    md: 8,
-    lg: 6,
-    xl: 6
-  }
-})
-
+// 表格数据
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const pagination = reactive({
   current: 1,
   pageSize: 10,
   total: 0,
-  showSizeChanger: true,
-  showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const tenantOptions = ref<any[]>([])
+// 租户选项
+const tenantOptions = ref<{ label: string; value: number }[]>([])
 
+// 表格列
 const columns = computed(() => [
-  { title: '角色名', dataIndex: 'name', key: 'name', width: 150, resizable: true },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name', width: 150, resizable: true }] : []),
-  { title: '角色描述', dataIndex: 'desc', key: 'desc', width: 200, ellipsis: true, resizable: true },
-  { title: '创建日期', dataIndex: 'created_at', key: 'created_at', width: 180, resizable: true },
-  { title: '操作', key: 'action', width: 280, fixed: 'right' },
+  { title: '角色名', dataIndex: 'name', key: 'name', width: 150 },
+  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name', width: 150 }] : []),
+  { title: '角色描述', dataIndex: 'desc', key: 'desc', width: 200, ellipsis: true },
+  { title: '创建日期', dataIndex: 'created_at', key: 'created_at', width: 180 },
+  { title: '操作', key: 'action', width: 280, fixed: 'right' as const },
 ])
 
-const modalVisible = ref(false)
+// 弹窗相关
+const modalTitle = ref('')
 const modalLoading = ref(false)
-const modalAction = ref<'add' | 'edit'>('add')
-const modalTitle = computed(() => (modalAction.value === 'add' ? '新增角色' : '编辑角色'))
-const modalFormRef = ref()
-const modalForm = reactive<any>({
+const modalForm = reactive({
   name: '',
   desc: '',
-  tenant_id: undefined,
+  tenant_id: undefined as number | undefined,
 })
-
 const modalRules = {
   tenant_id: { required: true, message: '请选择所属租户', trigger: ['change', 'blur'], type: 'number' },
   name: { required: true, message: '请输入角色名称', trigger: ['input', 'blur'] },
@@ -225,8 +182,9 @@ const assignUserModalVisible = ref(false)
 const assignUserModalLoading = ref(false)
 const currentRole = ref<any>(null)
 const selectedUserIds = ref<number[]>([])
-const userOptions = ref<any[]>([])
+const userOptions = ref<{ label: string; value: number }[]>([])
 
+// 加载数据
 async function loadData() {
   loading.value = true
   try {
@@ -243,64 +201,65 @@ async function loadData() {
   }
 }
 
+// 加载租户选项
 async function loadTenants() {
   if (!userStore.isSuperUser) return
   const res: any = await api.getTenantSelect()
   tenantOptions.value = (res.data || []).map((item: any) => ({ label: item.name, value: item.id }))
 }
 
+// 查询
 function handleSearch() {
   pagination.current = 1
   loadData()
 }
 
+// 重置
 function handleReset() {
   queryParams.role_name = ''
   queryParams.tenant_id = undefined
   handleSearch()
 }
 
+// 表格变化
 function handleTableChange(p: any) {
   pagination.current = p.current
   pagination.pageSize = p.pageSize
   loadData()
 }
 
+// 新增
 function handleAdd() {
-  modalAction.value = 'add'
-  Object.assign(modalForm, {
-    name: '',
-    desc: '',
-    tenant_id: undefined,
-  })
-  modalVisible.value = true
+  modalTitle.value = '新增角色'
+  Object.assign(modalForm, { name: '', desc: '', tenant_id: undefined })
+  crudTableRef.value?.openAddModal()
 }
 
+// 编辑
 function handleEdit(record: any) {
-  modalAction.value = 'edit'
-  Object.assign(modalForm, { ...record })
-  modalVisible.value = true
+  modalTitle.value = '编辑角色'
+  crudTableRef.value?.openEditModal(record)
 }
 
-async function handleSave() {
+// 保存
+async function handleSave(form: Record<string, any>, action: 'add' | 'edit') {
   try {
-    await modalFormRef.value.validate()
     modalLoading.value = true
-    const apiFn = modalAction.value === 'add' ? api.createRole : api.updateRole
-    const res: any = await apiFn({ ...modalForm })
+    const apiFn = action === 'add' ? api.createRole : api.updateRole
+    const res: any = await apiFn({ ...form })
     if (res.code === 200) {
-      window.$message?.success(modalAction.value === 'add' ? '新增成功' : '编辑成功')
-      modalVisible.value = false
+      window.$message?.success(action === 'add' ? '新增成功' : '编辑成功')
+      crudTableRef.value?.closeModal()
       loadData()
     }
-  } catch (error: any) {
-    if (error.errorFields) return
+  } catch (error) {
     console.error('保存失败', error)
   } finally {
     modalLoading.value = false
   }
 }
 
+// 删除
 async function handleDelete(record: any) {
   try {
     const res: any = await api.deleteRole({ role_id: record.id })
@@ -313,6 +272,7 @@ async function handleDelete(record: any) {
   }
 }
 
+// 构建API树
 function buildApiTree(data: any[]) {
   const groupedData: any = {}
   data.forEach((item: any) => {
@@ -335,6 +295,7 @@ function buildApiTree(data: any[]) {
   return Object.values(groupedData)
 }
 
+// 设置权限
 async function handleSetPermission(record: any) {
   try {
     const [menusResponse, apisResponse, roleAuthorizedResponse] = await Promise.all([
@@ -357,16 +318,14 @@ async function handleSetPermission(record: any) {
   }
 }
 
+// 更新权限
 async function updateRoleAuthorized() {
   const apiInfos: any[] = []
   apiOptions.value.forEach((group: any) => {
     if (group.children) {
       group.children.forEach((item: any) => {
         if (apiIds.value.includes(item.unique_id)) {
-          apiInfos.push({
-            path: item.path,
-            method: item.method,
-          })
+          apiInfos.push({ path: item.path, method: item.method })
         }
       })
     }
@@ -386,20 +345,13 @@ async function updateRoleAuthorized() {
 
     const result = await api.getRoleAuthorized({ id: roleId.value })
     menuIds.value = (result.data?.menus || []).map((v: any) => v.id)
-    apiIds.value = (result.data?.apis || []).map(
-      (v: any) => v.method.toLowerCase() + v.path
-    )
+    apiIds.value = (result.data?.apis || []).map((v: any) => v.method.toLowerCase() + v.path)
   } catch (error: any) {
     window.$message?.error('设置失败: ' + error.message)
   }
 }
 
-onMounted(() => {
-  loadData()
-  loadTenants()
-})
-
-// 加载用户列表（用于下拉选择）- 使用角色可用用户接口
+// 加载用户选项
 async function loadUserOptions(roleId: number) {
   const res: any = await api.getRoleAvailableUsers({
     role_id: roleId,
@@ -424,10 +376,7 @@ async function handleAssignUsers(record: any) {
   selectedUserIds.value = []
 
   try {
-    // 加载角色可用用户列表
     await loadUserOptions(record.id)
-
-    // 获取当前角色已分配的用户
     const res: any = await api.getRoleUsers({ role_id: record.id })
     if (res.code === 200) {
       selectedUserIds.value = res.data || []
@@ -457,12 +406,9 @@ async function handleSaveAssignUsers() {
     assignUserModalLoading.value = false
   }
 }
-</script>
 
-<style scoped lang="less">
-.role-page {
-  .table-actions {
-    margin-bottom: 16px;
-  }
-}
-</style>
+onMounted(() => {
+  loadData()
+  loadTenants()
+})
+</script>
