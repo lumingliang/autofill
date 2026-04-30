@@ -7,7 +7,6 @@ from .auditlog import auditlog_router
 from .autofill import app_router, template_router, dropdown_router, record_router
 from .base import base_router
 from .depts import depts_router
-from .llm_config import llm_config_router
 from .menus import menus_router
 from .roles import roles_router
 from .tenants import tenant_router
@@ -31,6 +30,3 @@ v1_router.include_router(app_router, prefix="/autofill", dependencies=[DependPer
 v1_router.include_router(template_router, prefix="/autofill", dependencies=[DependPermission], tags=["总结模板管理"])
 v1_router.include_router(dropdown_router, prefix="/autofill", dependencies=[DependPermission], tags=["下拉选项管理"])
 v1_router.include_router(record_router, prefix="/autofill", dependencies=[DependPermission], tags=["填单记录管理"])
-
-# AI大模型配置模块
-v1_router.include_router(llm_config_router, prefix="/ai", dependencies=[DependPermission], tags=["AI大模型配置"])
