@@ -201,4 +201,5 @@ async def init_data():
     await init_superuser()
     await init_menus()
     await init_apis()
-    await init_roles()
+    # 不需要初始化角色，手动配置
+    # await init_roles()

@@ -1,8 +1,8 @@
-class Storage {
-  private storage: Storage
+class MyStorage {
+  private storage: globalThis.Storage
   private prefixKey: string
 
-  constructor(option: { storage: Storage; prefixKey: string }) {
+  constructor(option: { storage: globalThis.Storage; prefixKey: string }) {
     this.storage = option.storage
     this.prefixKey = option.prefixKey
   }
@@ -51,8 +51,8 @@ class Storage {
   }
 }
 
-export function createStorage({ prefixKey = '', storage = sessionStorage }: { prefixKey?: string; storage?: Storage }) {
-  return new Storage({ prefixKey, storage })
+export function createStorage({ prefixKey = '', storage = sessionStorage }: { prefixKey?: string; storage?: globalThis.Storage }) {
+  return new MyStorage({ prefixKey, storage })
 }
 
 export const lStorage = createStorage({ prefixKey: '', storage: localStorage })

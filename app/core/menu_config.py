@@ -86,18 +86,7 @@ system_menus = [
     ),
 ]
 
-# ==================== 一级菜单 ====================
-top_menu = [
-    MenuConfig(
-        name="一级菜单",
-        path="/top-menu",
-        menu_type=MenuType.MENU,
-        icon="material-symbols:featured-play-list-outline",
-        order=2,
-        component="top-menu",
-        keepalive=False,
-    ),
-]
+
 
 # ==================== 智能填单菜单 ====================
 autofill_menus = [
@@ -149,33 +138,9 @@ autofill_menus = [
     ),
 ]
 
-# ==================== AI大模型菜单 ====================
-ai_menus = [
-    MenuConfig(
-        name="AI大模型",
-        path="/ai",
-        menu_type=MenuType.CATALOG,
-        icon="material-symbols:psychology-outline",
-        order=4,
-        redirect="/ai/llm-config",
-        children=[
-            MenuConfig(
-                name="LLM配置",
-                path="llm-config",
-                menu_type=MenuType.MENU,
-                icon="material-symbols:model-training-outline",
-                order=1,
-                component="ai/llm-config",
-                keepalive=False,
-            ),
-        ],
-    ),
-]
 
 
 def register_all_menus():
     """注册所有菜单配置"""
     menu_registry.register(system_menus)
-    menu_registry.register(top_menu)
     menu_registry.register(autofill_menus)
-    menu_registry.register(ai_menus)

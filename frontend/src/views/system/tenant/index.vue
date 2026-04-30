@@ -1,176 +1,120 @@
 <template>
-  <div class="tenant-page crud-page">
-    <a-card>
-      <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
-        <a-row :gutter="16" class="filter-row">
-          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-            <a-form-item label="租户名称" class="filter-item">
-              <a-input v-model:value="queryParams.name" placeholder="请输入租户名称" allow-clear @pressEnter="handleSearch" />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-            <a-form-item label="域名" class="filter-item">
-              <a-input v-model:value="queryParams.domain" placeholder="请输入域名" allow-clear @pressEnter="handleSearch" />
-            </a-form-item>
-          </a-col>
-          <a-col v-bind="getActionColProps" 
-            class="filter-actions-col"
-            :class="filterItemCount <= 2 ? 'single-line' : 'multi-line'">
-            <a-form-item class="filter-actions">
-              <a-space>
-                <a-button type="primary" @click="handleSearch">
-                  <SearchOutlined />
-                  查询
-                </a-button>
-                <a-button @click="handleReset">
-                  <ReloadOutlined />
-                  重置
-                </a-button>
-              </a-space>
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-form>
+  <div class="tenant-page">
+    <CrudTable ref="crudTableRef" :columns="columns" :data-source="tableData" :loading="loading"
+      :pagination="pagination" :filter-model="queryParams" :filter-item-count="filterItemCount" show-modal
+      :modal-title="modalTitle" :modal-loading="modalLoading" :modal-form="modalForm" :modal-rules="modalRules"
+      @search="handleSearch" @reset="handleReset" @table-change="handleTableChange" @modal-ok="handleSave">
+      <!-- 筛选条件 -->
+      <template #filter-items>
+        <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+          <a-form-item label="租户名称" class="filter-item">
+            <a-input v-model:value="queryParams.name" placeholder="请输入租户名称" allow-clear @pressEnter="handleSearch" />
+          </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+          <a-form-item label="域名" class="filter-item">
+            <a-input v-model:value="queryParams.domain" placeholder="请输入域名" allow-clear @pressEnter="handleSearch" />
+          </a-form-item>
+        </a-col>
+      </template>
 
-      <div class="table-actions">
+      <!-- 操作按钮 -->
+      <template #actions>
         <a-button v-permission="'post/api/v1/tenant/create'" type="primary" @click="handleAdd">
           <PlusOutlined />
           新建租户
         </a-button>
-      </div>
+      </template>
 
-      <a-table
-        class="crud-table"
-        :columns="columns"
-        :data-source="tableData"
-        :loading="loading"
-        :pagination="pagination"
-        row-key="id"
-        :scroll="{ x: 'max-content' }"
-        @change="handleTableChange"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'is_active'">
-            <a-tag :color="record.is_active ? 'success' : 'error'">
-              {{ record.is_active ? '启用' : '禁用' }}
-            </a-tag>
-          </template>
-          <template v-if="column.key === 'created_at'">
-            {{ formatDateTime(record.created_at) }}
-          </template>
-          <template v-if="column.key === 'action'">
-            <a-space>
-              <a-button v-permission="'post/api/v1/tenant/update'" type="link" size="small" @click="handleEdit(record)">编辑</a-button>
-              <a-popconfirm title="确定删除该租户吗？删除后该租户下的所有数据将无法访问！" @confirm="handleDelete(record)">
-                <a-button v-permission="'delete/api/v1/tenant/delete'" type="link" danger size="small">删除</a-button>
-              </a-popconfirm>
-            </a-space>
-          </template>
+      <!-- 表格列自定义 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'is_active'">
+          <a-tag :color="record.is_active ? 'success' : 'error'">
+            {{ record.is_active ? '启用' : '禁用' }}
+          </a-tag>
         </template>
-      </a-table>
-    </a-card>
+        <template v-if="column.key === 'created_at'">
+          {{ formatDateTime(record.created_at) }}
+        </template>
+        <template v-if="column.key === 'action'">
+          <a-space>
+            <a-button v-permission="'post/api/v1/tenant/update'" type="link" size="small"
+              @click="handleEdit(record)">编辑</a-button>
+            <a-popconfirm title="确定删除该租户吗？删除后该租户下的所有数据将无法访问！" @confirm="handleDelete(record)">
+              <a-button v-permission="'delete/api/v1/tenant/delete'" type="link" danger size="small">删除</a-button>
+            </a-popconfirm>
+          </a-space>
+        </template>
+      </template>
 
-    <!-- 新增/编辑 弹窗 -->
-    <a-modal
-      v-model:open="modalVisible"
-      :title="modalTitle"
-      :confirm-loading="modalLoading"
-      @ok="handleSave"
-      @cancel="modalVisible = false"
-    >
-      <a-form
-        ref="modalFormRef"
-        :model="modalForm"
-        :rules="modalRules"
-        :label-col="{ span: 6 }"
-        :wrapper-col="{ span: 16 }"
-      >
+      <!-- 弹窗表单 -->
+      <template #modal-form="{ form }">
         <a-form-item label="租户名称" name="name">
-          <a-input v-model:value="modalForm.name" placeholder="请输入租户名称" />
+          <a-input v-model:value="form.name" placeholder="请输入租户名称" />
         </a-form-item>
         <a-form-item label="域名" name="domain">
-          <a-input v-model:value="modalForm.domain" placeholder="请输入租户域名，如：tenant-a" />
+          <a-input v-model:value="form.domain" placeholder="请输入租户域名，如：tenant-a" />
           <span style="color: #999; font-size: 12px">域名只能包含字母、数字和横线，用于标识租户</span>
         </a-form-item>
         <a-form-item label="描述" name="description">
-          <a-textarea v-model:value="modalForm.description" placeholder="请输入租户描述" :rows="3" />
+          <a-textarea v-model:value="form.description" placeholder="请输入租户描述" :rows="3" />
         </a-form-item>
         <a-form-item label="启用" name="is_active">
-          <a-switch v-model:checked="modalForm.is_active" />
+          <a-switch v-model:checked="form.is_active" />
         </a-form-item>
-      </a-form>
-    </a-modal>
+      </template>
+    </CrudTable>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
-import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import api from '@/api'
+import CrudTable from '@/components/CrudTable/index.vue'
 import { formatDateTime } from '@/utils'
+import { PlusOutlined } from '@ant-design/icons-vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
-const queryParams = reactive<any>({
+defineOptions({ name: 'TenantPage' })
+
+const crudTableRef = ref<InstanceType<typeof CrudTable>>()
+
+// 查询参数
+const queryParams = reactive({
   name: '',
   domain: '',
 })
 
-// 计算表单项数量（用于控制按钮布局）
-const filterItemCount = 2 // 租户页面固定2个表单项
-
-// 操作按钮列的栅格配置
-// 单行时宽度自适应，多行时占据标准宽度
-const getActionColProps = computed(() => {
-  const isSingleLine = filterItemCount <= 2
-  if (isSingleLine) {
-    // 单行模式：宽度自适应，不设置固定宽度
-    return {
-      xs: 24,
-      sm: 12,
-      md: 'auto',
-      lg: 'auto',
-      xl: 'auto'
-    }
-  }
-  // 多行模式：标准宽度
-  return {
-    xs: 24,
-    sm: 12,
-    md: 8,
-    lg: 6,
-    xl: 6
-  }
-})
-
+// 表格数据
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const pagination = reactive({
   current: 1,
   pageSize: 10,
   total: 0,
-  showSizeChanger: true,
-  showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const columns = [
-  { title: '租户名称', dataIndex: 'name', key: 'name', width: 150, ellipsis: true, resizable: true },
-  { title: '域名', dataIndex: 'domain', key: 'domain', width: 200, ellipsis: true, resizable: true },
-  { title: '描述', dataIndex: 'description', key: 'description', width: 250, ellipsis: true, resizable: true },
-  { title: '状态', key: 'is_active', width: 80, resizable: true },
-  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180, resizable: true },
-  { title: '操作', key: 'action', width: 150, fixed: 'right' },
-]
-
-const modalVisible = ref(false)
+// 弹窗数据
+const modalTitle = ref('')
 const modalLoading = ref(false)
-const modalAction = ref<'add' | 'edit'>('add')
-const modalTitle = computed(() => (modalAction.value === 'add' ? '新增租户' : '编辑租户'))
-const modalFormRef = ref()
-const modalForm = reactive<any>({
+const modalForm = reactive({
+  id: undefined as number | undefined,
   name: '',
   domain: '',
   description: '',
   is_active: true,
 })
+
+// 计算属性
+const columns = computed(() => [
+  { title: '租户名称', dataIndex: 'name', key: 'name', width: 150, ellipsis: true },
+  { title: '域名', dataIndex: 'domain', key: 'domain', width: 200, ellipsis: true },
+  { title: '描述', dataIndex: 'description', key: 'description', width: 250, ellipsis: true },
+  { title: '状态', key: 'is_active', width: 80 },
+  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
+  { title: '操作', key: 'action', width: 150, fixed: 'right' },
+])
+
+const filterItemCount = computed(() => 2)
 
 const modalRules = {
   name: [{ required: true, message: '请输入租户名称', trigger: ['input', 'blur'] }],
@@ -188,6 +132,7 @@ const modalRules = {
   ],
 }
 
+// 加载数据
 async function loadData() {
   loading.value = true
   try {
@@ -222,36 +167,33 @@ function handleTableChange(p: any) {
 }
 
 function handleAdd() {
-  modalAction.value = 'add'
+  modalTitle.value = '新增租户'
   Object.assign(modalForm, {
+    id: undefined,
     name: '',
     domain: '',
     description: '',
     is_active: true,
   })
-  modalVisible.value = true
+  crudTableRef.value?.openAddModal()
 }
 
 function handleEdit(record: any) {
-  modalAction.value = 'edit'
+  modalTitle.value = '编辑租户'
   Object.assign(modalForm, { ...record })
-  modalVisible.value = true
+  crudTableRef.value?.openEditModal(record)
 }
 
-async function handleSave() {
+async function handleSave(form: Record<string, any>, action: 'add' | 'edit') {
+  modalLoading.value = true
   try {
-    await modalFormRef.value.validate()
-    modalLoading.value = true
-    const apiFn = modalAction.value === 'add' ? api.createTenant : api.updateTenant
-    const res: any = await apiFn({ ...modalForm })
+    const apiFn = action === 'add' ? api.createTenant : api.updateTenant
+    const res: any = await apiFn({ ...form })
     if (res.code === 200) {
-      window.$message?.success(modalAction.value === 'add' ? '新增成功' : '编辑成功')
-      modalVisible.value = false
+      window.$message?.success(action === 'add' ? '新增成功' : '编辑成功')
+      crudTableRef.value?.closeModal()
       loadData()
     }
-  } catch (error: any) {
-    if (error.errorFields) return
-    console.error('保存失败', error)
   } finally {
     modalLoading.value = false
   }
@@ -269,15 +211,11 @@ async function handleDelete(record: any) {
   }
 }
 
-onMounted(() => {
-  loadData()
-})
+onMounted(loadData)
 </script>
 
 <style scoped lang="less">
 .tenant-page {
-  .table-actions {
-    margin-bottom: 16px;
-  }
+  padding: 16px;
 }
 </style>
