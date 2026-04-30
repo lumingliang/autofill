@@ -135,12 +135,4 @@ export default {
   updateRecord: (data: any = {}) => request.post('/autofill/record/update', data),
   deleteRecord: (params: any = {}) => request.delete('/autofill/record/delete', { params }),
 
-  // AI大模型 - LLM配置管理
-  getLLMConfigList: (params: any = {}) => request.get('/ai/llm_config/list', { params }),
-  getLLMConfigById: (params: any = {}) => request.get('/ai/llm_config/get', { params }),
-  createLLMConfig: (data: any = {}) => request.post('/ai/llm_config/create', data),
-  updateLLMConfig: (data: any = {}) => request.post('/ai/llm_config/update', data),
-  deleteLLMConfig: (params: any = {}) => request.delete('/ai/llm_config/delete', { params }),
-  getLLMProviders: () => request.get('/ai/llm_config/providers'),
-  getDefaultLLMConfig: () => request.get('/ai/llm_config/default'),
 }

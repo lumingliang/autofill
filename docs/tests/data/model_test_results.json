@@ -1,0 +1,76 @@
+[
+  {
+    "model": "C4AI Command R+",
+    "success": true,
+    "result": {
+      "customer_name": "张三",
+      "vehicle_model": "2024款极越01",
+      "issue": "车子在充满至 80％后停止."
+    },
+    "method": "with_structured_output"
+  },
+  {
+    "model": "C4AI Command R+",
+    "success": true,
+    "result": {
+      "customer_name": "张三",
+      "vehicle_model": "2024款极越01",
+      "issue": "在充电至80%时停止"
+    },
+    "method": "PydanticOutputParser"
+  },
+  {
+    "model": "C4AI Command R+",
+    "success": false,
+    "error": "Invalid json output: {\n    \"customer_name\": \"\\u5f20\\u4e09\"\n    , \"vehicle_model\":\" 2024 \\u6837\\u6781\\u8d8a01 \", \n    \"issue\": \":'\\utf8mb3充电到80%\\r就停了'\"\n}\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE ",
+    "method": "JsonOutputParser"
+  },
+  {
+    "model": "DeepSeek R1",
+    "success": true,
+    "result": {
+      "customer_name": "张三",
+      "vehicle_model": "2024款极越01",
+      "issue": "充电到80%就停了"
+    },
+    "method": "with_structured_output"
+  },
+  {
+    "model": "DeepSeek R1",
+    "success": true,
+    "result": {
+      "customer_name": "张三",
+      "vehicle_model": "2024款极越01",
+      "issue": "充电到80%就停了"
+    },
+    "method": "PydanticOutputParser"
+  },
+  {
+    "model": "DeepSeek R1",
+    "success": true,
+    "result": {
+      "customer_name": "张三",
+      "vehicle_model": "2024款极越01",
+      "issue": "充电到80%就停了"
+    },
+    "method": "JsonOutputParser"
+  },
+  {
+    "model": "Qwen2.5-32B-Instruct",
+    "success": false,
+    "error": "Error code: 400 - {'error': {'message': 'Model id : Qwen/Qwen2.5-32B-Instruct , has no provider supported', 'request_id': '9e7d228d-7c6f-4988-8c8a-f83ac2b32ab3'}}",
+    "method": "with_structured_output"
+  },
+  {
+    "model": "Qwen2.5-32B-Instruct",
+    "success": false,
+    "error": "Error code: 400 - {'error': {'message': 'Model id : Qwen/Qwen2.5-32B-Instruct , has no provider supported', 'request_id': 'c8d2a7ee-25fc-4571-98ed-67f398e788a9'}}",
+    "method": "PydanticOutputParser"
+  },
+  {
+    "model": "Qwen2.5-32B-Instruct",
+    "success": false,
+    "error": "Error code: 400 - {'error': {'message': 'Model id : Qwen/Qwen2.5-32B-Instruct , has no provider supported', 'request_id': '72c91e52-20e5-412c-a5ce-ce2084810ed9'}}",
+    "method": "JsonOutputParser"
+  }
+]
