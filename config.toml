@@ -86,3 +86,30 @@ file_output = true
 format = "json"
 # 是否启用请求追踪 ID
 enable_request_id = true
+
+[litellm]
+# LiteLLM 网关地址
+base_url = "http://localhost:4000"
+# LiteLLM 网关 API Key（用于管理接口）
+master_key = "sk-litellm-master-key"
+# 默认超时时间（秒）
+timeout = 60
+
+[structured_output]
+# 方法失败阈值，达到此值后自动标记为不支持
+failed_threshold = 2
+# 是否自动更新模型能力状态
+auto_update_capabilities = true
+# 默认方法优先级（可被请求参数覆盖）
+default_method_priority = [
+    "with_structured_output",
+    "bind_tools_stream",
+    "custom_fc_non_stream",
+    "custom_fc_stream",
+    "pydantic_parser",
+    "json_parser"
+]
+# 是否启用方法降级
+enable_fallback = true
+# 最大尝试方法数（防止无限循环）
+max_attempt_methods = 6

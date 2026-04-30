@@ -35,6 +35,13 @@ toml==0.10.2
 # Logging
 loguru==0.7.3
 
+# LLM & LangChain
+langchain==0.3.23
+langchain-openai==0.3.14
+langchain-community==0.3.21
+openai==1.75.0
+litellm==1.66.1
+
 # Form/Multipart Support (FastAPI 文件上传需要)
 python-multipart==0.0.20
 

@@ -12,6 +12,7 @@ from .roles import roles_router
 from .tenants import tenant_router
 from .users import users_router
 from .upload import router as upload_router
+from .ai.llm_config import llm_config_router
 
 v1_router = APIRouter()
 
@@ -30,3 +31,6 @@ v1_router.include_router(app_router, prefix="/autofill", dependencies=[DependPer
 v1_router.include_router(template_router, prefix="/autofill", dependencies=[DependPermission], tags=["总结模板管理"])
 v1_router.include_router(dropdown_router, prefix="/autofill", dependencies=[DependPermission], tags=["下拉选项管理"])
 v1_router.include_router(record_router, prefix="/autofill", dependencies=[DependPermission], tags=["填单记录管理"])
+
+# AI 模块 - LLM 配置管理
+v1_router.include_router(llm_config_router, prefix="/ai", dependencies=[DependPermission], tags=["LLM配置管理"])
