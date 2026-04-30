@@ -135,4 +135,24 @@ export default {
   updateRecord: (data: any = {}) => request.post('/autofill/record/update', data),
   deleteRecord: (params: any = {}) => request.delete('/autofill/record/delete', { params }),
 
+  // LLM 配置管理
+  getLLMConfigList: (params: any = {}) => request.get('/ai/llm_config/list', { params }),
+  getLLMConfigById: (params: any = {}) => request.get('/ai/llm_config/get', { params }),
+  createLLMConfig: (data: any = {}) => request.post('/ai/llm_config/create', data),
+  updateLLMConfig: (data: any = {}) => request.post('/ai/llm_config/update', data),
+  deleteLLMConfig: (params: any = {}) => request.delete('/ai/llm_config/delete', { params }),
+  getLLMProviders: () => request.get('/ai/llm_config/providers'),
+  testLLMConfig: (data: any = {}) => request.post('/ai/llm_config/test', data),
+  getLLMGatewayStatus: () => request.get('/ai/llm_config/gateway/status'),
+  resetLLMMethods: (data: any = {}) => request.post('/ai/llm_config/reset_methods', data),
+  getLLMMethods: (params: any = {}) => request.get('/ai/llm_config/methods', { params }),
+
+  // LLM 代理公开接口 (使用 API Key 认证)
+  llmProxy: (data: any = {}, apiKey: string) => request.post('/api/llm/proxy', data, {
+    headers: { 'Authorization': `Bearer ${apiKey}` }
+  }),
+  llmProxyHealth: (apiKey: string) => request.get('/api/llm/proxy/health', {
+    headers: { 'Authorization': `Bearer ${apiKey}` }
+  }),
+
 }

@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # Dify AI 服务配置
     DIFY_TIMEOUT: float = 60.0
 
+    # LiteLLM 配置
+    LITELLM_CONFIG: dict = {}
+
+    # 结构化输出配置
+    STRUCTURED_OUTPUT_CONFIG: dict = {}
+
     # 上传配置
     UPLOAD_DIR: str = "./uploads"
     AVATAR_DIR: str = "./uploads/avatars"
@@ -144,6 +150,33 @@ class Settings(BaseSettings):
                     self.LOG_FILE_OUTPUT = logging_config.get("file_output", True)
                     self.LOG_FORMAT = logging_config.get("format", "json")
                     self.LOG_ENABLE_REQUEST_ID = logging_config.get("enable_request_id", True)
+
+                # 加载 LiteLLM 配置
+                if "litellm" in config:
+                    litellm_config = config["litellm"]
+                    self.LITELLM_CONFIG = {
+                        "base_url": litellm_config.get("base_url", "http://localhost:4000"),
+                        "master_key": litellm_config.get("master_key", ""),
+                        "timeout": litellm_config.get("timeout", 60)
+                    }
+
+                # 加载结构化输出配置
+                if "structured_output" in config:
+                    so_config = config["structured_output"]
+                    self.STRUCTURED_OUTPUT_CONFIG = {
+                        "failed_threshold": so_config.get("failed_threshold", 2),
+                        "auto_update_capabilities": so_config.get("auto_update_capabilities", True),
+                        "default_method_priority": so_config.get("default_method_priority", [
+                            "with_structured_output",
+                            "bind_tools_stream",
+                            "custom_fc_non_stream",
+                            "custom_fc_stream",
+                            "pydantic_parser",
+                            "json_parser"
+                        ]),
+                        "enable_fallback": so_config.get("enable_fallback", True),
+                        "max_attempt_methods": so_config.get("max_attempt_methods", 6)
+                    }
 
             except Exception as e:
                 print(f"Warning: Failed to load TOML config: {e}")

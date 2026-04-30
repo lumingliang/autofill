@@ -82,6 +82,15 @@ system_menus = [
                 component="system/tenant",
                 keepalive=False,
             ),
+            MenuConfig(
+                name="LLM配置",
+                path="llm_config",
+                menu_type=MenuType.MENU,
+                icon="material-symbols:model-training-outline",
+                order=8,
+                component="system/llm_config",
+                keepalive=False,
+            ),
         ],
     ),
 ]

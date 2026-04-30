@@ -159,13 +159,13 @@ function handleReset() {
 
 function handleAdd() {
   isDisabled.value = false
-  crudTableRef.value?.openModal('add')
+  crudTableRef.value?.openAddModal()
 }
 
 function handleEdit(record: any) {
   isDisabled.value = record.parent_id === 0
   Object.assign(modalForm, record)
-  crudTableRef.value?.openModal('edit')
+  crudTableRef.value?.openEditModal(record)
 }
 
 async function handleSave(form: any, action: 'add' | 'edit') {
