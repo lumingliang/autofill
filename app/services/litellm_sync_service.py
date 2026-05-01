@@ -19,7 +19,7 @@ class LiteLLMSyncService:
     """LiteLLM 配置同步服务"""
 
     def __init__(self):
-        self.config_path = os.path.join(os.getcwd(), "litellm_config.yaml")
+        self.config_path = os.path.join(settings.BASE_DIR, "litellm", "litellm_config.yaml")
         self.litellm_config = settings.LITELLM_CONFIG
 
     async def sync_all_configs(self) -> bool:

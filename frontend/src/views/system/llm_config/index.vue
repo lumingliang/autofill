@@ -334,8 +334,6 @@ const filterItemCount = computed(() => 3)
 const modalRules = {
   name: [{ required: true, message: '请输入配置名称', trigger: ['input', 'blur'] }],
   model_provider: [{ required: true, message: '请选择模型提供商', trigger: 'change' }],
-  'litellm_params.model': [{ required: true, message: '请输入模型名称', trigger: ['input', 'blur'] }],
-  'litellm_params.api_key': [{ required: true, message: '请输入 API Key', trigger: ['input', 'blur'] }],
 }
 
 // 测试弹窗

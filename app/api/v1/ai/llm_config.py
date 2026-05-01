@@ -94,10 +94,10 @@ async def create_llm_config(
     """创建 LLM 配置"""
     current_user = await AuthControl.is_authed(token)
 
-    # 确定租户ID
-    target_tenant_id = None
+    # 确定租户ID - 默认为0（系统级别）
+    target_tenant_id = 0
     if is_superuser(current_user):
-        target_tenant_id = config_in.tenant_id
+        target_tenant_id = config_in.tenant_id or 0
     else:
         target_tenant_id = current_user.current_tenant_id
         if not target_tenant_id:

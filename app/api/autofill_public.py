@@ -498,25 +498,33 @@ async def llm_fill_handler(
     """
     直接LLM填单处理逻辑
     使用LLMProxy服务完成填单，支持Function Calling和结构化输出
+    支持通过 field_group_id 或 field_group_code 指定字段组
     """
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
+    from typing import Union
 
     class LLMFillRequest(BaseModel):
-        field_group_id: int
+        field_group_id: Optional[int] = Field(None, description="字段组ID")
+        field_group_code: Optional[str] = Field(None, description="字段组编码（唯一标识）")
         input_data: Dict[str, Any] = {}
 
     params = await parse_request_params(request, LLMFillRequest)
 
-    if not params.get("field_group_id"):
-        raise HTTPException(status_code=400, detail="field_group_id is required")
-
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
 
-    # 获取字段组配置
-    field_group = await field_group_config_controller.model.filter(
-        id=params["field_group_id"]
-    ).first()
+    # 获取字段组配置 - 支持通过 ID 或 Code 查询
+    field_group = None
+    if params.get("field_group_id"):
+        field_group = await field_group_config_controller.model.filter(
+            id=params["field_group_id"]
+        ).first()
+    elif params.get("field_group_code"):
+        field_group = await field_group_config_controller.model.filter(
+            group_code=params["field_group_code"]
+        ).first()
+    else:
+        raise HTTPException(status_code=400, detail="field_group_id or field_group_code is required")
 
     if not field_group:
         raise HTTPException(status_code=404, detail="Field group not found")
@@ -532,7 +540,7 @@ async def llm_fill_handler(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # 获取字段明细（获取所有字段，包括禁用的，用于LLM填单）
-    field_specs = await field_spec_controller.get_by_field_group(params["field_group_id"], active_only=False)
+    field_specs = await field_spec_controller.get_by_field_group(field_group.id, active_only=False)
 
     if not field_specs:
         raise HTTPException(status_code=404, detail="No fields found in this group")

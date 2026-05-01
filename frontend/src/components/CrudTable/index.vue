@@ -274,13 +274,16 @@ function handleTableChange(pagination: any, filters: any, sorter: any) {
 // 打开新增弹窗
 function openAddModal() {
   modalAction.value = 'add'
+  // 同步父组件的 modalForm 数据
+  Object.assign(modalForm, props.modalForm)
   modalVisible.value = true
 }
 
 // 打开编辑弹窗
 function openEditModal(record: any) {
   modalAction.value = 'edit'
-  Object.assign(modalForm, record)
+  // 先同步父组件的 modalForm，再合并编辑的记录
+  Object.assign(modalForm, props.modalForm, record)
   modalVisible.value = true
 }
 
@@ -293,7 +296,8 @@ function closeModal() {
 async function handleModalOk() {
   try {
     await modalFormRef.value?.validate()
-    emit('modal-ok', { ...modalForm }, modalAction.value)
+    // 使用 props.modalForm 确保获取最新的表单数据
+    emit('modal-ok', { ...props.modalForm }, modalAction.value)
   } catch (error) {
     // 校验失败
   }
