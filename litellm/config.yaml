@@ -29,7 +29,14 @@ general_settings:
   health_check: true
 
 # 模型配置（初始为空，通过后端服务动态添加）
-model_list: []
+model_list:
+- model_name: C4AI-Command-R-Plus
+  litellm_params:
+    model: openai/LLM-Research/c4ai-command-r-plus-08-2024
+    api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
+    timeout: 60
+    api_base: https://api-inference.modelscope.cn/v1/
+
 
 # 默认模型参数
 litellm_settings:
