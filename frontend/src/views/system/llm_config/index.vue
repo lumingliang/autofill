@@ -166,7 +166,7 @@
     </CrudTable>
 
     <!-- 测试结果显示弹窗 -->
-    <a-modal v-model:visible="testModalVisible" title="测试结果" :footer="null" width="600px">
+    <a-modal v-model:open="testModalVisible" title="测试结果" :footer="null" width="600px">
       <a-spin :spinning="testLoading">
         <div v-if="testResult" class="test-result">
           <a-descriptions :column="1" bordered>
@@ -186,7 +186,7 @@
     </a-modal>
 
     <!-- 网关状态弹窗 -->
-    <a-modal v-model:visible="gatewayModalVisible" title="LiteLLM 网关状态" :footer="null" width="500px">
+    <a-modal v-model:open="gatewayModalVisible" title="LiteLLM 网关状态" :footer="null" width="500px">
       <a-spin :spinning="gatewayLoading">
         <div v-if="gatewayStatus" class="gateway-status">
           <a-descriptions :column="1" bordered>
@@ -207,7 +207,7 @@
     </a-modal>
 
     <!-- 方法状态弹窗 -->
-    <a-modal v-model:visible="methodsModalVisible" title="结构化输出方法状态" :footer="null" width="700px">
+    <a-modal v-model:open="methodsModalVisible" title="结构化输出方法状态" :footer="null" width="700px">
       <a-spin :spinning="methodsLoading">
         <div v-if="methodsData" class="methods-status">
           <a-table :columns="methodsColumns" :data-source="methodsList" :pagination="false" size="small">

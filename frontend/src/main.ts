@@ -1,4 +1,3 @@
-import 'uno.css'
 import './styles/index.less'
 
 import { createApp } from 'vue'

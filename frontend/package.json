@@ -23,6 +23,11 @@
     "vue3-columns-resizable": "^1.0.3"
   },
   "devDependencies": {
+    "@iconify-json/ant-design": "^1.2.5",
+    "@iconify-json/carbon": "^1.2.20",
+    "@iconify-json/material-symbols": "^1.2.69",
+    "@iconify-json/mingcute": "^1.2.7",
+    "@iconify-json/ph": "^1.2.2",
     "@types/lodash-es": "^4.17.12",
     "@types/node": "^24.12.2",
     "@unocss/preset-icons": "^66.1.0-beta.12",

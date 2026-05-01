@@ -5,16 +5,17 @@
       <a-sub-menu v-if="menu.children && menu.children.length" :key="menu.key + '-sub'">
         <template #title>
           <span>
-            <component :is="getIcon(menu.icon)" v-if="menu.icon" />
+            <component :is="getIcon(menu.icon)" v-if="menu.icon" class="menu-icon" />
             <span>{{ menu.label }}</span>
           </span>
         </template>
         <a-menu-item v-for="child in menu.children" :key="child.key">
-          {{ child.label }}
+          <component :is="getIcon(child.icon)" v-if="child.icon" class="menu-icon" />
+          <span>{{ child.label }}</span>
         </a-menu-item>
       </a-sub-menu>
       <a-menu-item v-else :key="menu.key + '-item'">
-        <component :is="getIcon(menu.icon)" v-if="menu.icon" />
+        <component :is="getIcon(menu.icon)" v-if="menu.icon" class="menu-icon" />
         <span>{{ menu.label }}</span>
       </a-menu-item>
     </template>
@@ -23,17 +24,7 @@
 
 <script setup lang="ts">
 import { useAppStore, usePermissionStore } from '@/store'
-import {
-  ApartmentOutlined,
-  ApiOutlined,
-  FileTextOutlined,
-  HomeOutlined,
-  MenuOutlined,
-  SafetyOutlined,
-  SettingOutlined,
-  TeamOutlined,
-  UserOutlined,
-} from '@ant-design/icons-vue'
+import * as Icons from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -42,24 +33,10 @@ const router = useRouter()
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 
-const iconMap: Record<string, any> = {
-  'MenuOutlined': MenuOutlined,
-  'SettingOutlined': SettingOutlined,
-  'TeamOutlined': TeamOutlined,
-  'FileTextOutlined': FileTextOutlined,
-  'ApartmentOutlined': ApartmentOutlined,
-  'ApiOutlined': ApiOutlined,
-  'SafetyOutlined': SafetyOutlined,
-  'UserOutlined': UserOutlined,
-  'HomeOutlined': HomeOutlined,
-}
-
-function getIcon(iconName?: string) {
+// 直接使用数据库中的图标名称获取 Ant Design 图标组件
+function getIcon(iconName?: string): any {
   if (!iconName) return null
-  // 尝试直接匹配
-  if (iconMap[iconName]) return iconMap[iconName]
-  // 对于其他图标，返回 MenuOutlined 作为默认
-  return MenuOutlined
+  return Icons[iconName as keyof typeof Icons] || Icons.MenuOutlined
 }
 
 function resolvePath(basePath: string, path?: string): string {
@@ -98,11 +75,9 @@ function buildMenuItem(route: any, basePath = ''): MenuItem {
 
   if (!visibleChildren.length) return menuItem
 
-  // 检查当前路由是否是目录类型（有Layout组件且有多个子路由或明确是catalog类型）
   const isCatalog = route.path?.startsWith('/') && visibleChildren.length > 0
 
   if (visibleChildren.length === 1 && !isCatalog) {
-    // 单个子路由，直接提升（仅对非目录类型）
     const singleRoute = visibleChildren[0]
     menuItem = {
       ...menuItem,
@@ -145,7 +120,6 @@ watch(
   (name) => {
     if (name) {
       selectedKeys.value = [String(name)]
-      // 查找当前路由所在的父菜单
       const findParent = (menus: MenuItem[]): string | undefined => {
         for (const menu of menus) {
           if (menu.children?.some((c) => c.key === name)) {
@@ -160,7 +134,7 @@ watch(
       }
       const parentKey = findParent(menuList.value)
       if (parentKey && !appStore.collapsed) {
-        openKeys.value = [parentKey]
+        openKeys.value = [parentKey + '-sub']
       }
     }
   },
@@ -182,7 +156,6 @@ function handleMenuClick({ key }: { key: string }) {
   const menuItem = findMenuByKey(menuList.value)
   if (menuItem) {
     if (menuItem.path === route.path) {
-      // 刷新当前页面
       router.replace({ path: '/redirect' + menuItem.path })
     } else {
       router.push(menuItem.path)
@@ -190,3 +163,28 @@ function handleMenuClick({ key }: { key: string }) {
   }
 }
 </script>
+
+<style scoped>
+.menu-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
+  font-size: 16px;
+  vertical-align: middle;
+}
+
+:deep(.ant-menu-item) {
+  display: flex;
+  align-items: center;
+}
+
+:deep(.ant-menu-submenu-title) {
+  display: flex;
+  align-items: center;
+}
+
+:deep(.ant-menu-submenu-title > span) {
+  display: flex;
+  align-items: center;
+}
+</style>
