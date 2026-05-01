@@ -121,7 +121,7 @@
           />
         </a-form-item>
         <a-form-item label="菜单图标" name="icon">
-          <a-input v-model:value="modalForm.icon" placeholder="请输入图标名称" />
+          <IconSelector v-model:value="modalForm.icon" />
         </a-form-item>
         <a-form-item label="显示排序" name="order">
           <a-input-number v-model:value="modalForm.order" :min="1" style="width: 100%" />
@@ -143,6 +143,7 @@ import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-
 import api from '@/api'
 import { formatDateTime } from '@/utils'
 import * as Icons from '@ant-design/icons-vue'
+import IconSelector from '@/components/IconSelector/index.vue'
 
 defineOptions({ name: '菜单管理' })
 
