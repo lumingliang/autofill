@@ -16,3 +16,10 @@ interface ImportMeta {
 // 声明虚拟模块
 declare module 'uno.css'
 declare module '*.less'
+
+// 声明 Vue 文件
+declare module '*.vue' {
+  import type { DefineComponent } from 'vue'
+  const component: DefineComponent<{}, {}, any>
+  export default component
+}

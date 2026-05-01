@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, Header, Query
 from tortoise.expressions import Q
 
@@ -26,8 +27,8 @@ async def get_audit_log_list(
     path: str = Query("", description="请求路径"),
     status: int = Query(None, description="状态码"),
     tenant_id: int = Query(None, description="租户ID（仅超级管理员可见）"),
-    start_time: datetime = Query("", description="开始时间"),
-    end_time: datetime = Query("", description="结束时间"),
+    start_time: Optional[datetime] = Query(None, description="开始时间"),
+    end_time: Optional[datetime] = Query(None, description="结束时间"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)

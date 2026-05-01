@@ -1,5 +1,5 @@
 <template>
-  <a-menu v-model:selectedKeys="selectedKeys" v-model:openKeys="openKeys" mode="inline" theme="dark"
+  <a-menu v-model:selectedKeys="selectedKeys" v-model:openKeys="openKeys" mode="inline" theme="light"
     :inline-collapsed="appStore.collapsed" @click="handleMenuClick">
     <template v-for="menu in menuList" :key="menu.key">
       <a-sub-menu v-if="menu.children && menu.children.length" :key="menu.key + '-sub'">

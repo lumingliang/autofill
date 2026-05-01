@@ -7,9 +7,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { useAppStore } from '@/store'
+import zhCN from 'ant-design-vue/es/locale/zh_CN'
+import { computed } from 'vue'
 
 const appStore = useAppStore()
 

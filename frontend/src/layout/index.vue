@@ -1,12 +1,14 @@
 <template>
   <a-layout class="h-full">
-    <a-layout-sider v-model:collapsed="appStore.collapsed" :trigger="null" collapsible theme="dark"
+    <a-layout-sider v-model:collapsed="appStore.collapsed" :trigger="null" collapsible theme="light"
       class="layout-sider">
       <div class="logo-container">
         <img src="/logo.svg" class="logo-img" />
         <span v-show="!appStore.collapsed" class="logo-title">AI 平台</span>
       </div>
-      <LayoutMenu />
+      <div class="menu-wrapper">
+        <LayoutMenu />
+      </div>
     </a-layout-sider>
 
     <a-layout>
@@ -31,11 +33,11 @@
 </template>
 
 <script setup lang="ts">
+import { useAppStore, usePermissionStore } from '@/store'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { useAppStore, usePermissionStore } from '@/store'
-import LayoutMenu from './components/LayoutMenu.vue'
 import LayoutHeader from './components/LayoutHeader.vue'
+import LayoutMenu from './components/LayoutMenu.vue'
 import LayoutTags from './components/LayoutTags.vue'
 
 const appStore = useAppStore()
@@ -57,13 +59,16 @@ const keepAliveNames = computed(() => {
 
 <style scoped lang="less">
 .layout-sider {
+  border-right: none !important;
+  box-shadow: none !important;
+
   .logo-container {
     height: 64px;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 
     .logo-img {
       width: 32px;
@@ -71,13 +76,40 @@ const keepAliveNames = computed(() => {
     }
 
     .logo-title {
-      color: #fff;
+      color: #1890ff;
       font-size: 18px;
       font-weight: bold;
       margin-left: 12px;
       white-space: nowrap;
     }
   }
+
+  .menu-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    height: calc(100% - 64px);
+  }
+}
+
+:deep(.ant-layout-sider) {
+  border-right: none !important;
+  margin-right: 0 !important;
+}
+
+:deep(.ant-layout-sider-light) {
+  border-right: none !important;
+}
+
+:deep(.ant-layout-has-sider) {
+  >.ant-layout {
+    margin-left: 0 !important;
+  }
+}
+
+:deep(.ant-layout-content) {
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .layout-header {
@@ -95,7 +127,7 @@ const keepAliveNames = computed(() => {
 
   .main-content {
     flex: 1;
-    padding: 16px;
+    padding: 0;
     overflow: auto;
     background: #f0f2f5;
   }

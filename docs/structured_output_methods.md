@@ -7,185 +7,215 @@
 ### 1. `with_structured_output()`
 
 **原理：**
+
 - 使用 OpenAI 的 Function Calling API
 - 将 Pydantic 模型转换为 OpenAI 工具格式
 - 调用模型时传入 `tools` 参数，模型返回 `tool_calls`
 - 自动解析 `tool_calls` 中的参数并验证
 
 **底层流程：**
+
 ```
 Pydantic Model -> OpenAI Tool Schema -> API Call (tools) -> Parse tool_calls -> Validate
 ```
 
 **优点：**
+
 - 最可靠的结构化输出方式
 - 模型明确知道需要调用函数
 - 支持 `strict=True` 强制约束
 - 错误处理完善
 
 **缺点：**
+
 - 需要模型和 API 支持 Function Calling
 - 魔搭社区等部分 API 非流式调用返回 null
 - 不支持流式输出
 
 **适用场景：**
+
 - 标准 OpenAI API
 - 完全兼容 OpenAI 的第三方 API
 
----
+***
 
 ### 2. `bind_tools()` + 流式收集
 
 **原理：**
+
 - 使用 `bind_tools()` 绑定工具定义
 - 通过流式输出收集 `tool_calls`
 - 手动组装分段返回的参数
 
 **底层流程：**
+
 ```
 Tool Schema -> bind_tools -> Stream -> Collect tool_calls chunks -> Assemble -> Parse -> Validate
 ```
 
 **优点：**
+
 - 支持流式输出
 - 利用模型的 Function Calling 能力
 - 比纯文本生成更可靠
 
 **缺点：**
+
 - 实现复杂，需要手动处理流式 chunks
 - 参数可能分段返回，需要组装
 - 部分模型（如 QwQ-32B）不支持 `tool_choice`
 
 **适用场景：**
+
 - 需要流式输出的同时利用 FC 能力
 - API 支持流式工具调用
 
----
+***
 
 ### 3. `custom_fc_non_stream` (自定义 FC 非流式)
 
 **原理：**
+
 - 手动构造 Function Calling 格式的请求
 - 非流式调用 API
 - 解析响应中的 `tool_calls`
 
 **底层流程：**
+
 ```
 Pydantic Model -> Tool Schema -> Manual API Call -> Parse tool_calls -> Validate
 ```
 
 **优点：**
+
 - 更灵活的控制
 - 可以处理特殊的 API 格式
 - 支持自定义错误处理和重试
 
 **缺点：**
+
 - 实现复杂
 - 需要手动处理各种边界情况
 
 **适用场景：**
+
 - 标准方法不支持的 API
 - 需要特殊处理的模型
 
----
+***
 
 ### 4. `custom_fc_stream` (自定义 FC 流式)
 
 **原理：**
+
 - 手动构造 Function Calling 格式的请求
 - 流式调用 API
 - 流式解析响应中的 `tool_calls`
 
 **底层流程：**
+
 ```
 Pydantic Model -> Tool Schema -> Manual Stream API Call -> Parse tool_calls chunks -> Assemble -> Validate
 ```
 
 **优点：**
+
 - 更灵活的控制
 - 可以处理特殊的 API 格式
 - 支持流式响应
 
 **缺点：**
+
 - 实现复杂
 - 需要手动处理各种边界情况
 
 **适用场景：**
+
 - 标准方法不支持的 API
 - 需要特殊处理的模型
 - API 只支持流式输出
 
----
+***
 
 ### 5. `PydanticOutputParser`
 
 **原理：**
+
 - 在 Prompt 中插入格式说明（通过 `get_format_instructions()`）
 - 模型根据说明生成 JSON 格式的文本
 - 使用 Pydantic 模型验证和解析输出
 
 **底层流程：**
+
 ```
 Pydantic Model -> Format Instructions -> Prompt -> Model -> JSON Text -> Parse -> Validate
 ```
 
 **优点：**
+
 - 通用性强，支持所有模型
 - 支持流式输出
 - 不依赖特定的 API 功能
 - 提示模板自动生成
 
 **缺点：**
+
 - 依赖模型的指令遵循能力
 - 可能出现格式不严格的情况
 - 需要处理 markdown 代码块等额外格式
 
 **适用场景：**
+
 - 通用场景，特别是 API 限制较多的情况
 - 魔搭社区等只支持流式输出的 API
 
----
+***
 
 ### 6. `JsonOutputParser`
 
 **原理：**
+
 - 与 `PydanticOutputParser` 类似，但只返回字典
 - 不强制验证字段类型
 - 支持部分解析（partial parsing）
 
 **底层流程：**
+
 ```
 Pydantic Model -> Format Instructions -> Prompt -> Model -> JSON Text -> Parse
 ```
 
 **优点：**
+
 - 更灵活，容错性更强
 - 支持流式输出
 - 可以处理不完整的 JSON
 
 **缺点：**
+
 - 没有严格的类型验证
 - 可能返回不符合预期的字段
 
 **适用场景：**
+
 - 需要灵活解析的场景
 - 字段可能不固定的动态 schema
 
----
+***
 
 ## 方法对比表
 
-| 特性 | with_structured_output | bind_tools + Stream | custom_fc_non_stream | custom_fc_stream | PydanticOutputParser | JsonOutputParser |
-|------|------------------------|---------------------|----------------------|------------------|----------------------|------------------|
-| **依赖 API 功能** | Function Calling | Function Calling | Function Calling | Function Calling | 无 | 无 |
-| **支持流式** | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ |
-| **类型验证** | ✅ 严格 | ✅ 手动 | ✅ 手动 | ✅ 手动 | ✅ 严格 | ❌ 宽松 |
-| **实现复杂度** | 低 | 高 | 高 | 高 | 低 | 低 |
-| **可靠性** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| **通用性** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **魔搭社区支持** | ❌ | ⚠️ 部分支持 | ⚠️ 部分支持 | ✅ | ✅ | ✅ |
+| 特性            | with\_structured\_output | bind\_tools + Stream | custom\_fc\_non\_stream | custom\_fc\_stream | PydanticOutputParser | JsonOutputParser |
+| ------------- | ------------------------ | -------------------- | ----------------------- | ------------------ | -------------------- | ---------------- |
+| **依赖 API 功能** | Function Calling         | Function Calling     | Function Calling        | Function Calling   | 无                    | 无                |
+| **支持流式**      | ❌                        | ✅                    | ❌                       | ✅                  | ✅                    | ✅                |
+| **类型验证**      | ✅ 严格                     | ✅ 手动                 | ✅ 手动                    | ✅ 手动               | ✅ 严格                 | ❌ 宽松             |
+| **实现复杂度**     | 低                        | 高                    | 高                       | 高                  | 低                    | 低                |
+| **可靠性**       | ⭐⭐⭐⭐⭐                    | ⭐⭐⭐⭐                 | ⭐⭐⭐⭐                    | ⭐⭐⭐⭐               | ⭐⭐⭐⭐                 | ⭐⭐⭐              |
+| **通用性**       | ⭐⭐⭐                      | ⭐⭐⭐⭐                 | ⭐⭐⭐⭐                    | ⭐⭐⭐⭐               | ⭐⭐⭐⭐⭐                | ⭐⭐⭐⭐⭐            |
+| **魔搭社区支持**    | ❌                        | ⚠️ 部分支持              | ⚠️ 部分支持                 | ✅                  | ✅                    | ✅                |
 
----
+***
 
 ## 动态优先级管理方案
 
@@ -304,7 +334,7 @@ else:
   直接使用 pydantic_parser → 成功 ✓
 ```
 
----
+***
 
 ## API 使用说明
 
@@ -355,11 +385,12 @@ else:
 ```
 
 系统会：
+
 1. 按指定顺序尝试方法
 2. 跳过标记为不支持的方法
 3. 记录失败并自动降级
 
----
+***
 
 ## 管理接口
 
@@ -397,7 +428,7 @@ await method_priority_manager.reset_method_status(
 )
 ```
 
----
+***
 
 ## 配置建议
 
@@ -429,7 +460,7 @@ WHERE model_name = 'Qwen/QwQ-32B';
 FAILED_THRESHOLD = 3  # 修改此值
 ```
 
----
+***
 
 ## 最佳实践
 
@@ -437,3 +468,4 @@ FAILED_THRESHOLD = 3  # 修改此值
 2. **已知模型**：可以在数据库中预设不支持的方法，避免不必要的尝试
 3. **监控**：定期检查日志，了解各模型的方法支持情况
 4. **重置**：如果模型 API 升级支持了新功能，手动重置方法状态
+

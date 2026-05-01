@@ -70,21 +70,8 @@ async def parse_request_params(
     # 3. 如果提供了模型类，进行验证和转换
     if model_class:
         try:
-            # 尝试转换数字类型字段
-            for key, value in merged_params.items():
-                if isinstance(value, str):
-                    # 尝试转换为整数
-                    if value.isdigit() or (value.startswith('-') and value[1:].isdigit()):
-                        merged_params[key] = int(value)
-                    # 尝试转换为浮点数
-                    elif value.replace('.', '', 1).isdigit() or (value.startswith('-') and value[1:].replace('.', '', 1).isdigit()):
-                        merged_params[key] = float(value)
-                    # 处理布尔值字符串
-                    elif value.lower() == 'true':
-                        merged_params[key] = True
-                    elif value.lower() == 'false':
-                        merged_params[key] = False
-            
+            # 注意：不再自动转换数字类型，让Pydantic根据模型定义自行处理
+            # 这样可以避免将本应作为字符串的数字（如手机号）错误地转换为整数
             validated = model_class(**merged_params)
             return validated.model_dump()
         except Exception as e:

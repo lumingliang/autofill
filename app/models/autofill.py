@@ -1,5 +1,6 @@
 import secrets
 import string
+from enum import Enum
 
 from tortoise import fields
 
@@ -10,6 +11,12 @@ def generate_api_key():
     """生成 API Key: af_{32位随机字符串}"""
     random_str = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
     return f"af_{random_str}"
+
+
+def generate_field_group_code():
+    """生成字段组唯一标识: fg_{16位随机字符串}"""
+    random_str = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(16))
+    return f"fg_{random_str}"
 
 
 class AppManagement(BaseModel, TimestampMixin):
@@ -70,3 +77,59 @@ class FillDataRecord(BaseModel, TimestampMixin):
 
     class Meta:
         table = "fill_data_record"
+
+
+# ==================== 新增模型 ====================
+
+class FieldType(str, Enum):
+    """字段类型枚举 - 仅支持select和text两种类型"""
+    SELECT = "select"
+    TEXT = "text"
+
+
+class FillPage(BaseModel, TimestampMixin):
+    """填单页面管理表"""
+    page_name = fields.CharField(max_length=64, description="页面名称", index=True)
+    page_code = fields.CharField(max_length=64, description="页面编码", index=True)
+    app_id = fields.BigIntField(description="关联应用ID", index=True)
+    app_name = fields.CharField(max_length=64, description="应用名称", index=True)
+    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    description = fields.TextField(null=True, description="页面描述")
+    is_active = fields.BooleanField(null=True, default=True, description="是否启用")
+
+    class Meta:
+        table = "fill_page"
+
+
+class FieldGroupConfig(BaseModel, TimestampMixin):
+    """字段组配置表"""
+    group_name = fields.CharField(max_length=64, description="字段组名称", index=True)
+    group_code = fields.CharField(max_length=64, description="字段组编码", unique=True, index=True, default=generate_field_group_code)
+    app_name = fields.CharField(max_length=64, description="应用名称", index=True)
+    page_id = fields.BigIntField(description="关联页面ID", index=True)
+    page_name = fields.CharField(max_length=64, description="页面名称")
+    prompt_template_base = fields.TextField(null=True, description="Prompt基础模板，包含{{fields_instructions}}和{{query}}占位符")
+    output_templates = fields.JSONField(default=dict, description="多输出模板配置，如{key: {template, description}}")
+    description = fields.TextField(null=True, description="字段组描述")
+    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    is_active = fields.BooleanField(default=True, description="是否启用")
+    version = fields.IntField(default=1, description="版本号，用于缓存控制")
+
+    class Meta:
+        table = "field_group_config"
+
+
+class FieldSpec(BaseModel, TimestampMixin):
+    """字段明细表 - 核心表"""
+    field_group_id = fields.BigIntField(description="关联字段组ID", index=True)
+    field_name = fields.CharField(max_length=64, description="字段英文名（用于JSON输出）")
+    field_label = fields.CharField(null=True, max_length=128, description="字段显示名称")
+    field_type = fields.CharEnumField(FieldType, default=FieldType.TEXT, description="字段类型")
+    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    fill_instruction = fields.TextField(null=True, description="字段填写指引（用于生成LLM描述）")
+    options = fields.JSONField(null=True, description="select类型选项配置，含source/api_identifier/items/last_sync_at")
+    corrections = fields.JSONField(null=True, default=list, description="text类型全局批注列表[{id, text, created_by, created_at}]")
+    is_active = fields.BooleanField(null=True, default=True, description="是否启用")
+
+    class Meta:
+        table = "field_spec"

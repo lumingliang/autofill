@@ -4,12 +4,15 @@ from fastapi.exceptions import HTTPException
 from tortoise.expressions import Q
 
 from app.core.crud import CRUDBase
-from app.models.autofill import (AppManagement, DropdownOption, FillDataRecord,
-                                 SummaryTemplate)
+from app.models.autofill import (AppManagement, DropdownOption, FieldGroupConfig,
+                                 FieldSpec, FillDataRecord, FillPage, SummaryTemplate)
 from app.schemas.autofill import (AppCreate, AppUpdate, DropdownOptionCreate,
                                   DropdownOptionUpdate, FillDataRecordCreate,
                                   FillDataRecordUpdate, SummaryTemplateCreate,
                                   SummaryTemplateUpdate)
+from app.schemas.fill_page import (FieldGroupConfigCreate, FieldGroupConfigUpdate,
+                                   FieldSpecCreate, FieldSpecUpdate, FillPageCreate,
+                                   FillPageUpdate)
 
 
 class AppManagementController(CRUDBase[AppManagement, AppCreate, AppUpdate]):
@@ -212,8 +215,128 @@ class FillDataRecordController(CRUDBase[FillDataRecord, FillDataRecordCreate, Fi
         return record
 
 
+# ==================== 新增控制器 ====================
+
+class FillPageController(CRUDBase[FillPage, FillPageCreate, FillPageUpdate]):
+    """填单页面控制器"""
+    def __init__(self):
+        super().__init__(model=FillPage)
+
+    async def create_page(self, obj_in: FillPageCreate) -> FillPage:
+        """创建页面，检查同一应用下页面编码唯一性"""
+        existing = await self.model.filter(
+            app_id=obj_in.app_id,
+            page_code=obj_in.page_code
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="该应用下已存在同编码页面")
+        return await self.create(obj_in)
+
+    async def update_page(self, id: int, obj_in: FillPageUpdate) -> FillPage:
+        """更新页面，检查编码唯一性"""
+        page = await self.get(id=id)
+        if obj_in.page_code and obj_in.page_code != page.page_code:
+            existing = await self.model.filter(
+                app_id=page.app_id,
+                page_code=obj_in.page_code
+            ).exclude(id=id).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="该应用下已存在同编码页面")
+        return await self.update(id=id, obj_in=obj_in)
+
+
+class FieldGroupConfigController(CRUDBase[FieldGroupConfig, FieldGroupConfigCreate, FieldGroupConfigUpdate]):
+    """字段组配置控制器"""
+    def __init__(self):
+        super().__init__(model=FieldGroupConfig)
+
+    async def create_field_group(self, obj_in: FieldGroupConfigCreate) -> FieldGroupConfig:
+        """创建字段组，检查同一页面下字段组名称唯一性"""
+        existing = await self.model.filter(
+            page_id=obj_in.page_id,
+            group_name=obj_in.group_name
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="该页面下已存在同名字段组")
+        return await self.create(obj_in)
+
+    async def update_field_group(self, id: int, obj_in: FieldGroupConfigUpdate) -> FieldGroupConfig:
+        """更新字段组，检查名称唯一性，自动增加版本号"""
+        field_group = await self.get(id=id)
+
+        # 检查名称唯一性
+        if obj_in.group_name and obj_in.group_name != field_group.group_name:
+            existing = await self.model.filter(
+                page_id=field_group.page_id,
+                group_name=obj_in.group_name
+            ).exclude(id=id).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="该页面下已存在同名字段组")
+
+        # 如果更新了关键配置，增加版本号
+        if (obj_in.prompt_template_base is not None or
+            obj_in.output_templates is not None or
+            obj_in.group_name is not None):
+            obj_in.version = field_group.version + 1
+
+        return await self.update(id=id, obj_in=obj_in)
+
+    async def get_by_code(self, code: str) -> Optional[FieldGroupConfig]:
+        """通过唯一编码获取字段组配置"""
+        return await self.model.filter(group_code=code).first()
+
+
+class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate]):
+    """字段明细控制器"""
+    def __init__(self):
+        super().__init__(model=FieldSpec)
+
+    async def create_field_spec(self, obj_in: FieldSpecCreate) -> FieldSpec:
+        """创建字段明细，检查同一字段组下字段名唯一性"""
+        existing = await self.model.filter(
+            field_group_id=obj_in.field_group_id,
+            field_name=obj_in.field_name
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="该字段组下已存在同名字段")
+        return await self.create(obj_in)
+
+    async def update_field_spec(self, id: int, obj_in: FieldSpecUpdate) -> FieldSpec:
+        """更新字段明细，检查字段名唯一性"""
+        field_spec = await self.get(id=id)
+
+        # 确定字段组ID
+        field_group_id = obj_in.field_group_id or field_spec.field_group_id
+
+        # 检查字段名唯一性
+        if obj_in.field_name and obj_in.field_name != field_spec.field_name:
+            existing = await self.model.filter(
+                field_group_id=field_group_id,
+                field_name=obj_in.field_name
+            ).exclude(id=id).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="该字段组下已存在同名字段")
+
+        return await self.update(id=id, obj_in=obj_in)
+
+    async def get_by_field_group(self, field_group_id: int, active_only: bool = True) -> List[FieldSpec]:
+        """获取字段组下的所有字段明细
+        
+        Args:
+            field_group_id: 字段组ID
+            active_only: 是否只查询启用的字段，默认为True
+        """
+        if active_only:
+            return await self.model.filter(field_group_id=field_group_id, is_active=True).all()
+        else:
+            return await self.model.filter(field_group_id=field_group_id).all()
+
+
 # 实例化控制器
 app_management_controller = AppManagementController()
 summary_template_controller = SummaryTemplateController()
 dropdown_option_controller = DropdownOptionController()
 fill_data_record_controller = FillDataRecordController()
+fill_page_controller = FillPageController()
+field_group_config_controller = FieldGroupConfigController()
+field_spec_controller = FieldSpecController()

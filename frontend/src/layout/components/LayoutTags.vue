@@ -1,18 +1,8 @@
 <template>
   <div class="tags-wrapper">
-    <a-tabs
-      v-model:activeKey="activeKey"
-      type="editable-card"
-      hide-add
-      @change="handleChange"
-      @edit="handleEdit"
-    >
-      <a-tab-pane
-        v-for="tag in tagsStore.tags"
-        :key="tag.path"
-        :tab="tag.title"
-        :closable="tagsStore.tags.length > 1"
-      />
+    <a-tabs v-model:activeKey="activeKey" type="editable-card" hide-add @change="handleChange" @edit="handleEdit">
+      <a-tab-pane v-for="tag in tagsStore.tags" :key="tag.path" :tab="tag.title"
+        :closable="tagsStore.tags.length > 1" />
     </a-tabs>
     <a-dropdown class="tags-extra">
       <MoreOutlined />
@@ -28,10 +18,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { useTagsStore } from '@/store'
 import { MoreOutlined } from '@ant-design/icons-vue'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,7 +65,7 @@ function handleExtraClick({ key }: { key: string }) {
   display: flex;
   align-items: center;
   background: #fff;
-  padding: 0 16px;
+  padding: 0;
   border-bottom: 1px solid #f0f0f0;
 
   :deep(.ant-tabs) {

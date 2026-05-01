@@ -57,10 +57,9 @@
           </a-tag>
         </template>
         <template v-if="column.key === 'request_body'">
-          <a-popover placement="right" trigger="hover">
+          <a-popover placement="right" trigger="hover" :overlay-style="{ width: '500px' }">
             <template #content>
-              <pre
-                style="max-height: 400px; overflow: auto; background: #f5f5f5; padding: 8px; border-radius: 4px;">{{ formatJSON(record.request_args) }}</pre>
+              <JsonViewer :data="record.request_args" title="请求参数" :max-height="300" :show-toolbar="false" />
             </template>
             <a-button type="link" size="small">
               <EyeOutlined />
@@ -68,10 +67,9 @@
           </a-popover>
         </template>
         <template v-if="column.key === 'response_body'">
-          <a-popover placement="right" trigger="hover">
+          <a-popover placement="right" trigger="hover" :overlay-style="{ width: '500px' }">
             <template #content>
-              <pre
-                style="max-height: 400px; overflow: auto; background: #f5f5f5; padding: 8px; border-radius: 4px;">{{ formatJSON(record.response_body) }}</pre>
+              <JsonViewer :data="record.response_body" title="响应内容" :max-height="300" :show-toolbar="false" />
             </template>
             <a-button type="link" size="small">
               <EyeOutlined />

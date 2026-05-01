@@ -88,12 +88,12 @@
     </CrudTable>
 
     <!-- 查看数据弹窗 -->
-    <a-modal v-model:open="viewModalVisible" title="填单数据" width="700px" :footer="null">
-      <pre class="json-viewer">{{ JSON.stringify(currentRecord?.data, null, 2) }}</pre>
+    <a-modal v-model:open="viewModalVisible" title="填单数据" width="800px" :footer="null">
+      <JsonViewer :data="currentRecord?.data" title="填单数据" :max-height="500" />
     </a-modal>
 
     <!-- 查看AI结果弹窗 -->
-    <a-modal v-model:open="resultModalVisible" title="AI填单结果" width="700px" :footer="null">
+    <a-modal v-model:open="resultModalVisible" title="AI填单结果" width="800px" :footer="null">
       <div v-if="currentRecord?.result">
         <a-descriptions :column="1" bordered>
           <a-descriptions-item label="处理状态">
@@ -108,7 +108,7 @@
             <span style="color: red">{{ currentRecord.error_msg }}</span>
           </a-descriptions-item>
           <a-descriptions-item label="AI结果数据">
-            <pre class="json-viewer">{{ JSON.stringify(currentRecord.result, null, 2) }}</pre>
+            <JsonViewer :data="currentRecord.result" title="AI结果" :max-height="400" />
           </a-descriptions-item>
         </a-descriptions>
       </div>
