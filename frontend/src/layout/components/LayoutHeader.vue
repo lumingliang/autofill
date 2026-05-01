@@ -163,18 +163,20 @@ function handleUserMenuClick({ key }: { key: string }) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
+  padding: 0 24px 0 0;
   height: 100%;
 
   .left-section {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 8px;
 
     .trigger {
       font-size: 18px;
       cursor: pointer;
       transition: color 0.3s;
+      padding: 0 8px;
+      margin-left: 0;
 
       &:hover {
         color: #F4511E;

@@ -78,9 +78,8 @@ async def create_app(
     current_user = await AuthControl.is_authed(token)
 
     # 确定租户ID
-    target_tenant_id = None
     if is_superuser(current_user):
-        target_tenant_id = app_in.tenant_id
+        target_tenant_id = app_in.tenant_id or 0
     else:
         target_tenant_id = current_user.current_tenant_id
         if not target_tenant_id:

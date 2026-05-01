@@ -6,6 +6,31 @@ from tortoise import fields
 from .base import BaseModel, TimestampMixin
 
 
+class LLMProvider(BaseModel, TimestampMixin):
+    """LLM 提供商表"""
+    value = fields.CharField(max_length=64, unique=True, description="提供商标识", index=True)
+    label = fields.CharField(max_length=128, description="提供商显示名称")
+    description = fields.TextField(null=True, description="提供商描述")
+    icon = fields.CharField(max_length=255, null=True, description="图标URL或类名")
+    is_active = fields.BooleanField(default=True, description="是否启用", index=True)
+    order = fields.IntField(default=0, description="排序", index=True)
+
+    class Meta:
+        table = "llm_provider"
+
+    async def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "value": self.value,
+            "label": self.label,
+            "description": self.description,
+            "icon": self.icon,
+            "is_active": self.is_active,
+            "order": self.order,
+        }
+
+
 class LLMConfig(BaseModel, TimestampMixin):
     """LLM 模型配置表"""
     name = fields.CharField(max_length=128, default="", description="配置名称", index=True)

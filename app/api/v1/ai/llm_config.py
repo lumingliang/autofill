@@ -11,6 +11,7 @@ from tortoise.expressions import Q
 from app.controllers.llm_config import llm_config_controller
 from app.core.dependency import AuthControl
 from app.models.admin import User
+from app.models.llm_config import LLMProvider
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.llm_config import (
     LLMConfigCreate,
@@ -31,20 +32,10 @@ def is_superuser(user: User) -> bool:
     return user.is_superuser
 
 
-# 模型提供商列表
-LLM_PROVIDERS = [
-    {"value": "openai", "label": "OpenAI"},
-    {"value": "azure", "label": "Azure OpenAI"},
-    {"value": "anthropic", "label": "Anthropic"},
-    {"value": "vertex_ai", "label": "Google Vertex AI"},
-    {"value": "bedrock", "label": "AWS Bedrock"},
-    {"value": "ollama", "label": "Ollama"},
-    {"value": "deepseek", "label": "DeepSeek"},
-    {"value": "openrouter", "label": "OpenRouter"},
-    {"value": "qwen", "label": "通义千问"},
-    {"value": "moonshot", "label": "Moonshot"},
-    {"value": "zhipuai", "label": "智谱 AI"},
-]
+async def get_llm_providers_from_db() -> List[Dict[str, Any]]:
+    """从数据库获取启用的模型提供商列表"""
+    providers = await LLMProvider.filter(is_active=True).order_by("order", "id")
+    return [await p.to_dict() for p in providers]
 
 
 @llm_config_router.get("/llm_config/list", summary="获取 LLM 配置列表")
@@ -164,7 +155,8 @@ async def get_llm_providers(
 ):
     """获取模型提供商列表"""
     await AuthControl.is_authed(token)
-    return Success(data=LLM_PROVIDERS)
+    providers = await get_llm_providers_from_db()
+    return Success(data=providers)
 
 
 @llm_config_router.post("/llm_config/test", summary="测试配置连通性")

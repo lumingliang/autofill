@@ -69,10 +69,12 @@ declare module 'vue' {
     ATooltip: typeof import('ant-design-vue/es')['Tooltip']
     ATree: typeof import('ant-design-vue/es')['Tree']
     ATreeSelect: typeof import('ant-design-vue/es')['TreeSelect']
+    ATypographyParagraph: typeof import('ant-design-vue/es')['TypographyParagraph']
     AUpload: typeof import('ant-design-vue/es')['Upload']
     CrudTable: typeof import('./src/components/CrudTable/index.vue')['default']
     FilterForm: typeof import('./src/components/FilterForm/index.vue')['default']
     IconSelector: typeof import('./src/components/IconSelector/index.vue')['default']
+    JsonViewer: typeof import('./src/components/JsonViewer/index.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }
