@@ -2586,3 +2586,260 @@ async def autofill_llm(...):
 - [ ] Skill 使用示例是否与新实现一致
 - [ ] Skill 触发条件是否覆盖新场景
 - [ ] Skill 是否引用了最新的约束文档章节
+
+---
+
+## 19. 测试文件管理规范
+
+### 19.1 测试目录结构
+
+> **⚠️ 重要约束**: 所有测试文件必须放在 `tests/` 目录下，禁止在项目根目录创建测试文件。
+
+```
+tests/
+├── __init__.py
+├── unit/                    # 单元测试 - 测试单个函数/类
+│   ├── __init__.py
+│   └── test_*.py
+├── integration/             # 集成测试 - 测试多个组件交互
+│   ├── __init__.py
+│   └── test_*.py
+├── e2e/                     # 端到端测试 - 测试完整业务流程
+│   ├── __init__.py
+│   └── test_*.py
+└── scripts/                 # 临时/调试脚本
+    ├── __init__.py
+    └── test_*.py
+```
+
+### 19.2 测试分类规范
+
+#### 单元测试 (`tests/unit/`)
+
+**适用场景：**
+- 测试单个函数或类
+- 测试工具函数、解析器
+- 测试业务逻辑
+- 测试模型验证
+
+**特点：**
+- 执行速度快 (< 100ms)
+- 无外部依赖（使用 mock）
+- 高代码覆盖率
+
+```python
+# ✅ 正确：单元测试示例
+# tests/unit/test_curl_parser.py
+class TestCurlParser:
+    """Curl 解析器测试"""
+    
+    def test_parse_simple_get(self):
+        """测试简单的 GET 请求"""
+        curl = "curl https://api.example.com/users"
+        result = CurlParser.parse(curl)
+        
+        assert result.url == "https://api.example.com/users"
+        assert result.method == "GET"
+```
+
+#### 集成测试 (`tests/integration/`)
+
+**适用场景：**
+- 测试 API 端点
+- 测试数据库操作
+- 测试服务集成
+- 测试认证授权
+
+**特点：**
+- 可能使用真实数据库
+- 测试组件间交互
+- 比单元测试慢
+
+```python
+# ✅ 正确：集成测试示例
+# tests/integration/test_public_api.py
+async def test_autofill_api():
+    """测试智能填单 API"""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{BASE_URL}/api/public/autofill",
+            json={"query": "测试数据"}
+        )
+        assert response.status_code == 200
+```
+
+#### 端到端测试 (`tests/e2e/`)
+
+**适用场景：**
+- 测试完整用户故事
+- 测试多步骤工作流
+- 测试业务场景
+
+**特点：**
+- 测试完整业务流程
+- 涉及多个 API 调用
+- 最慢但最全面
+
+```python
+# ✅ 正确：端到端测试示例
+# tests/e2e/test_agent_workflow.py
+async def test_complete_agent_workflow():
+    """测试完整的 Agent 工作流程"""
+    # 1. 创建会话
+    session = await create_session()
+    
+    # 2. 发送消息
+    response = await send_message(session, "查询上海门店")
+    
+    # 3. 验证结果
+    assert "门店" in response
+```
+
+#### 测试脚本 (`tests/scripts/`)
+
+**适用场景：**
+- 临时调试脚本
+- 一次性验证
+- 开发阶段测试
+
+**特点：**
+- 不参与 CI/CD
+- 可随时删除
+- 建议添加时间戳
+
+```python
+# ✅ 正确：测试脚本示例
+# tests/scripts/test_debug_api_20240115.py
+#!/usr/bin/env python3
+"""
+调试脚本 - 测试特定 API 问题
+创建时间: 2024-01-15
+创建人: developer
+目的: 调试接口响应格式问题
+"""
+
+import httpx
+
+async def debug_api():
+    # 临时调试代码
+    pass
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(debug_api())
+```
+
+### 19.3 命名规范
+
+#### 测试文件命名
+
+```
+test_<module_name>.py          # 测试对应模块
+test_<feature_name>.py         # 测试特定功能
+test_<scenario_name>.py        # 测试特定场景
+```
+
+**示例：**
+- `test_query_agent.py` - 测试 QueryAgent 模块
+- `test_curl_parser.py` - 测试 Curl 解析功能
+- `test_byd_dealer_search.py` - 测试比亚迪门店搜索场景
+
+#### 测试类/方法命名
+
+```python
+# 测试类命名
+class Test<ModuleName>:          # 如: TestQueryAgent
+    
+    # 测试方法命名
+    def test_<function>_<scenario>(self):   # 如: test_parse_valid_curl
+        pass
+    
+    def test_<function>_<edge_case>(self):  # 如: test_parse_invalid_curl
+        pass
+```
+
+### 19.4 创建测试文件流程
+
+#### 步骤 1：确定测试类型
+
+```
+测试单个函数？        → tests/unit/
+测试 API 端点？       → tests/integration/
+测试完整工作流？      → tests/e2e/
+临时调试脚本？        → tests/scripts/
+```
+
+#### 步骤 2：创建文件
+
+```bash
+# 示例：创建单元测试
+touch tests/unit/test_<module>.py
+
+# 示例：创建集成测试
+touch tests/integration/test_<api>_api.py
+```
+
+#### 步骤 3：添加文件头
+
+```python
+"""
+<Module/Feature Name> 测试
+
+测试范围:
+- <测试点1>
+- <测试点2>
+
+作者: <name>
+创建时间: <date>
+"""
+```
+
+### 19.5 禁止事项
+
+```python
+# ❌ 错误：在项目根目录创建测试文件
+# /autofill/test_something.py
+
+# ❌ 错误：命名不清晰
+# /autofill/tests/unit/test1.py
+# /autofill/tests/unit/test_new.py
+
+# ❌ 错误：混合测试类型
+# 单元测试和集成测试写在同一个文件
+
+# ✅ 正确：按规范放置测试文件
+# /autofill/tests/unit/test_curl_parser.py
+# /autofill/tests/integration/test_public_api.py
+# /autofill/tests/e2e/test_agent_workflow.py
+```
+
+### 19.6 清理临时脚本
+
+**定期清理 `tests/scripts/` 目录：**
+
+```bash
+# 查看脚本创建时间
+ls -la tests/scripts/
+
+# 删除超过 30 天的临时脚本
+find tests/scripts/ -name "test_*.py" -mtime +30 -delete
+```
+
+**保留原则：**
+- ✅ 保留：有明确文档说明的调试脚本
+- ❌ 删除：无文档、无注释的临时脚本
+- ❌ 删除：已解决问题的调试脚本
+
+### 19.7 文档章节对应关系
+
+| 测试类型 | 目录 | 用途 |
+|---------|------|------|
+| 单元测试 | `tests/unit/` | 测试单个函数/类 |
+| 集成测试 | `tests/integration/` | 测试组件交互 |
+| 端到端测试 | `tests/e2e/` | 测试完整业务流程 |
+| 测试脚本 | `tests/scripts/` | 临时调试 |
+
+### 19.8 Skill 关联
+
+- **test-management**: 测试文件创建、移动、删除管理
+- **architecture-update**: 架构变更时更新测试规范
