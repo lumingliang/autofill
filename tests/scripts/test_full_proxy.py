@@ -5,13 +5,7 @@ import json
 async def test_full_proxy():
     """测试完整的代理接口（结构化输出）"""
     async with httpx.AsyncClient() as client:
-        # 1. 登录获取管理 token
-        login_resp = await client.post('http://localhost:9999/api/v1/base/access_token', json={
-            'username': 'admin',
-            'password': '123456'
-        })
-        token = login_resp.json()['data']['access_token']
-        print(f'Login success')
+    
         
         # 2. 调用代理接口（使用应用的 API Key 认证）
         api_key = "af_1fzDujUFl7SLg9L3CWMSV5upBT4GU1bR"
@@ -51,7 +45,7 @@ async def test_full_proxy():
         
         try:
             proxy_resp = await client.post(
-                'http://localhost:9999/api/api/llm/proxy',
+                'http://localhost:9999/api/llm/proxy',
                 json=proxy_data,
                 headers={'Authorization': f'Bearer {api_key}'},
                 timeout=60

@@ -35,7 +35,7 @@ async def test_proxy_with_chat_history():
         
         try:
             response = await client.post(
-                'http://localhost:9999/api/api/llm/proxy',
+                'http://localhost:9999/api/llm/proxy',
                 json=proxy_data,
                 headers={'Authorization': f'Bearer {api_key}'},
                 timeout=60
@@ -93,7 +93,7 @@ async def test_proxy_with_chat_history():
         
         try:
             response = await client.post(
-                'http://localhost:9999/api/api/llm/proxy',
+                'http://localhost:9999/api/llm/proxy',
                 json=proxy_data2,
                 headers={'Authorization': f'Bearer {api_key}'},
                 timeout=60
@@ -152,7 +152,7 @@ async def test_proxy_with_chat_history():
         
         try:
             response = await client.post(
-                'http://localhost:9999/api/api/llm/proxy',
+                'http://localhost:9999/api/llm/proxy',
                 json=proxy_data3,
                 headers={'Authorization': f'Bearer {api_key}'},
                 timeout=60

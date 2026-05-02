@@ -21,7 +21,7 @@ from .tenants import tenant_router
 from .users import users_router
 from .upload import router as upload_router
 from .ai.llm_config import llm_config_router
-from .apis.byd_dealer import router as byd_dealer_router, public_router as byd_dealer_public_router
+from .byd_dealer import byd_dealer_router
 
 v1_router = APIRouter()
 
@@ -49,8 +49,5 @@ v1_router.include_router(field_spec_router, prefix="/autofill", dependencies=[De
 # AI 模块 - LLM 配置管理
 v1_router.include_router(llm_config_router, prefix="/ai", dependencies=[DependPermission], tags=["LLM配置管理"])
 
-# 比亚迪经销商门店管理
+# 比亚迪经销商门店管理（内部 API，需要 JWT 认证）
 v1_router.include_router(byd_dealer_router, prefix="/byd-dealers", dependencies=[DependPermission], tags=["比亚迪经销商门店"])
-
-# 比亚迪经销商公开接口（无需认证）
-v1_router.include_router(byd_dealer_public_router, prefix="/byd-dealers/public", tags=["比亚迪经销商公开接口"])

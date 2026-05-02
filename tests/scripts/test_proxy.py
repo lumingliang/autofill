@@ -42,7 +42,7 @@ async def test_proxy():
         
         try:
             proxy_resp = await client.post(
-                'http://localhost:9999/api/api/llm/proxy',
+                'http://localhost:9999/api/llm/proxy',
                 json=proxy_data,
                 headers={'Authorization': f'Bearer {api_key}'},
                 timeout=60

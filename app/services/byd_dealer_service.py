@@ -118,10 +118,19 @@ class BYDDealerService:
     ) -> BYDDealerPublicSearchResponse:
         """
         公开接口搜索门店
-        仅支持简单的 %% 模糊查询
+        支持三个独立参数的模糊查询：name、city、address
         """
         start_time = time.time()
-        query_text = request.query
+
+        # 构建查询描述（用于日志和响应）
+        search_terms = []
+        if request.name:
+            search_terms.append(f"名称:{request.name}")
+        if request.city:
+            search_terms.append(f"城市:{request.city}")
+        if request.address:
+            search_terms.append(f"地址:{request.address}")
+        query_desc = "; ".join(search_terms) if search_terms else "全部"
 
         try:
             # 验证 AppKey 并获取应用信息
@@ -131,7 +140,7 @@ class BYDDealerService:
                     success=False,
                     data=[],
                     total=0,
-                    query=query_text,
+                    query=query_desc,
                     matched_keywords=[],
                     message="无效的 AppKey"
                 )
@@ -139,17 +148,17 @@ class BYDDealerService:
             # 构建查询条件
             q_objects = Q(tenant_id=app.tenant_id, app_id=app.id)
 
-            # 使用 %% 进行模糊查询
-            if query_text:
-                q_objects &= (
-                    Q(name__icontains=query_text) |
-                    Q(address__icontains=query_text) |
-                    Q(district__icontains=query_text)
-                )
+            # 名称模糊查询
+            if request.name:
+                q_objects &= Q(name__icontains=request.name)
 
-            # 城市过滤（如果提供）
+            # 城市模糊查询
             if request.city:
                 q_objects &= Q(city__icontains=request.city)
+
+            # 地址模糊查询
+            if request.address:
+                q_objects &= Q(address__icontains=request.address)
 
             # 执行查询
             dealers = await BYDDealer.filter(q_objects).limit(request.limit).all()
@@ -164,21 +173,34 @@ class BYDDealerService:
 
             # 记录搜索日志
             await BYDDealerSearchLog.create(
-                query=query_text,
+                query=query_desc,
                 app_key=request.app_key,
                 tenant_id=app.tenant_id,
-                search_params={"query": query_text, "city": request.city},
+                search_params={
+                    "name": request.name,
+                    "city": request.city,
+                    "address": request.address
+                },
                 result_count=len(dealers),
                 success=True,
                 response_time_ms=response_time
             )
 
+            # 构建匹配的关键词列表
+            matched_keywords = []
+            if request.name:
+                matched_keywords.append(request.name)
+            if request.city:
+                matched_keywords.append(request.city)
+            if request.address:
+                matched_keywords.append(request.address)
+
             return BYDDealerPublicSearchResponse(
                 success=True,
                 data=dealer_responses,
                 total=len(dealers),
-                query=query_text,
-                matched_keywords=[query_text] if query_text else [],
+                query=query_desc,
+                matched_keywords=matched_keywords,
                 message=f"找到 {len(dealers)} 家门店"
             )
 
@@ -187,7 +209,7 @@ class BYDDealerService:
 
             # 记录错误日志
             await BYDDealerSearchLog.create(
-                query=query_text,
+                query=query_desc,
                 app_key=request.app_key,
                 tenant_id=app.tenant_id if app else 0,
                 search_params={},
@@ -201,7 +223,7 @@ class BYDDealerService:
                 success=False,
                 data=[],
                 total=0,
-                query=query_text,
+                query=query_desc,
                 matched_keywords=[],
                 message=f"搜索失败: {str(e)}"
             )
