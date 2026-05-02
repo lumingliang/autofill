@@ -1,19 +1,43 @@
 # Vue FastAPI Admin 架构文档
 
+> 本文档描述系统的整体架构设计，包括前端、后端、数据流和关键功能模块。
+> 最后更新: 2026-05-02
+
+---
+
 ## 1. 项目概述
 
-Vue FastAPI Admin 是一个基于 Vue 3 + FastAPI 的 RBAC（基于角色的访问控制）后台管理系统，支持多租户架构。
+Vue FastAPI Admin 是一个基于 Vue 3 + FastAPI 的 RBAC（基于角色的访问控制）后台管理系统，支持多租户架构。系统核心功能是**智能填单**，通过 AI 辅助完成各类业务表单的自动填写。
 
 ### 1.1 项目结构
 
 ```
 autofill/
-├── frontend/          # 前端项目 (Vue 3 + TypeScript) - 当前活跃使用
+├── frontend/          # 前端项目 (Vue 3 + TypeScript)
 ├── app/               # 后端项目 (FastAPI + Python)
-├── web/               # 【已废弃】额外的前端目录，仅作参考保留
-├── requirements.txt   # Python 依赖
+├── tests/             # 测试目录
+├── litellm/           # LiteLLM 网关配置
+├── scripts/           # 管理脚本
+├── docs/              # 文档目录
+├── .trae/             # AI 配置和约束
+│   ├── docs/          # 技术约束文档
+│   └── skills/        # AI Skills
 └── pyproject.toml     # Python 项目配置
 ```
+
+### 1.2 核心功能模块
+
+| 模块 | 描述 | 状态 |
+|------|------|------|
+| RBAC 权限系统 | 基于角色的访问控制 | ✅ 已完成 |
+| 多租户架构 | 数据隔离的租户系统 | ✅ 已完成 |
+| 智能填单 | AI 辅助表单自动填写 | ✅ 已完成 |
+| LLM 代理 | 统一的 LLM 调用接口 | ✅ 已完成 |
+| Query Agent | 智能查询 Agent | ✅ 已完成 |
+| BYD 经销商查询 | 比亚迪门店查询服务 | ✅ 已完成 |
+| LiteLLM 网关 | 模型管理和代理 | ✅ 已完成 |
+| 全局异常处理 | 统一的错误处理 | ✅ 已完成 |
+| 结构化日志 | 完整的日志记录 | ✅ 已完成 |
 
 ---
 
@@ -46,7 +70,8 @@ frontend/src/
 ├── components/             # 公共组件
 │   ├── CrudTable/         # CRUD 表格组件
 │   ├── FilterForm/        # 筛选表单组件
-│   └── HelloWorld.vue
+│   ├── JsonViewer/        # JSON 查看器
+│   └── IconSelector/      # 图标选择器
 ├── core/                   # 核心配置
 │   └── ant-design/        # Ant Design 配置
 ├── directives/             # 自定义指令
@@ -80,6 +105,14 @@ frontend/src/
 │   ├── request.ts         # Axios 封装
 │   └── storage.ts         # 本地存储
 ├── views/                  # 页面视图
+│   ├── autofill/          # 智能填单模块
+│   │   ├── app/           # 应用管理
+│   │   ├── dropdown/      # 下拉选项管理
+│   │   ├── field_group/   # 字段分组管理
+│   │   ├── field_spec/    # 字段规格管理
+│   │   ├── page/          # 页面配置
+│   │   ├── record/        # 填单记录
+│   │   └── template/      # 模板管理
 │   ├── error/             # 错误页面
 │   ├── login/             # 登录页
 │   ├── profile/           # 个人中心
@@ -87,11 +120,11 @@ frontend/src/
 │   │   ├── api/           # API 管理
 │   │   ├── auditlog/      # 审计日志
 │   │   ├── dept/          # 部门管理
+│   │   ├── llm_config/    # LLM 配置
 │   │   ├── menu/          # 菜单管理
 │   │   ├── role/          # 角色管理
 │   │   ├── tenant/        # 租户管理
 │   │   └── user/          # 用户管理
-│   ├── top-menu/          # 顶部菜单
 │   └── workbench/         # 工作台
 ├── App.vue                 # 根组件
 ├── main.ts                 # 入口文件
@@ -128,27 +161,6 @@ frontend/src/
 - **路由级权限**: 动态路由过滤
 - **API 级权限**: 后端接口权限校验
 
-### 2.4 关键配置
-
-#### Vite 配置
-
-```typescript
-// vite.config.ts 关键配置
-- 端口: 3200
-- 代理: /api -> http://127.0.0.1:9999
-- 路径别名: @ -> src
-- 插件: Vue, UnoCSS, 自动组件导入
-```
-
-#### TypeScript 配置
-
-```typescript
-// tsconfig.app.json 关键配置
-- strict: true
-- moduleResolution: bundler
-- 路径映射: @/* -> src/*
-```
-
 ---
 
 ## 3. 后端架构
@@ -160,463 +172,517 @@ frontend/src/
 | 框架 | FastAPI | 0.111.0 | Web 框架 |
 | 语言 | Python | >=3.11 | 编程语言 |
 | ORM | Tortoise ORM | 0.23.0 | 异步 ORM |
-| 数据库 | MySQL | - | 主数据库 |
+| 数据库 | MySQL | 8.0+ | 主数据库 |
+| 缓存 | Redis | - | 缓存和消息队列 |
+| 消息队列 | Kafka | - | 异步任务 |
 | 迁移工具 | Aerich | 0.8.1 | 数据库迁移 |
 | 认证 | PyJWT | 2.10.1 | JWT Token |
 | 密码加密 | Argon2 | 23.1.0 | 密码哈希 |
 | 数据验证 | Pydantic | 2.10.5 | 数据模型验证 |
 | 配置管理 | pydantic-settings | 2.7.1 | 环境配置 |
 | 日志 | loguru | 0.7.3 | 日志记录 |
-| 代码格式化 | black | 24.10.0 | 代码格式化 |
-| 代码检查 | ruff | 0.9.1 | 代码检查 |
+| LLM 网关 | LiteLLM | - | 模型代理 |
+| Agent 框架 | LangGraph | - | 查询 Agent |
 
 ### 3.2 目录结构
 
 ```
 app/
 ├── api/                    # API 路由层
-│   └── v1/                # API 版本 1
+│   ├── __init__.py        # 路由聚合
+│   ├── public/            # 公开接口 (API Key 认证)
+│   │   ├── __init__.py
+│   │   ├── autofill.py    # 智能填单公开接口
+│   │   ├── llm_proxy.py   # LLM 代理公开接口
+│   │   └── query_agent.py # Query Agent 接口
+│   └── v1/                # API 版本 1 (JWT 认证)
+│       ├── __init__.py
+│       ├── ai/            # AI 配置接口
 │       ├── apis/          # API 管理接口
 │       ├── auditlog/      # 审计日志接口
+│       ├── autofill/      # 智能填单接口
 │       ├── base/          # 基础接口（登录等）
 │       ├── depts/         # 部门接口
 │       ├── menus/         # 菜单接口
 │       ├── roles/         # 角色接口
 │       ├── tenants/       # 租户接口
 │       ├── upload/        # 文件上传接口
-│       ├── users/         # 用户接口
-│       └── __init__.py    # 路由聚合
-├── controllers/            # 控制器层（业务逻辑）
+│       └── users/         # 用户接口
+├── controllers/           # 控制器层（业务逻辑）
 │   ├── api.py             # API 控制器
+│   ├── autofill.py        # 智能填单控制器
 │   ├── dept.py            # 部门控制器
+│   ├── llm_config.py      # LLM 配置控制器
 │   ├── menu.py            # 菜单控制器
 │   ├── role.py            # 角色控制器
 │   ├── tenant.py          # 租户控制器
 │   └── user.py            # 用户控制器
-├── core/                   # 核心模块
+├── core/                  # 核心模块
+│   ├── kafka/             # Kafka 消息队列
+│   ├── autofill_auth.py   # 智能填单认证
 │   ├── bgtask.py          # 后台任务
 │   ├── crud.py            # CRUD 基类
 │   ├── ctx.py             # 上下文管理
-│   ├── dependency.py      # 依赖注入（认证、权限）
+│   ├── dependency.py      # 依赖注入
 │   ├── exceptions.py      # 异常处理
 │   ├── init_app.py        # 应用初始化
+│   ├── menu_config.py     # 菜单配置
+│   ├── menu_registry.py   # 菜单注册
 │   ├── middlewares.py     # 中间件
-│   └── relation.py        # 关联查询工具
-├── log/                    # 日志模块
-│   └── log.py             # 日志配置
-├── models/                 # 数据模型层
-│   ├── admin.py           # 业务模型（用户、角色等）
+│   ├── redis.py           # Redis 连接
+│   ├── relation.py        # 关系处理
+│   └── request_parser.py  # 请求解析
+├── log/                   # 日志模块
+│   ├── __init__.py
+│   └── log.py             # 日志配置和工具
+├── models/                # 数据模型层
+│   ├── __init__.py
+│   ├── admin.py           # 管理员模型
+│   ├── autofill.py        # 智能填单模型
 │   ├── base.py            # 基础模型
-│   └── enums.py           # 枚举定义
-├── schemas/                # Pydantic 数据模型
-│   ├── apis.py            # API 模型
-│   ├── base.py            # 基础响应模型
+│   ├── byd_dealer.py      # BYD 经销商模型
+│   ├── enums.py           # 枚举定义
+│   └── llm_config.py      # LLM 配置模型
+├── schemas/               # Pydantic 模型
+│   ├── __init__.py
+│   ├── apis.py            # API 相关模型
+│   ├── autofill.py        # 智能填单模型
+│   ├── base.py            # 基础模型
+│   ├── byd_dealer.py      # BYD 经销商模型
 │   ├── depts.py           # 部门模型
+│   ├── fill_page.py       # 填单页面模型
+│   ├── llm_config.py      # LLM 配置模型
 │   ├── login.py           # 登录模型
 │   ├── menus.py           # 菜单模型
 │   ├── roles.py           # 角色模型
 │   ├── tenants.py         # 租户模型
 │   └── users.py           # 用户模型
-├── services/               # 服务层
-│   └── file_service.py    # 文件服务
-├── settings/               # 配置管理
+├── services/              # 服务层
+│   ├── query_agent/       # Query Agent 服务
+│   │   ├── __init__.py
+│   │   ├── agent.py       # Agent 核心
+│   │   ├── nodes.py       # 节点定义
+│   │   ├── parser.py      # Curl 解析
+│   │   ├── prompts.py     # 提示词
+│   │   ├── types.py       # 类型定义
+│   │   └── utils.py       # 工具函数
+│   ├── ai_fill_service.py # AI 填单服务
+│   ├── byd_dealer_service.py # BYD 经销商服务
+│   ├── file_service.py    # 文件服务
+│   ├── litellm_sync_service.py # LiteLLM 同步
+│   ├── llm_proxy_service.py # LLM 代理服务
+│   ├── prompt_service.py  # 提示词服务
+│   └── structured_output.py # 结构化输出
+├── settings/              # 配置
+│   ├── __init__.py
 │   └── config.py          # 应用配置
-├── utils/                  # 工具函数
+├── utils/                 # 工具函数
 │   ├── jwt_utils.py       # JWT 工具
 │   └── password.py        # 密码工具
 └── __init__.py
 ```
 
-### 3.3 核心架构模式
-
-#### 3.3.1 分层架构
+### 3.3 架构分层
 
 ```
-API Layer (api/)
-    ↓
-Controller Layer (controllers/)
-    ↓
-Service Layer (services/)
-    ↓
-Model Layer (models/)
-```
-
-#### 3.3.2 CRUD 基类模式
-
-```python
-# core/crud.py
-class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    def __init__(self, model: Type[ModelType]):
-        self.model = model
-
-    async def get(self, id: int) -> ModelType
-    async def list(self, page, page_size, search, order) -> Tuple[Total, List[ModelType]]
-    async def create(self, obj_in: CreateSchemaType) -> ModelType
-    async def update(self, id: int, obj_in: UpdateSchemaType) -> ModelType
-    async def remove(self, id: int) -> None
-```
-
-#### 3.3.3 关联查询模式
-
-```python
-# core/relation.py
-class RelationQuery:
-    """所有多对多/一对多关系查询统一走这里"""
-
-    # 用户-角色关联
-    @staticmethod
-    async def get_role_ids_by_user_id(user_id: int) -> List[int]
-    @staticmethod
-    async def replace_user_roles(user_id: int, role_ids: List[int]) -> None
-
-    # 角色-菜单关联
-    @staticmethod
-    async def get_menu_ids_by_role_id(role_id: int) -> List[int]
-
-    # 角色-API 关联
-    @staticmethod
-    async def get_api_ids_by_role_id(role_id: int) -> List[int]
-```
-
-#### 3.3.4 依赖注入模式
-
-```python
-# core/dependency.py
-class AuthControl:
-    @classmethod
-    async def is_authed(cls, token: str = Header(...)) -> Optional["User"]
-
-class PermissionControl:
-    @classmethod
-    async def has_permission(cls, request: Request, current_user: User = Depends(AuthControl.is_authed))
-
-DependAuth = Depends(AuthControl.is_authed)
-DependPermission = Depends(PermissionControl.has_permission)
-```
-
-### 3.4 数据模型
-
-#### 3.4.1 核心实体
-
-```
-User (用户)
-├── id, username, email, password
-├── is_active, is_superuser
-├── dept_id (部门)
-├── current_tenant_id (当前租户)
-└── 关联: roles, tenants
-
-Role (角色)
-├── id, name, desc
-├── tenant_id (所属租户)
-└── 关联: users, menus, apis
-
-Tenant (租户)
-├── id, name, domain
-└── 关联: users, roles
-
-Menu (菜单)
-├── id, name, path, component
-├── menu_type (catalog/menu)
-├── parent_id, order
-└── 关联: roles
-
-Api (接口)
-├── id, path, method, summary, tags
-└── 关联: roles
-
-Dept (部门)
-├── id, name, parent_id
-└── 关联: users
-
-AuditLog (审计日志)
-├── user_id, username, module
-├── method, path, status
-└── request_args, response_body
-```
-
-#### 3.4.2 关联表
-
-```
-UserRole: user_id <-> role_id
-RoleMenu: role_id <-> menu_id
-RoleApi: role_id <-> api_id
-UserTenant: user_id <-> tenant_id
-DeptClosure: ancestor <-> descendant (部门层级)
-```
-
-### 3.5 中间件栈
-
-```python
-# 中间件执行顺序（从上到下）
-1. CORSMiddleware          # 跨域处理
-2. RequestIdMiddleware     # 请求 ID 追踪
-3. RequestLoggingMiddleware # 请求日志
-4. BackGroundTaskMiddleware # 后台任务
-5. HttpAuditLogMiddleware  # 审计日志
+┌─────────────────────────────────────────────────────────────┐
+│                        API 路由层                            │
+│  (FastAPI Router - 参数校验、路由分发、认证授权)               │
+├─────────────────────────────────────────────────────────────┤
+│                       控制器层                               │
+│  (Controllers - 业务逻辑编排、数据转换)                        │
+├─────────────────────────────────────────────────────────────┤
+│                       服务层                                 │
+│  (Services - 核心业务逻辑、外部服务调用)                       │
+├─────────────────────────────────────────────────────────────┤
+│                       数据层                                 │
+│  (Models - 数据访问、ORM 操作)                                │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. 前后端交互
+## 4. 核心功能模块详解
 
-### 4.1 API 规范
+### 4.1 RBAC 权限系统
 
-#### 4.1.1 响应格式
-
-```typescript
-// 成功响应
-{
-  code: 200,
-  msg: "success",
-  data: T
-}
-
-// 列表响应
-{
-  code: 200,
-  msg: "success",
-  data: T[],
-  total: number,
-  page: number,
-  page_size: number
-}
-
-// 错误响应
-{
-  code: 400 | 401 | 403 | 404 | 500,
-  msg: "错误信息",
-  error?: any
-}
-```
-
-#### 4.1.2 认证方式
+#### 4.1.1 权限模型
 
 ```
-Header: token=<JWT_TOKEN>
+用户 (User) ──┬── 角色 (Role) ──┬── 菜单 (Menu)
+              │                 └── API 权限 (API)
+              └── 租户 (Tenant)
 ```
 
-#### 4.1.3 核心 API 列表
+#### 4.1.2 权限控制层级
+
+1. **菜单级权限**: 控制页面访问
+2. **按钮级权限**: 控制操作权限（v-permission 指令）
+3. **API 级权限**: 控制接口访问
+4. **数据级权限**: 多租户数据隔离
+
+### 4.2 多租户架构
+
+#### 4.2.1 数据隔离策略
+
+- **逻辑隔离**: 所有表包含 `tenant_id` 字段
+- **超级管理员**: 可查看所有租户数据
+- **普通用户**: 只能查看当前租户数据
+- **公开接口**: 通过 API Key 识别租户
+
+#### 4.2.2 租户识别方式
+
+| 接口类型 | 认证方式 | 租户识别 |
+|---------|---------|---------|
+| 管理后台 | JWT Token | `current_user.current_tenant_id` |
+| 公开接口 | API Key | `auth_info["tenant_id"]` |
+
+### 4.3 智能填单系统
+
+#### 4.3.1 核心概念
+
+- **应用 (App)**: 填单业务的容器，包含独立的配置和数据
+- **模板 (Template)**: 填单的表单结构定义
+- **下拉选项 (Dropdown)**: 表单中的选择字段配置
+- **填单记录 (Record)**: 用户填写的数据记录
+
+#### 4.3.2 数据流
 
 ```
-# 认证
-POST /api/v1/base/access_token        # 登录
-POST /api/v1/base/select_tenant       # 切换租户
-GET  /api/v1/base/userinfo            # 获取用户信息
-GET  /api/v1/base/usermenu            # 获取用户菜单
-GET  /api/v1/base/userapi             # 获取用户 API 权限
-
-# 用户管理
-GET    /api/v1/user/list              # 用户列表
-GET    /api/v1/user/get               # 用户详情
-POST   /api/v1/user/create            # 创建用户
-POST   /api/v1/user/update            # 更新用户
-DELETE /api/v1/user/delete            # 删除用户
-POST   /api/v1/user/reset_password    # 重置密码
-
-# 角色管理
-GET    /api/v1/role/list              # 角色列表
-POST   /api/v1/role/create            # 创建角色
-POST   /api/v1/role/update            # 更新角色
-DELETE /api/v1/role/delete            # 删除角色
-POST   /api/v1/role/authorized        # 授权菜单/API
-
-# 菜单管理
-GET    /api/v1/menu/list              # 菜单列表
-POST   /api/v1/menu/create            # 创建菜单
-POST   /api/v1/menu/update            # 更新菜单
-DELETE /api/v1/menu/delete            # 删除菜单
-
-# API 管理
-GET    /api/v1/api/list               # API 列表
-POST   /api/v1/api/create             # 创建 API
-POST   /api/v1/api/update             # 更新 API
-DELETE /api/v1/api/delete             # 删除 API
-POST   /api/v1/api/refresh            # 刷新 API
-
-# 部门管理
-GET    /api/v1/dept/list              # 部门列表
-POST   /api/v1/dept/create            # 创建部门
-POST   /api/v1/dept/update            # 更新部门
-DELETE /api/v1/dept/delete            # 删除部门
-
-# 租户管理
-GET    /api/v1/tenant/list            # 租户列表
-POST   /api/v1/tenant/create          # 创建租户
-POST   /api/v1/tenant/update          # 更新租户
-DELETE /api/v1/tenant/delete          # 删除租户
-
-# 审计日志
-GET    /api/v1/auditlog/list          # 日志列表
+用户输入 → AI 解析 → 字段匹配 → 数据填充 → 结果返回
+                ↓
+            LLM 代理服务
+                ↓
+            结构化输出
 ```
 
-### 4.2 数据流
+#### 4.3.3 对外接口
 
-#### 4.2.1 登录流程
-
-```
-1. 前端: POST /base/access_token {username, password}
-2. 后端: 验证密码 -> 生成 JWT Token
-3. 前端: 存储 Token -> 获取用户信息 -> 获取菜单 -> 生成动态路由
-4. 前端: 跳转至工作台
-```
-
-#### 4.2.2 页面访问流程
-
-```
-1. 路由守卫检查 Token
-2. 有 Token: 加载动态路由 -> 渲染页面
-3. 无 Token: 跳转登录页
-4. 页面渲染: 检查 API 权限 (v-permission)
-```
-
-#### 4.2.3 CRUD 操作流程
-
-```
-列表页:
-1. 加载页面 -> 调用 API 获取列表数据
-2. 渲染表格 -> 支持分页、筛选、排序
-3. 操作: 新增/编辑/删除
-
-表单页:
-1. 打开弹窗 -> 表单验证
-2. 提交 -> API 调用
-3. 刷新列表
-```
-
----
-
-## 5. 多租户架构
-
-### 5.1 租户模型
-
-```
-- 超级管理员: is_superuser = true, 可访问所有租户数据
-- 租户管理员: role.code = 'tenant_admin', 管理单个租户
-- 普通用户: 只能访问所属租户的数据
-```
-
-### 5.2 数据隔离
-
-```python
-# 后端数据隔离逻辑
-if not is_superuser(current_user):
-    tenant_user_ids = await RelationQuery.get_user_ids_by_tenant_id(current_user.current_tenant_id)
-    q &= Q(id__in=tenant_user_ids)
-```
-
-### 5.3 租户切换
-
-```
-1. 用户登录后获取所属租户列表
-2. 选择租户 -> POST /base/select_tenant
-3. 后端生成新的 Token（包含 current_tenant_id）
-4. 前端刷新页面，加载新租户的数据
-```
-
----
-
-## 6. 安全架构
-
-### 6.1 认证机制
-
-- **JWT Token**: HS256 算法，有效期 7 天
-- **Token 内容**: user_id, current_tenant_id, tenant_domain
-- **Token 存储**: 前端 localStorage
-
-### 6.2 权限控制
-
-- **超级管理员**: 绕过所有权限检查
-- **角色权限**: 通过 Role-Menu、Role-Api 关联控制
-- **前端权限**: v-permission 指令控制按钮显示
-- **后端权限**: PermissionControl 中间件控制接口访问
-
-### 6.3 密码安全
-
-- **哈希算法**: Argon2
-- **默认密码**: 123456（重置密码时使用）
-
-### 6.4 审计日志
-
-- **记录内容**: 用户、模块、请求方法、路径、参数、响应
-- **排除路径**: /base/access_token, /docs, /uploads
-
----
-
-## 7. 扩展点
-
-### 7.1 前端扩展
-
-```typescript
-// 1. 新增页面
-// views/{module}/{page}/index.vue
-
-// 2. 新增 API
-// api/index.ts 中添加接口定义
-
-// 3. 新增组件
-// components/{ComponentName}/index.vue
-
-// 4. 新增 Store
-// store/modules/{module}.ts
-```
-
-### 7.2 后端扩展
-
-```python
-# 1. 新增模型
-# models/admin.py 中定义模型
-
-# 2. 新增 Schema
-# schemas/{name}.py 中定义 Pydantic 模型
-
-# 3. 新增控制器
-# controllers/{name}.py 继承 CRUDBase
-
-# 4. 新增 API
-# api/v1/{name}/{name}.py 定义路由
-
-# 5. 注册路由
-# api/v1/__init__.py 中导入路由
-```
-
----
-
-## 8. 部署架构
-
-### 8.1 开发环境
-
-```
-前端: npm run dev (port 3200)
-后端: uvicorn main:app --reload (port 9999)
-数据库: MySQL (port 3306)
-```
-
-### 8.2 生产环境
-
-```
-前端: nginx 静态资源服务
-后端: uvicorn + gunicorn
-数据库: MySQL
-```
-
----
-
-## 9. 附录
-
-### 9.1 命名规范
-
-| 类型 | 规范 | 示例 |
+| 接口 | 描述 | 认证 |
 |------|------|------|
-| 前端组件 | PascalCase | UserManagement.vue |
-| 前端文件 | camelCase | userManagement.ts |
-| 后端文件 | snake_case | user_management.py |
-| 后端类 | PascalCase | UserController |
-| 后端函数 | snake_case | get_user_list |
-| 数据库表 | snake_case | user_role |
-| API 路径 | snake_case | /user/list |
+| `/api/public/autofill/fill` | 智能填单 | API Key |
+| `/api/public/autofill/template/list` | 查询模板列表 | API Key |
+| `/api/public/autofill/dropdown/list` | 查询下拉选项 | API Key |
 
-### 9.2 代码风格
+### 4.4 LLM 代理服务
 
-- **Python**: black (line-length: 120), ruff
-- **TypeScript**: 严格模式，类型推断优先
+#### 4.4.1 架构设计
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     LLM Proxy Service                        │
+├─────────────────────────────────────────────────────────────┤
+│  统一接口层  │  支持多种模型：OpenAI、Azure、Claude、本地模型  │
+├─────────────────────────────────────────────────────────────┤
+│  配置管理层  │  动态加载模型配置，支持多租户隔离              │
+├─────────────────────────────────────────────────────────────┤
+│  LiteLLM   │  统一的 LLM 调用网关                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 4.4.2 配置管理
+
+- **LLMConfig 模型**: 存储模型配置参数
+- **动态同步**: 自动同步配置到 LiteLLM
+- **多租户支持**: 不同租户使用不同模型配置
+
+### 4.5 Query Agent
+
+#### 4.5.1 功能概述
+
+基于 LangGraph 的智能查询 Agent，通过 HTTP 接口查询数据。支持：
+- 动态解析 curl 请求
+- 自动识别可搜索字段
+- 智能多次尝试直到找到满意结果
+- 结果提取和格式化
+
+#### 4.5.2 核心组件
+
+```python
+# QueryAgent 核心组件
+- CurlParser: 解析 curl 命令，提取 URL、方法、Headers
+- Agent: LangGraph 状态机，管理查询流程
+- Nodes: 各阶段处理节点（参数提取、请求执行、结果判断）
+- Prompts: LLM 提示词模板
+```
+
+#### 4.5.3 工作流程
+
+```
+1. 解析 curl 模板，识别占位符
+2. 分析用户 query，提取搜索参数
+3. 执行 HTTP 请求
+4. 判断结果是否满意
+5. 不满意则调整参数，重复 3-4
+6. 返回最终结果
+```
+
+### 4.6 BYD 经销商查询
+
+#### 4.6.1 功能描述
+
+Query Agent 的具体应用场景，用于查询比亚迪门店信息。
+
+#### 4.6.2 数据模型
+
+```python
+class BYDDealer:
+    id: int                    # 主键
+    name: str                  # 门店名称
+    city: str                  # 城市
+    address: str               # 地址
+    phone: str                 # 电话
+    tenant_id: int             # 租户ID
+```
+
+#### 4.6.3 查询接口
+
+```
+POST /api/public/byd-dealers/search
+Body: {"query": "上海门店", "city": "上海"}
+```
+
+---
+
+## 5. 基础设施
+
+### 5.1 日志系统
+
+#### 5.1.1 架构设计
+
+```
+标准库 logging ──→ InterceptHandler ──→ loguru ──→ 文件/控制台
+                              ↓
+                        结构化 JSON 日志
+```
+
+#### 5.1.2 日志类型
+
+| 类型 | 描述 | 位置 |
+|------|------|------|
+| 访问日志 | HTTP 请求/响应 | `logs/access/` |
+| 错误日志 | 异常和错误 | `logs/error/` |
+| 应用日志 | 业务日志 | `logs/app/` |
+
+#### 5.1.3 特性
+
+- **请求追踪**: 每个请求有唯一的 `request_id`
+- **敏感数据脱敏**: 自动过滤密码、Token 等
+- **结构化输出**: JSON 格式便于分析
+- **自动轮转**: 按天分割日志文件
+
+### 5.2 异常处理
+
+#### 5.2.1 异常体系
+
+```
+Exception
+├── BusinessException          # 业务异常基类
+│   ├── ValidationException    # 参数验证异常
+│   ├── NotFoundException      # 资源不存在
+│   └── PermissionDeniedException # 权限不足
+└── SystemException            # 系统异常
+```
+
+#### 5.2.2 全局异常处理器
+
+- 捕获所有未处理的异常
+- 统一错误响应格式
+- 自动记录错误日志（含堆栈信息）
+- 生产环境隐藏敏感信息
+
+### 5.3 LiteLLM 网关
+
+#### 5.3.1 功能
+
+- 统一的 LLM 调用接口
+- 多模型管理（OpenAI、Azure、Claude 等）
+- 请求路由和负载均衡
+- 使用统计和监控
+
+#### 5.3.2 管理脚本
+
+```bash
+./scripts/litellm-gateway.sh start    # 启动
+./scripts/litellm-gateway.sh stop     # 停止
+./scripts/litellm-gateway.sh restart  # 重启
+./scripts/litellm-gateway.sh status   # 状态
+./scripts/litellm-gateway.sh logs     # 日志
+```
+
+---
+
+## 6. 数据流图
+
+### 6.1 智能填单流程
+
+```
+┌─────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────┐
+│  用户   │───→│  前端页面   │───→│  AI 填单接口 │───→│ LLM 代理 │
+└─────────┘    └─────────────┘    └─────────────┘    └────┬────┘
+                                                           │
+                              ┌────────────────────────────┘
+                              ↓
+┌─────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────┐
+│  结果   │←───│  数据存储   │←───│  结构化输出 │←───│  LLM    │
+└─────────┘    └─────────────┘    └─────────────┘    └─────────┘
+```
+
+### 6.2 Query Agent 流程
+
+```
+┌─────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────┐
+│  查询   │───→│  QueryAgent │───→│  参数提取   │───→│ 执行请求 │
+│  请求   │    │    接口     │    │  (LLM)      │    │         │
+└─────────┘    └─────────────┘    └─────────────┘    └────┬────┘
+                                                           │
+                              ┌────────────────────────────┘
+                              ↓
+┌─────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────┐
+│  结果   │←───│  结果提取   │←───│  结果判断   │←───│  响应   │
+│  返回   │    │  (LLM)      │    │  (满意?)    │    │         │
+└─────────┘    └─────────────┘    └──────┬──────┘    └─────────┘
+                                         │
+                              不满意 ─────┘
+                              (循环最多5次)
+```
+
+---
+
+## 7. 部署架构
+
+### 7.1 开发环境
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        开发机器                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │  Frontend    │  │   Backend    │  │   LiteLLM    │       │
+│  │   :3200      │  │    :9999     │  │    :4000     │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
+│         │                 │                 │               │
+│         └─────────────────┴─────────────────┘               │
+│                           │                                 │
+│                    ┌──────┴──────┐                          │
+│                    │   MySQL     │                          │
+│                    │   :3306     │                          │
+│                    └─────────────┘                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 7.2 生产环境（建议）
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      负载均衡器 (Nginx)                       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ↓                     ↓                     ↓
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│  Frontend    │    │   Backend    │    │   LiteLLM    │
+│   (多实例)    │    │   (多实例)    │    │   (多实例)    │
+└──────────────┘    └──────────────┘    └──────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ↓                     ↓                     ↓
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   MySQL      │    │    Redis     │    │    Kafka     │
+│  (主从复制)   │    │  (哨兵模式)   │    │  (集群模式)   │
+└──────────────┘    └──────────────┘    └──────────────┘
+```
+
+---
+
+## 8. 扩展性设计
+
+### 8.1 水平扩展
+
+- **无状态服务**: Backend 服务无状态，可水平扩展
+- **负载均衡**: Nginx 反向代理分发请求
+- **数据库**: MySQL 主从复制，读写分离
+- **缓存**: Redis 集群模式
+
+### 8.2 功能扩展
+
+#### 8.2.1 新增模块步骤
+
+1. **模型层**: 在 `app/models/` 添加数据模型
+2. **Schema 层**: 在 `app/schemas/` 添加 Pydantic 模型
+3. **控制器层**: 在 `app/controllers/` 添加业务逻辑
+4. **API 层**: 在 `app/api/v1/` 添加接口路由
+5. **前端页面**: 在 `frontend/src/views/` 添加页面
+
+#### 8.2.2 新增公开接口
+
+1. 在 `app/api/public/` 创建新的路由文件
+2. 使用 `APIKeyAuth.authenticate` 进行认证
+3. 从 `auth_info` 获取 `tenant_id`
+4. 在 `app/api/__init__.py` 注册路由
+
+---
+
+## 9. 监控与运维
+
+### 9.1 日志监控
+
+- **日志收集**: 结构化 JSON 日志便于收集
+- **日志分析**: 可按 `request_id` 追踪完整请求链路
+- **错误告警**: 错误日志自动告警
+
+### 9.2 性能监控
+
+- **接口耗时**: 中间件记录请求处理时间
+- **数据库性能**: Tortoise ORM 慢查询日志
+- **LLM 调用**: LiteLLM 内置监控
+
+### 9.3 健康检查
+
+```
+GET /health
+Response: {"status": "healthy"}
+```
+
+---
+
+## 10. 开发规范
+
+### 10.1 代码规范
+
+- **格式化**: black
+- **代码检查**: ruff
+- **类型检查**: mypy（推荐）
+- **文档**: 所有公共函数必须有 docstring
+
+### 10.2 Git 规范
+
+- **分支**: `main` (生产), `dev` (开发), `feature/*` (功能)
+- **提交信息**: 遵循 Conventional Commits
+- **代码审查**: 所有提交需经过审查
+
+### 10.3 测试规范
+
+- **单元测试**: `tests/unit/`
+- **集成测试**: `tests/integration/`
+- **端到端测试**: `tests/e2e/`
+- **测试脚本**: `tests/scripts/`
+
+---
+
+## 11. 相关文档
+
+| 文档 | 描述 |
+|------|------|
+| [tech-constraints.md](./tech-constraints.md) | 技术约束和规范 |
+| [autofill.md](../../docs/architecture/autofill.md) | 智能填单设计 |
+| [query_agent_design.md](../../docs/autofill/agent/query_agent_design.md) | Query Agent 设计 |
+| [kafka_ai_fill_design.md](../../docs/architecture/kafka_ai_fill_design.md) | Kafka 异步填单设计 |
+
+---
+
+## 12. 更新记录
+
+| 日期 | 版本 | 更新内容 |
+|------|------|---------|
+| 2026-05-02 | v2.0 | 重构架构文档，添加 Query Agent、LiteLLM 网关、全局异常处理、结构化日志等模块 |
+| 2024-XX-XX | v1.0 | 初始版本 |
