@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Header, Query
 from tortoise.expressions import Q
 
 from app.controllers.tenant import tenant_controller
-from app.core.dependency import AuthControl
+from app.core.dependency import AuthControl, is_superuser
 from app.core.relation import RelationQuery
 from app.models.admin import Tenant, User
 from app.schemas.base import Fail, Success, SuccessExtra
@@ -12,11 +12,6 @@ from app.schemas.tenants import TenantCreate, TenantUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def is_superuser(user: User) -> bool:
-    """检查是否为超级管理员"""
-    return user.is_superuser
 
 
 @router.get("/list", summary="查看租户列表")

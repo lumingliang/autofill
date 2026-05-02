@@ -6,7 +6,7 @@ from tortoise.expressions import Q
 
 from app.controllers import role_controller
 from app.controllers.user import user_controller
-from app.core.dependency import AuthControl
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.core.relation import RelationQuery
 from app.models.admin import Api, Menu, Role, Tenant, User, UserRole, UserTenant
 from app.schemas.base import Fail, Success, SuccessExtra
@@ -16,17 +16,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def is_superuser(user: User) -> bool:
-    """检查是否为超级管理员"""
-    return user.is_superuser
-
-
 @router.get("/list", summary="查看角色列表")
 async def list_role(
     page: int = Query(1, description="页码"),
     page_size: int = Query(10, description="每页数量"),
     role_name: str = Query("", description="角色名称，用于查询"),
-    tenant_id: int = Query(None, description="租户ID（仅root可见）"),
+    tenant_id: int = Query(0, description="租户ID（仅root可见）"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -35,20 +30,18 @@ async def list_role(
         q &= Q(name__contains=role_name)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
-        else:
-            q &= Q(tenant_id=None)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
+    elif not is_superuser(current_user) and current_user.current_tenant_id <= 0:
+        q &= Q(tenant_id=0)
 
     total, role_objs = await role_controller.list(page=page, page_size=page_size, search=q, order=["-updated_at"])
     data = []
     tenant_ids = []
     for obj in role_objs:
         role_dict = await obj.to_dict()
-        if is_superuser(current_user) and obj.tenant_id:
+        if is_superuser(current_user) and obj.tenant_id > 0:
             tenant_ids.append(obj.tenant_id)
         data.append(role_dict)
 
@@ -74,9 +67,9 @@ async def get_role(
 
     if is_superuser(current_user):
         role_dict["tenant_id"] = role_obj.tenant_id
-        if role_obj.tenant_id:
+        if role_obj.tenant_id > 0:
             tenant = await Tenant.filter(id=role_obj.tenant_id).first()
-            role_dict["tenant_name"] = tenant.name if tenant else None
+            role_dict["tenant_name"] = tenant.name if tenant else ""
 
     return Success(data=role_dict)
 
@@ -87,7 +80,7 @@ async def create_role(
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
-    if role_in.tenant_id and not is_superuser(current_user):
+    if role_in.tenant_id > 0 and not is_superuser(current_user):
         return Fail(code=403, msg="只有超级管理员才能创建租户角色")
 
     if not is_superuser(current_user):
@@ -108,7 +101,7 @@ async def update_role(
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
-    if role_in.tenant_id and not is_superuser(current_user):
+    if role_in.tenant_id > 0 and not is_superuser(current_user):
         return Fail(code=403, msg="只有超级管理员才能修改租户")
 
     await role_controller.update(id=role_in.id, obj_in=role_in)

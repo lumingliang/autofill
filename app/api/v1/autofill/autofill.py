@@ -12,7 +12,7 @@ from app.controllers.autofill import (app_management_controller,
                                       fill_data_record_controller,
                                       summary_template_controller)
 from app.core.autofill_auth import APIKeyAuth
-from app.core.dependency import AuthControl
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, get_effective_tenant_id
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.models.admin import Tenant, User
 from app.schemas.autofill import *
@@ -26,11 +26,6 @@ dropdown_router = APIRouter()
 record_router = APIRouter()
 
 
-def is_superuser(user: User) -> bool:
-    """检查是否为超级管理员"""
-    return user.is_superuser
-
-
 # ==================== 应用管理接口 ====================
 
 @app_router.get("/app/list", summary="应用列表")
@@ -38,7 +33,7 @@ async def list_app(
     page: int = Query(1, description="页码"),
     page_size: int = Query(10, description="每页数量"),
     app_name: str = Query("", description="应用名称"),
-    tenant_id: int = Query(None, description="租户ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -47,11 +42,9 @@ async def list_app(
         q &= Q(app_name__contains=app_name)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, apps = await app_management_controller.list(
         page=page, page_size=page_size, search=q, order=["-updated_at"]
@@ -79,10 +72,10 @@ async def create_app(
 
     # 确定租户ID
     if is_superuser(current_user):
-        target_tenant_id = app_in.tenant_id or 0
+        target_tenant_id = app_in.tenant_id if app_in.tenant_id > 0 else 0
     else:
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户，无法创建应用")
 
     # 使用确定的租户ID
@@ -127,7 +120,7 @@ async def delete_app(
 
 @app_router.get("/app/select", summary="应用名称下拉列表")
 async def get_app_select(
-    tenant_id: int = Query(None, description="租户ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     """
@@ -138,11 +131,9 @@ async def get_app_select(
     q = Q(is_active=True)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     apps = await app_management_controller.model.filter(q).all()
     data = [{"label": app.app_name, "value": app.app_name} for app in apps]
@@ -158,7 +149,7 @@ async def list_template(
     name: str = Query("", description="模板名称"),
     app_name: str = Query("", description="应用名称"),
     class_name: str = Query("", description="分类名称"),
-    tenant_id: int = Query(None, description="租户ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -171,11 +162,9 @@ async def list_template(
         q &= Q(class_name__contains=class_name)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, templates = await summary_template_controller.list(
         page=page, page_size=page_size, search=q, order=["-updated_at"]
@@ -202,12 +191,12 @@ async def create_template(
     current_user = await AuthControl.is_authed(token)
 
     # 确定租户ID
-    target_tenant_id = None
+    target_tenant_id = 0
     if is_superuser(current_user):
         target_tenant_id = template_in.tenant_id
     else:
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户，无法创建模板")
 
     template_in.tenant_id = target_tenant_id
@@ -266,11 +255,11 @@ async def import_template_from_csv(
     # 确定租户ID
     target_tenant_id = tenant_id
     if is_superuser(current_user):
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="请指定租户ID")
     else:
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户")
 
     # 检查文件类型
@@ -369,8 +358,8 @@ async def list_dropdown(
     page_size: int = Query(10, description="每页数量"),
     app_name: str = Query("", description="应用名称"),
     class_name: str = Query("", description="分类名称"),
-    parent_id: int = Query(None, description="父选项ID"),
-    tenant_id: int = Query(None, description="租户ID"),
+    parent_id: int = Query(0, description="父选项ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -379,15 +368,13 @@ async def list_dropdown(
         q &= Q(app_name__contains=app_name)
     if class_name:
         q &= Q(class_name__contains=class_name)
-    if parent_id is not None:
+    if parent_id >= 0:
         q &= Q(parent_id=parent_id)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, options = await dropdown_option_controller.list(
         page=page, page_size=page_size, search=q, order=["-updated_at"]
@@ -405,7 +392,7 @@ async def get_dropdown_tree(
     current_user = await AuthControl.is_authed(token)
 
     tenant_id = current_user.current_tenant_id
-    if not tenant_id and is_superuser(current_user):
+    if tenant_id <= 0 and is_superuser(current_user):
         # 超级管理员需要指定租户
         return Fail(code=400, msg="请指定租户ID")
 
@@ -437,12 +424,12 @@ async def create_dropdown(
     current_user = await AuthControl.is_authed(token)
 
     # 确定租户ID
-    target_tenant_id = None
+    target_tenant_id = 0
     if is_superuser(current_user):
         target_tenant_id = option_in.tenant_id
     else:
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户，无法创建选项")
 
     option_in.tenant_id = target_tenant_id
@@ -507,11 +494,11 @@ async def import_dropdown_from_csv(
     # 确定租户ID
     target_tenant_id = tenant_id
     if is_superuser(current_user):
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="请指定租户ID")
     else:
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户")
 
     # 检查文件类型
@@ -649,7 +636,7 @@ async def list_record(
     phone: str = Query("", description="手机号"),
     user_unique_id: str = Query("", description="用户唯一标识"),
     app_name: str = Query("", description="应用名称"),
-    tenant_id: int = Query(None, description="租户ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -664,11 +651,9 @@ async def list_record(
         q &= Q(app_name__contains=app_name)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, records = await fill_data_record_controller.list(
         page=page, page_size=page_size, search=q, order=["-updated_at"]

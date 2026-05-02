@@ -11,7 +11,7 @@ class Tenant(BaseModel, TimestampMixin):
     name = fields.CharField(max_length=50, description="租户名称", index=True)
     domain = fields.CharField(max_length=100, unique=True, description="租户域名", index=True)
     is_active = fields.BooleanField(default=True, description="是否启用", index=True)
-    description = fields.CharField(max_length=500, null=True, description="租户描述")
+    description = fields.CharField(max_length=500, default="", description="租户描述")
 
     class Meta:
         table = "tenant"
@@ -19,16 +19,16 @@ class Tenant(BaseModel, TimestampMixin):
 
 class User(BaseModel, TimestampMixin):
     username = fields.CharField(max_length=20, unique=True, description="用户名称", index=True)
-    alias = fields.CharField(max_length=30, null=True, description="姓名", index=True)
+    alias = fields.CharField(max_length=30, default="", description="姓名", index=True)
     email = fields.CharField(max_length=255, unique=True, description="邮箱", index=True)
-    phone = fields.CharField(max_length=20, null=True, description="电话", index=True)
-    password = fields.CharField(max_length=128, null=True, description="密码")
-    avatar = fields.CharField(max_length=500, null=True, description="头像URL", index=True)
+    phone = fields.CharField(max_length=20, default="", description="电话", index=True)
+    password = fields.CharField(max_length=128, default="", description="密码")
+    avatar = fields.CharField(max_length=500, default="", description="头像URL", index=True)
     is_active = fields.BooleanField(default=True, description="是否激活", index=True)
     is_superuser = fields.BooleanField(default=False, description="是否为超级管理员", index=True)
     last_login = fields.DatetimeField(null=True, description="最后登录时间", index=True)
-    dept_id = fields.IntField(null=True, description="部门ID", index=True)
-    current_tenant_id = fields.IntField(null=True, description="当前租户ID", index=True)
+    dept_id = fields.IntField(default=0, description="部门ID", index=True)
+    current_tenant_id = fields.IntField(default=0, description="当前租户ID", index=True)
 
     class Meta:
         table = "user"
@@ -36,8 +36,8 @@ class User(BaseModel, TimestampMixin):
 
 class Role(BaseModel, TimestampMixin):
     name = fields.CharField(max_length=20, description="角色名称", index=True)
-    desc = fields.CharField(max_length=500, null=True, description="角色描述")
-    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
+    desc = fields.CharField(max_length=500, default="", description="角色描述")
+    tenant_id = fields.IntField(default=0, description="租户ID", index=True)
     is_system = fields.BooleanField(default=False, description="是否系统角色", index=True)
 
     class Meta:
@@ -47,8 +47,8 @@ class Role(BaseModel, TimestampMixin):
 class Api(BaseModel, TimestampMixin):
     path = fields.CharField(max_length=100, description="API路径", index=True)
     method = fields.CharEnumField(MethodType, description="请求方法", index=True)
-    summary = fields.CharField(max_length=500, description="请求简介", index=True)
-    tags = fields.CharField(max_length=100, description="API标签", index=True)
+    summary = fields.CharField(max_length=500, default="", description="请求简介", index=True)
+    tags = fields.CharField(max_length=100, default="", description="API标签", index=True)
 
     class Meta:
         table = "api"
@@ -56,16 +56,16 @@ class Api(BaseModel, TimestampMixin):
 
 class Menu(BaseModel, TimestampMixin):
     name = fields.CharField(max_length=20, description="菜单名称", index=True)
-    remark = fields.JSONField(null=True, description="保留字段")
-    menu_type = fields.CharEnumField(MenuType, null=True, description="菜单类型")
-    icon = fields.CharField(max_length=100, null=True, description="菜单图标")
-    path = fields.CharField(max_length=100, description="菜单路径", index=True)
+    remark = fields.JSONField(default=dict, description="保留字段")
+    menu_type = fields.CharEnumField(MenuType, default=MenuType.CATALOG, description="菜单类型")
+    icon = fields.CharField(max_length=100, default="", description="菜单图标")
+    path = fields.CharField(max_length=100, default="", description="菜单路径", index=True)
     order = fields.IntField(default=0, description="排序", index=True)
     parent_id = fields.IntField(default=0, description="父菜单ID", index=True)
     is_hidden = fields.BooleanField(default=False, description="是否隐藏")
-    component = fields.CharField(max_length=100, description="组件")
+    component = fields.CharField(max_length=100, default="", description="组件")
     keepalive = fields.BooleanField(default=True, description="存活")
-    redirect = fields.CharField(max_length=100, null=True, description="重定向")
+    redirect = fields.CharField(max_length=100, default="", description="重定向")
 
     class Meta:
         table = "menu"
@@ -73,11 +73,11 @@ class Menu(BaseModel, TimestampMixin):
 
 class Dept(BaseModel, TimestampMixin):
     name = fields.CharField(max_length=20, unique=True, description="部门名称", index=True)
-    desc = fields.CharField(max_length=500, null=True, description="备注")
+    desc = fields.CharField(max_length=500, default="", description="备注")
     is_deleted = fields.BooleanField(default=False, description="软删除标记", index=True)
     order = fields.IntField(default=0, description="排序", index=True)
     parent_id = fields.IntField(default=0, max_length=10, description="父部门ID", index=True)
-    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
+    tenant_id = fields.IntField(default=0, description="租户ID", index=True)
 
     class Meta:
         table = "dept"
@@ -98,17 +98,17 @@ class AuditLog(BaseModel, TimestampMixin):
     path = fields.CharField(max_length=255, default="", description="请求路径", index=True)
     status = fields.IntField(default=-1, description="状态码", index=True)
     response_time = fields.IntField(default=0, description="响应时间(单位ms)", index=True)
-    request_args = fields.JSONField(null=True, description="请求参数")
-    response_body = fields.JSONField(null=True, description="返回数据")
-    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
-    tenant_domain = fields.CharField(max_length=255, null=True, description="租户域名", index=True)
+    request_args = fields.JSONField(default=dict, description="请求参数")
+    response_body = fields.JSONField(default=dict, description="返回数据")
+    tenant_id = fields.IntField(default=0, description="租户ID", index=True)
+    tenant_domain = fields.CharField(max_length=255, default="", description="租户域名", index=True)
 
 
 class UserRole(BaseModel, TimestampMixin):
     """用户-角色关联表"""
     user_id = fields.IntField(description="用户ID", index=True)
     role_id = fields.IntField(description="角色ID", index=True)
-    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
+    tenant_id = fields.IntField(default=0, description="租户ID", index=True)
 
     class Meta:
         table = "user_role"
@@ -119,7 +119,7 @@ class RoleMenu(BaseModel, TimestampMixin):
     """角色-菜单关联表"""
     role_id = fields.IntField(description="角色ID", index=True)
     menu_id = fields.IntField(description="菜单ID", index=True)
-    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
+    tenant_id = fields.IntField(default=0, description="租户ID", index=True)
 
     class Meta:
         table = "role_menu"
@@ -130,7 +130,7 @@ class RoleApi(BaseModel, TimestampMixin):
     """角色-API关联表"""
     role_id = fields.IntField(description="角色ID", index=True)
     api_id = fields.IntField(description="API ID", index=True)
-    tenant_id = fields.IntField(null=True, description="租户ID", index=True)
+    tenant_id = fields.IntField(default=0, description="租户ID", index=True)
 
     class Meta:
         table = "role_api"

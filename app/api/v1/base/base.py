@@ -28,7 +28,7 @@ async def login_access_token(credentials: CredentialsSchema):
 
     # 如果用户只有一个租户且没有设置当前租户，自动设置为当前租户
     current_tenant_id = user.current_tenant_id
-    tenant_domain = None
+    tenant_domain = ""
     if len(tenant_list) == 1 and not current_tenant_id:
         current_tenant_id = tenant_list[0]["id"]
         tenant_domain = tenant_list[0]["domain"]
@@ -75,7 +75,7 @@ async def select_tenant_and_get_token(
         await user_controller.set_current_tenant(current_user.id, schema.tenant_id)
 
         tenant = await Tenant.filter(id=schema.tenant_id).first()
-        tenant_domain = tenant.domain if tenant else None
+        tenant_domain = tenant.domain if tenant else ""
 
         access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
         expire = datetime.now(timezone.utc) + access_token_expires
@@ -277,7 +277,7 @@ async def quick_login(
     tenant_list = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
 
     current_tenant_id = target_user.current_tenant_id
-    tenant_domain = None
+    tenant_domain = ""
     if len(tenant_list) == 1 and not current_tenant_id:
         current_tenant_id = tenant_list[0]["id"]
         tenant_domain = tenant_list[0]["domain"]

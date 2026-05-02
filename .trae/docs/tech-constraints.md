@@ -1043,6 +1043,122 @@ count = fields.IntField(default=0, description="计数")
 - 真正可选且需要区分"未设置"和"空值"的字段
 - 关联字段在关联对象被删除时需要置空的情况
 
+### 4.3.1 可空字段设计规范
+
+> **⚠️ 设计原则**: 以下场景允许使用 `null=True` 设计：
+
+**1. 可选时间字段**
+
+时间类字段在业务上表示"未发生"或"未设置"时，可以设计为 NULL：
+
+```python
+# ✅ 正确：可选时间字段定义
+class User(BaseModel, TimestampMixin):
+    """用户模型"""
+    username = fields.CharField(max_length=20, description="用户名")
+    
+    # 软删除时间 - NULL 表示未删除
+    deleted_at = fields.DatetimeField(null=True, default=None, description="删除时间")
+    
+    # 最后登录时间 - NULL 表示从未登录
+    last_login_at = fields.DatetimeField(null=True, default=None, description="最后登录时间")
+    
+    # 激活时间 - NULL 表示未激活
+    activated_at = fields.DatetimeField(null=True, default=None, description="激活时间")
+    
+    class Meta:
+        table = "user"
+```
+
+**2. 大文本字段（TEXT/LONGTEXT）**
+
+TEXT 类字段默认可以设置为 NULL，因为：
+- 空字符串和 NULL 在业务语义上可能有区别
+- 大文本字段存储空字符串也会占用存储空间
+- 某些场景下 NULL 表示"未填写"，空字符串表示"已填写但内容为空"
+
+```python
+# ✅ 正确：TEXT 字段可空设计
+class Article(BaseModel, TimestampMixin):
+    """文章模型"""
+    title = fields.CharField(max_length=200, default="", description="标题")
+    
+    # 正文内容 - 可以为 NULL 表示草稿/未填写
+    content = fields.TextField(null=True, default=None, description="正文内容")
+    
+    # 摘要 - 可以为 NULL 表示未生成摘要
+    summary = fields.TextField(null=True, default=None, description="摘要")
+    
+    class Meta:
+        table = "article"
+```
+
+**3. 软删除规范**
+
+```python
+# ✅ 正确：软删除字段定义
+class User(BaseModel, TimestampMixin):
+    """用户模型"""
+    username = fields.CharField(max_length=20, description="用户名")
+    is_deleted = fields.BooleanField(default=False, description="是否删除标记", index=True)
+    deleted_at = fields.DatetimeField(null=True, default=None, description="删除时间")
+    
+    class Meta:
+        table = "user"
+
+# ✅ 正确：查询时过滤已删除记录
+async def list_active_users():
+    return await User.filter(is_deleted=False).all()
+
+# ✅ 正确：软删除操作
+async def soft_delete_user(user_id: int):
+    await User.filter(id=user_id).update(
+        is_deleted=True,
+        deleted_at=datetime.now()
+    )
+
+# ✅ 正确：恢复软删除
+async def restore_user(user_id: int):
+    await User.filter(id=user_id).update(
+        is_deleted=False,
+        deleted_at=None
+    )
+```
+
+**默认值规范：**
+| 字段类型 | 默认值 | 是否可空 | 说明 |
+|----------|--------|----------|------|
+| 字符串（VARCHAR/CHAR） | `""` | 否 | 空字符串 |
+| 整数 | `0` | 否 | 零值 |
+| 布尔（是否类） | `0/1` | **否** | TINYINT(1)，0=False, 1=True |
+| JSON | `[]` 或 `{}` | 否 | 空数组或空对象 |
+| 日期时间（创建/更新） | `auto_now_add/auto_now` | 否 | 自动时间戳 |
+| 日期时间（可选业务时间） | `None` | **是** | 删除时间、最后登录时间等 |
+| 大文本（TEXT/LONGTEXT） | `None` | **是** | 内容字段、描述字段等 |
+
+**布尔类型规范：**
+```python
+# ✅ 正确：布尔字段使用 TINYINT(1) NOT NULL
+class User(BaseModel, TimestampMixin):
+    """用户模型"""
+    username = fields.CharField(max_length=20, description="用户名")
+    
+    # 是否启用 - 默认启用（1）
+    is_active = fields.BooleanField(default=True, description="是否启用")
+    
+    # 是否超级用户 - 默认否（0）
+    is_superuser = fields.BooleanField(default=False, description="是否超级用户")
+    
+    # 是否删除 - 默认否（0）
+    is_deleted = fields.BooleanField(default=False, description="是否删除")
+    
+    class Meta:
+        table = "user"
+
+# ❌ 错误：布尔字段不要设置为可空
+is_active = fields.BooleanField(null=True, description="是否启用")  # 不要这样设计
+```
+
 ### 4.4 关联表规范
 
 ```python

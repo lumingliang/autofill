@@ -47,13 +47,13 @@ class MenuConfig:
     name: str
     path: str
     menu_type: MenuType = MenuType.CATALOG
-    icon: Optional[str] = None
+    icon: str = ""
     order: int = 0
     parent_id: int = 0
     is_hidden: bool = False
     component: str = "Layout"
     keepalive: bool = False
-    redirect: Optional[str] = None
+    redirect: str = ""
     children: List["MenuConfig"] = field(default_factory=list)
 
     # 唯一标识字段，用于判断菜单是否已存在
