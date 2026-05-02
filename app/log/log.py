@@ -1,4 +1,9 @@
+"""
+统一日志模块 - 参考 FastAPI 最佳实践
+使用 loguru 作为核心，拦截标准库 logging 的日志
+"""
 import json
+import logging
 import os
 import sys
 from contextvars import ContextVar
@@ -32,6 +37,50 @@ def get_tenant_domain() -> str:
 def set_tenant_domain(tenant_domain: str):
     """设置当前租户域名"""
     tenant_domain_var.set(tenant_domain)
+
+
+class InterceptHandler(logging.Handler):
+    """
+    拦截标准库 logging 的日志并转发到 loguru
+    这是 FastAPI 社区的标准做法
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # 获取 logger 实例（确保已初始化）
+        logger_instance = get_logger()
+
+        # 获取对应的 loguru 级别
+        try:
+            level = logger_instance.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        # 找到调用日志的原始位置
+        frame, depth = logging.currentframe(), 2
+        while frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        # 使用 loguru 记录日志
+        logger_instance.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
+
+
+def setup_logging_intercept():
+    """配置标准库 logging 的拦截"""
+    # 拦截所有标准库日志
+    logging.basicConfig(
+        handlers=[InterceptHandler()],
+        level=logging.NOTSET,
+        force=True,
+    )
+
+    # 拦截第三方库的日志
+    for logger_name in logging.root.manager.loggerDict:
+        logger = logging.getLogger(logger_name)
+        logger.handlers = [InterceptHandler()]
+        logger.propagate = False
 
 
 def patching(record: Dict[str, Any]) -> None:
@@ -146,6 +195,8 @@ def get_logger():
     if _logger is None:
         loggin = Loggin()
         _logger = loggin.setup_logger()
+        # 设置拦截器，捕获标准库日志
+        setup_logging_intercept()
     return _logger
 
 
@@ -196,4 +247,62 @@ class LoggerProxy:
         return self._get_logger().bind(**kwargs)
 
 
+# 主 logger 实例
 logger = LoggerProxy()
+
+
+# 兼容性函数：允许继续使用 logging.getLogger 方式
+def getLogger(name: str = None):
+    """
+    兼容标准库 logging.getLogger 的接口
+    返回一个代理对象，将日志转发到 loguru
+    """
+    return _StandardLoggerProxy(name)
+
+
+class _StandardLoggerProxy:
+    """兼容标准库 logging.Logger 的代理类"""
+
+    def __init__(self, name: str = None):
+        self.name = name or "__main__"
+        self._loguru_logger = logger.bind(logger_name=name)
+
+    def debug(self, msg, *args, **kwargs):
+        self._loguru_logger.debug(msg, *args, **kwargs)
+
+    def info(self, msg, *args, **kwargs):
+        self._loguru_logger.info(msg, *args, **kwargs)
+
+    def warning(self, msg, *args, **kwargs):
+        self._loguru_logger.warning(msg, *args, **kwargs)
+
+    def warn(self, msg, *args, **kwargs):
+        self._loguru_logger.warning(msg, *args, **kwargs)
+
+    def error(self, msg, *args, **kwargs):
+        self._loguru_logger.error(msg, *args, **kwargs)
+
+    def critical(self, msg, *args, **kwargs):
+        self._loguru_logger.critical(msg, *args, **kwargs)
+
+    def exception(self, msg, *args, **kwargs):
+        self._loguru_logger.exception(msg, *args, **kwargs)
+
+    def log(self, level, msg, *args, **kwargs):
+        self._loguru_logger.log(level, msg, *args, **kwargs)
+
+    def bind(self, **kwargs):
+        """绑定上下文信息到日志"""
+        return self._loguru_logger.bind(**kwargs)
+
+    def isEnabledFor(self, level):
+        return True
+
+    def setLevel(self, level):
+        pass
+
+    def addHandler(self, handler):
+        pass
+
+    def removeHandler(self, handler):
+        pass

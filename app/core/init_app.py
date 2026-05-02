@@ -10,16 +10,27 @@ from app.api import api_router
 from app.controllers.api import api_controller
 from app.controllers.user import UserCreate, user_controller
 from app.core.exceptions import (
+    BusinessException,
+    BusinessExceptionHandle,
     DoesNotExist,
     DoesNotExistHandle,
+    GlobalExceptionHandle,
     HTTPException,
     HttpExcHandle,
     IntegrityError,
     IntegrityHandle,
+    OperationalError,
+    OperationalErrorHandle,
     RequestValidationError,
     RequestValidationHandle,
+    ResourceNotFoundException,
     ResponseValidationError,
     ResponseValidationHandle,
+    SettingNotFound,
+    SettingNotFoundHandle,
+    StarletteHTTPException,
+    StarletteHttpExcHandle,
+    ValidationException,
 )
 from app.core.kafka.consumer import get_consumer_manager
 from app.core.relation import RelationQuery
@@ -66,11 +77,36 @@ def make_middlewares():
 
 
 def register_exceptions(app: FastAPI):
-    app.add_exception_handler(DoesNotExist, DoesNotExistHandle)
+    """
+    注册全局异常处理器
+    
+    异常处理器按照从具体到一般的顺序注册：
+    1. 具体的业务异常（如 BusinessException）
+    2. 框架特定异常（如 HTTPException、RequestValidationError）
+    3. 数据库异常（如 DoesNotExist、IntegrityError）
+    4. 通用异常（Exception）作为最后的兜底
+    """
+    # 业务异常
+    app.add_exception_handler(BusinessException, BusinessExceptionHandle)
+    
+    # HTTP 异常
     app.add_exception_handler(HTTPException, HttpExcHandle)
-    app.add_exception_handler(IntegrityError, IntegrityHandle)
+    app.add_exception_handler(StarletteHTTPException, StarletteHttpExcHandle)
+    
+    # 请求/响应验证异常
     app.add_exception_handler(RequestValidationError, RequestValidationHandle)
     app.add_exception_handler(ResponseValidationError, ResponseValidationHandle)
+    
+    # 数据库异常
+    app.add_exception_handler(DoesNotExist, DoesNotExistHandle)
+    app.add_exception_handler(IntegrityError, IntegrityHandle)
+    app.add_exception_handler(OperationalError, OperationalErrorHandle)
+    
+    # 配置异常
+    app.add_exception_handler(SettingNotFound, SettingNotFoundHandle)
+    
+    # 通用异常处理器（最后注册，作为兜底）
+    app.add_exception_handler(Exception, GlobalExceptionHandle)
 
 
 def register_routers(app: FastAPI, prefix: str = "/api"):

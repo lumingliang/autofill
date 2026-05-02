@@ -122,3 +122,21 @@ def get_effective_tenant_id(current_user: User, tenant_id: int = 0) -> int:
     elif not is_superuser(current_user):
         return current_user.current_tenant_id
     return 0
+
+
+async def get_current_user(token: str = Header(..., description="token验证")) -> User:
+    """
+    获取当前用户
+
+    用于依赖注入，获取当前登录用户对象
+
+    Args:
+        token: JWT token
+
+    Returns:
+        User: 当前用户对象
+
+    Raises:
+        HTTPException: 认证失败时抛出
+    """
+    return await AuthControl.is_authed(token)

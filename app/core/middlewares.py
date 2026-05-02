@@ -71,7 +71,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """请求日志记录中间件"""
+    """请求日志记录中间件 - 记录入参、出参和异常信息"""
 
     def __init__(self, app):
         super().__init__(app)
@@ -99,6 +99,81 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             pass
         return "root"
 
+    async def _get_request_body(self, request: Request) -> dict:
+        """获取请求体参数"""
+        args = {}
+        # 获取查询参数
+        for key, value in request.query_params.items():
+            args[key] = value
+
+        # 获取请求体
+        content_type = request.headers.get("content-type", "")
+        if request.method in ["POST", "PUT", "PATCH"]:
+            # 跳过 multipart/form-data 文件上传
+            if "multipart/form-data" in content_type:
+                args["_note"] = "multipart/form-data upload"
+                return args
+
+            try:
+                body = await request.body()
+                if body:
+                    body_json = json.loads(body)
+                    # 过滤敏感字段
+                    body_json = self._sanitize_sensitive_data(body_json)
+                    args.update(body_json)
+            except json.JSONDecodeError:
+                # 非JSON数据，尝试表单
+                try:
+                    form_data = await request.form()
+                    for k, v in form_data.items():
+                        if hasattr(v, "filename"):
+                            args[k] = f"<file:{v.filename}>"
+                        else:
+                            args[k] = str(v)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        return args
+
+    def _sanitize_sensitive_data(self, data: Any) -> Any:
+        """过滤敏感数据"""
+        if isinstance(data, dict):
+            sanitized = {}
+            for k, v in data.items():
+                # 过滤密码、token等敏感字段
+                if any(sensitive in k.lower() for sensitive in ["password", "token", "secret", "key", "auth"]):
+                    sanitized[k] = "***"
+                else:
+                    sanitized[k] = self._sanitize_sensitive_data(v)
+            return sanitized
+        elif isinstance(data, list):
+            return [self._sanitize_sensitive_data(item) for item in data]
+        return data
+
+    async def _get_response_body(self, response: Response) -> Any:
+        """获取响应体内容"""
+        try:
+            # 检查Content-Type
+            content_type = response.headers.get("content-type", "")
+            if not content_type.startswith("application/json"):
+                return None
+
+            # 检查Content-Length
+            content_length = response.headers.get("content-length")
+            if content_length and int(content_length) > 1024 * 1024:  # 1MB限制
+                return {"_note": "Response too large to log"}
+
+            # 读取响应体
+            if hasattr(response, "body"):
+                body = response.body
+                if body:
+                    return json.loads(body)
+            return None
+        except Exception:
+            return None
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # 跳过健康检查和静态资源
         if self._should_skip_logging(request):
@@ -114,36 +189,62 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # 设置租户域名到上下文变量
         set_tenant_domain(tenant_domain)
 
+        # 获取请求参数
+        request_body = await self._get_request_body(request)
+
         try:
             response = await call_next(request)
             duration = (datetime.now() - start_time).total_seconds() * 1000
 
-            # 记录访问日志
-            logger.bind(
-                method=request.method,
-                path=request.url.path,
-                query=str(request.query_params),
-                status_code=response.status_code,
-                duration_ms=round(duration, 2),
-                client_ip=client_ip,
-                user_agent=user_agent,
-                tenant_domain=tenant_domain,
-            ).info(f"{request.method} {request.url.path} - {response.status_code}")
+            # 获取响应体
+            response_body = await self._get_response_body(response)
+
+            # 记录访问日志（包含入参和出参）
+            log_data = {
+                "method": request.method,
+                "path": request.url.path,
+                "query": str(request.query_params),
+                "status_code": response.status_code,
+                "duration_ms": round(duration, 2),
+                "client_ip": client_ip,
+                "user_agent": user_agent,
+                "tenant_domain": tenant_domain,
+                "request_params": request_body,
+            }
+
+            # 只记录成功的响应体，避免日志过大
+            if response_body and response.status_code < 400:
+                # 限制响应体大小
+                response_str = json.dumps(response_body, ensure_ascii=False)
+                if len(response_str) > 10000:  # 10KB限制
+                    log_data["response"] = {"_note": f"Response too large ({len(response_str)} bytes)"}
+                else:
+                    log_data["response"] = response_body
+
+            logger.bind(**log_data).info(f"{request.method} {request.url.path} - {response.status_code}")
 
             return response
 
         except Exception as exc:
             duration = (datetime.now() - start_time).total_seconds() * 1000
+
+            # 获取异常详细信息
+            import traceback
+            exc_info = traceback.format_exc()
+
             logger.bind(
                 method=request.method,
                 path=request.url.path,
                 query=str(request.query_params),
+                request_params=request_body,
                 status_code=500,
                 duration_ms=round(duration, 2),
                 client_ip=client_ip,
                 user_agent=user_agent,
                 tenant_domain=tenant_domain,
                 error=str(exc),
+                error_type=type(exc).__name__,
+                traceback=exc_info,
             ).error(f"{request.method} {request.url.path} - 500 - {str(exc)}")
             raise
 

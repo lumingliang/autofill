@@ -2192,3 +2192,397 @@ async def delete_{module}(
 - [ ] 错误处理完善
 - [ ] 表格页面使用 CrudTable 组件（如适用）
 - [ ] 控制器继承 CRUDBase（如适用）
+
+---
+
+## 16. 日志记录规范
+
+### 16.1 日志框架使用规范
+
+> **⚠️ 重要约束**: 项目使用 loguru 作为核心日志框架，通过自定义代理类兼容标准库 logging。
+
+```python
+# ✅ 正确：使用项目统一的日志模块
+from app.log import getLogger
+
+logger = getLogger(__name__)
+logger.info("用户登录成功", user_id=user.id)
+logger.error("数据库连接失败", error=str(e))
+
+# ✅ 正确：使用 bind 添加上下文
+logger.bind(request_id=request_id, user_id=user_id).info("处理请求")
+
+# ❌ 错误：直接使用标准库 logging
+import logging
+logger = logging.getLogger(__name__)  # 不允许
+
+# ❌ 错误：直接使用 loguru
+from loguru import logger  # 不允许，使用项目封装的模块
+```
+
+### 16.2 日志级别使用规范
+
+| 级别 | 使用场景 | 示例 |
+|------|---------|------|
+| DEBUG | 开发调试信息，生产环境关闭 | `logger.debug(f"SQL: {sql}")` |
+| INFO | 业务流程记录 | `logger.info("用户创建成功", user_id=123)` |
+| WARNING | 非致命异常，可恢复错误 | `logger.warning("请求限流", client_ip=ip)` |
+| ERROR | 业务错误，需要处理 | `logger.error("数据库查询失败", error=str(e))` |
+| CRITICAL | 系统级错误，需要立即处理 | `logger.critical("服务启动失败")` |
+
+### 16.3 日志内容规范
+
+```python
+# ✅ 正确：结构化日志，使用关键字参数
+logger.info(
+    "订单处理完成",
+    order_id=order.id,
+    user_id=order.user_id,
+    amount=order.amount,
+    duration_ms=processing_time
+)
+
+# ✅ 正确：异常日志包含完整上下文
+try:
+    result = await process_data()
+except Exception as e:
+    logger.error(
+        "数据处理失败",
+        error=str(e),
+        error_type=type(e).__name__,
+        data_id=data.id,
+        retry_count=retry
+    )
+
+# ❌ 错误：使用字符串拼接
+logger.info("用户" + user.name + "登录成功")  # 不允许
+
+# ❌ 错误：敏感信息未脱敏
+logger.info("用户登录", password=password)  # 不允许！
+```
+
+### 16.4 请求日志规范
+
+> **⚠️ 重要约束**: 所有 HTTP 请求必须通过 `RequestLoggingMiddleware` 自动记录，禁止在业务代码中重复记录请求日志。
+
+```python
+# ✅ 正确：中间件自动记录，包含以下字段
+{
+    "timestamp": "2026-05-02T14:42:56.330878+08:00",
+    "level": "INFO",
+    "message": "POST /api/v1/base/access_token - 422",
+    "method": "POST",
+    "path": "/api/v1/base/access_token",
+    "query": "",
+    "status_code": 422,
+    "duration_ms": 3.2,
+    "client_ip": "127.0.0.1",
+    "request_params": {"invalid": "data"},
+    "request_id": "d5329543-0178-456e-b8f8-d62804fc9289"
+}
+
+# ❌ 错误：在业务代码中重复记录请求日志
+@router.post("/login")
+async def login(data: LoginData):
+    logger.info(f"用户登录请求: {data.username}")  # 不需要，中间件已记录
+    ...
+```
+
+### 16.5 异常日志规范
+
+> **⚠️ 重要约束**: 所有异常必须通过全局异常处理器捕获并记录，禁止在业务代码中捕获异常后仅打印日志而不处理。
+
+```python
+# ✅ 正确：让异常冒泡到全局处理器
+@router.post("/process")
+async def process(data: ProcessData):
+    # 不做 try-except，让异常被全局处理器捕获
+    result = await service.process(data)
+    return Success(data=result)
+
+# ✅ 正确：需要特定处理时，重新抛出
+@router.post("/transfer")
+async def transfer(data: TransferData):
+    try:
+        await service.transfer(data)
+    except InsufficientBalanceException:
+        # 转换为业务异常，会被记录
+        raise BusinessException(code=400, msg="余额不足")
+
+# ❌ 错误：捕获异常仅打印日志
+@router.post("/process")
+async def process(data: ProcessData):
+    try:
+        result = await service.process(data)
+    except Exception as e:
+        logger.error(f"处理失败: {e}")  # 不允许！异常被吞掉了
+        return Fail(msg="处理失败")  # 没有 request_id，没有调用栈
+```
+
+### 16.6 日志脱敏规范
+
+```python
+# ✅ 正确：敏感字段自动脱敏
+SENSITIVE_FIELDS = {"password", "token", "secret", "api_key", "authorization"}
+
+# 在日志中自动过滤
+logger.bind(
+    username=user.username,
+    password="***",  # 脱敏显示
+    token="***"      # 脱敏显示
+).info("用户信息")
+
+# ❌ 错误：明文记录敏感信息
+logger.info("用户登录", password=raw_password, token=access_token)
+```
+
+---
+
+## 17. 公开接口设计规范
+
+### 17.1 目录结构规范
+
+> **⚠️ 重要约束**: 所有通过 API Key 认证的公开接口必须放在 `app/api/public/` 目录下。
+
+```
+app/api/
+├── __init__.py           # 路由聚合
+├── v1/                   # JWT 认证接口（内部使用）
+│   ├── base/
+│   ├── user/
+│   └── ...
+└── public/               # API Key 认证接口（外部使用）
+    ├── __init__.py       # 公开路由聚合
+    ├── autofill.py       # 智能填单接口
+    ├── llm_proxy.py      # LLM 代理接口
+    └── query_agent.py    # QueryAgent 接口
+```
+
+### 17.2 路由注册规范
+
+```python
+# app/api/public/__init__.py
+"""
+公开 API 模块 (API Key 认证)
+
+本目录下的接口都使用 API Key 进行认证，不依赖 JWT，
+主要供 Dify、三方应用和外部系统调用。
+"""
+
+from fastapi import APIRouter
+
+from .autofill import autofill_public_router
+from .llm_proxy import llm_proxy_public_router
+from .query_agent import query_agent_public_router
+
+public_router = APIRouter()
+
+# 注册公开接口（无需 prefix，在 app/api/__init__.py 统一设置）
+public_router.include_router(autofill_public_router)
+public_router.include_router(llm_proxy_public_router, prefix="/api")
+public_router.include_router(query_agent_public_router, prefix="/api")
+
+__all__ = ["public_router"]
+```
+
+### 17.3 接口定义规范
+
+```python
+# app/api/public/autofill.py
+from fastapi import APIRouter, Depends, Header
+from typing import Optional
+
+from app.core.dependency import AuthControl
+from app.schemas.base import Success, Fail
+
+router = APIRouter()
+
+# ✅ 正确：使用 API Key 认证
+@router.post("/autofill/llm/fill", summary="智能填单")
+async def autofill_llm(
+    data: AutoFillRequest,
+    app_key: str = Header(..., alias="X-App-Key", description="应用密钥"),
+    current_app: App = Depends(AuthControl.is_app_authed),  # API Key 认证
+):
+    """
+    智能填单公开接口
+    
+    使用 API Key 进行认证，无需 JWT Token
+    """
+    result = await autofill_service.fill(data)
+    return Success(data=result)
+
+# ✅ 正确：可选参数使用 Optional
+@router.get("/autofill/result", summary="查询填单结果")
+async def get_autofill_result(
+    task_id: str,
+    include_detail: Optional[bool] = False,  # 可选参数
+    app_key: str = Header(..., alias="X-App-Key"),
+    current_app: App = Depends(AuthControl.is_app_authed),
+):
+    result = await autofill_service.get_result(task_id, include_detail)
+    return Success(data=result)
+```
+
+### 17.4 认证方式对比
+
+| 特性 | JWT 认证 (v1) | API Key 认证 (public) |
+|------|--------------|----------------------|
+| 认证头 | `Authorization: Bearer {token}` | `X-App-Key: {app_key}` |
+| 用户身份 | 具体用户 | 应用/系统 |
+| 适用场景 | 内部用户操作 | 第三方系统调用 |
+| 权限控制 | 基于用户角色 | 基于应用权限 |
+| 租户隔离 | 支持多租户切换 | 固定应用所属租户 |
+
+### 17.5 响应格式规范
+
+> **⚠️ 重要约束**: 公开接口使用与内部接口相同的统一响应格式。
+
+```python
+# ✅ 正确：成功响应
+{
+    "code": 200,
+    "msg": "success",
+    "data": {
+        "task_id": "task_123",
+        "status": "completed",
+        "result": {...}
+    }
+}
+
+# ✅ 正确：错误响应（包含 request_id 用于追踪）
+{
+    "code": 400,
+    "msg": "请求参数验证失败",
+    "data": {
+        "errors": [
+            {"field": "body.field_group_id", "msg": "Field required", "type": "missing"}
+        ]
+    },
+    "request_id": "d5329543-0178-456e-b8f8-d62804fc9289"
+}
+
+# ✅ 正确：服务器错误（生产环境隐藏详细错误）
+{
+    "code": 500,
+    "msg": "服务器内部错误，请稍后重试",
+    "request_id": "d5329543-0178-456e-b8f8-d62804fc9289"
+}
+```
+
+### 17.6 接口文档规范
+
+```python
+@router.post(
+    "/autofill/llm/fill",
+    summary="智能填单",
+    description="""
+    智能填单公开接口，支持通过自然语言描述自动填写表单。
+    
+    ## 认证方式
+    使用 `X-App-Key` 请求头进行认证，从应用管理页面获取。
+    
+    ## 使用示例
+    ```python
+    import requests
+    
+    response = requests.post(
+        "https://api.example.com/api/autofill/llm/fill",
+        headers={"X-App-Key": "your_app_key"},
+        json={
+            "field_group_id": 123,
+            "input_data": {"query": "填写一个北京的用户"}
+        }
+    )
+    ```
+    """,
+    response_model=Success[AutoFillResponse],
+    responses={
+        400: {"model": Fail, "description": "参数错误"},
+        401: {"model": Fail, "description": "认证失败"},
+        429: {"model": Fail, "description": "请求过于频繁"},
+    }
+)
+async def autofill_llm(...):
+    pass
+```
+
+### 17.7 速率限制规范
+
+```python
+# ✅ 正确：公开接口需要添加速率限制
+from fastapi_limiter.depends import RateLimiter
+
+@router.post(
+    "/autofill/llm/fill",
+    summary="智能填单",
+    dependencies=[Depends(RateLimiter(times=10, seconds=60))]  # 每分钟10次
+)
+async def autofill_llm(...):
+    pass
+```
+
+---
+
+## 18. 架构更新约束
+
+### 18.1 约束文档维护规范
+
+> **⚠️ 重要约束**: 当实现新的架构功能时，必须同步更新 `.trae/docs/tech-constraints.md` 文档。
+
+#### 需要更新的场景
+
+- [ ] 新增日志记录方式或规范
+- [ ] 新增异常处理方式
+- [ ] 新增接口类型或认证方式
+- [ ] 新增代码组织方式（如新目录结构）
+- [ ] 新增性能优化方案
+- [ ] 新增安全规范
+
+#### 更新流程
+
+```
+1. 实现新功能
+   ↓
+2. 验证功能正常工作
+   ↓
+3. 更新 tech-constraints.md 相应章节
+   ↓
+4. 确保示例代码与实际实现一致
+   ↓
+5. 提交代码时包含文档更新
+```
+
+#### 文档章节对应关系
+
+| 功能模块 | 对应章节 |
+|---------|---------|
+| 日志记录 | 第 16 章 |
+| 公开接口 | 第 17 章 |
+| 异常处理 | 第 2.10 节（新增）|
+| 性能优化 | 第 2.4 节 |
+| 安全规范 | 第 2.8、2.9 节 |
+
+### 18.2 Skill 动态更新要求
+
+> **⚠️ 重要约束**: 创建新的架构实现后，必须检查并更新对应的 Skill 文档。
+
+```bash
+# Skill 目录结构
+.trae/skills/
+├── dev/                    # 开发规范 Skill
+│   └── SKILL.md
+├── logging/                # 日志规范 Skill（新增）
+│   └── SKILL.md
+├── api-design/             # 接口设计 Skill（新增）
+│   └── SKILL.md
+└── exception-handling/     # 异常处理 Skill（新增）
+    └── SKILL.md
+```
+
+#### Skill 更新检查清单
+
+- [ ] Skill 描述是否准确反映新功能
+- [ ] Skill 使用示例是否与新实现一致
+- [ ] Skill 触发条件是否覆盖新场景
+- [ ] Skill 是否引用了最新的约束文档章节
