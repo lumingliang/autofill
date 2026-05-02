@@ -1,30 +1,26 @@
 """
-比亚迪经销商门店 API
+比亚迪经销商门店内部 API (JWT 认证)
+
+本模块提供比亚迪经销商门店的内部管理接口，使用 JWT 认证，
+主要供管理后台使用，包含完整的 CRUD 操作。
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 
-from app.core.dependency import get_current_user, AuthControl
+from app.core.dependency import get_current_user
 from app.schemas.byd_dealer import (
     BYDDealerCreate,
     BYDDealerUpdate,
     BYDDealerResponse,
     BYDDealerSearchParams,
     BYDDealerSearchResponse,
-    BYDDealerPublicSearchRequest,
-    BYDDealerPublicSearchResponse,
-    ChatRecordDealerQuery
 )
 from app.services.byd_dealer_service import BYDDealerService
 
-# 主路由（需要认证）
-router = APIRouter()
-
-# 公开路由（不需要认证）
-public_router = APIRouter()
+byd_dealer_router = APIRouter()
 
 
-@router.post("/dealers", response_model=BYDDealerResponse, summary="创建门店")
+@byd_dealer_router.post("/dealers", response_model=BYDDealerResponse, summary="创建门店")
 async def create_dealer(
     data: BYDDealerCreate,
     current_user: dict = Depends(get_current_user)
@@ -39,7 +35,7 @@ async def create_dealer(
     return BYDDealerResponse(**dealer_dict)
 
 
-@router.get("/dealers", response_model=BYDDealerSearchResponse, summary="门店列表")
+@byd_dealer_router.get("/dealers", response_model=BYDDealerSearchResponse, summary="门店列表")
 async def list_dealers(
     keyword: Optional[str] = Query(None, description="关键词"),
     city: Optional[str] = Query(None, description="城市"),
@@ -79,7 +75,7 @@ async def list_dealers(
     )
 
 
-@router.get("/dealers/{dealer_id}", response_model=BYDDealerResponse, summary="获取门店详情")
+@byd_dealer_router.get("/dealers/{dealer_id}", response_model=BYDDealerResponse, summary="获取门店详情")
 async def get_dealer(
     dealer_id: int,
     current_user: dict = Depends(get_current_user)
@@ -93,7 +89,7 @@ async def get_dealer(
     return BYDDealerResponse(**dealer_dict)
 
 
-@router.put("/dealers/{dealer_id}", response_model=BYDDealerResponse, summary="更新门店")
+@byd_dealer_router.put("/dealers/{dealer_id}", response_model=BYDDealerResponse, summary="更新门店")
 async def update_dealer(
     dealer_id: int,
     data: BYDDealerUpdate,
@@ -108,7 +104,7 @@ async def update_dealer(
     return BYDDealerResponse(**dealer_dict)
 
 
-@router.delete("/dealers/{dealer_id}", summary="删除门店")
+@byd_dealer_router.delete("/dealers/{dealer_id}", summary="删除门店")
 async def delete_dealer(
     dealer_id: int,
     current_user: dict = Depends(get_current_user)
@@ -121,7 +117,7 @@ async def delete_dealer(
     return {"success": True, "message": "删除成功"}
 
 
-@router.get("/dealers/cities/all", response_model=List[str], summary="获取所有城市")
+@byd_dealer_router.get("/dealers/cities/all", response_model=List[str], summary="获取所有城市")
 async def get_all_cities(
     current_user: dict = Depends(get_current_user)
 ):
@@ -133,7 +129,7 @@ async def get_all_cities(
     return cities
 
 
-@router.get("/dealers/statistics/overview", summary="获取统计信息")
+@byd_dealer_router.get("/dealers/statistics/overview", summary="获取统计信息")
 async def get_statistics(
     current_user: dict = Depends(get_current_user)
 ):
@@ -143,15 +139,3 @@ async def get_statistics(
 
     stats = await BYDDealerService.get_statistics(tenant_id=tenant_id, app_id=app_id)
     return stats
-
-
-# ==================== 公开接口 ====================
-
-@public_router.post("/byd-dealers/search", response_model=BYDDealerPublicSearchResponse, summary="公开搜索接口")
-async def public_search_dealers(request: BYDDealerPublicSearchRequest):
-    """
-    公开搜索接口（基于 AppKey）
-
-    支持通过门店名称、地址、城市进行模糊查询
-    """
-    return await BYDDealerService.search_dealers(request)

@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from .autofill import autofill_public_router
 from .llm_proxy import llm_proxy_public_router
 from .agents import agents_router
+from .byd_dealer import byd_dealer_public_router
 from .test_exception import router as test_exception_router
 
 public_router = APIRouter()
@@ -18,12 +19,15 @@ public_router = APIRouter()
 public_router.include_router(autofill_public_router)
 
 # LLM 代理公开接口
-public_router.include_router(llm_proxy_public_router, prefix="/api")
+public_router.include_router(llm_proxy_public_router)
 
 # Agent 统一接口
-public_router.include_router(agents_router, prefix="/api")
+public_router.include_router(agents_router)
+
+# 比亚迪经销商门店公开接口
+public_router.include_router(byd_dealer_public_router)
 
 # 异常测试接口（仅用于开发和测试环境）
-public_router.include_router(test_exception_router, prefix="/api")
+public_router.include_router(test_exception_router)
 
 __all__ = ["public_router"]

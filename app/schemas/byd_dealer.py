@@ -81,10 +81,17 @@ class BYDDealerSearchResponse(BaseModel):
 
 
 class BYDDealerPublicSearchRequest(BaseModel):
-    """公开接口搜索请求"""
+    """公开接口搜索请求
+
+    支持三个独立参数的模糊查询：
+    - name: 门店名称模糊查询
+    - city: 城市模糊查询
+    - address: 地址模糊查询
+    """
     app_key: str = Field(..., description="AppKey")
-    query: str = Field(..., description="查询内容(支持自然语言)")
-    city: Optional[str] = Field(None, description="城市过滤")
+    name: Optional[str] = Field(None, description="门店名称模糊查询")
+    city: Optional[str] = Field(None, description="城市模糊查询")
+    address: Optional[str] = Field(None, description="地址模糊查询")
     limit: int = Field(default=10, ge=1, le=50, description="返回数量限制")
 
 
