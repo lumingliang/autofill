@@ -10,7 +10,7 @@ from app.controllers.autofill import (
     field_spec_controller,
     fill_page_controller,
 )
-from app.core.dependency import AuthControl
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.models.admin import User
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import (
@@ -33,11 +33,6 @@ field_group_router = APIRouter()
 field_spec_router = APIRouter()
 
 
-def is_superuser(user: User) -> bool:
-    """检查是否为超级管理员"""
-    return user.is_superuser
-
-
 # ==================== 填单页面管理接口 ====================
 
 @page_router.get("/page/list", summary="页面列表")
@@ -47,7 +42,7 @@ async def list_page(
     page_name: str = Query("", description="页面名称"),
     page_code: str = Query("", description="页面编码"),
     app_name: str = Query("", description="应用名称"),
-    tenant_id: int = Query(None, description="租户ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -60,11 +55,9 @@ async def list_page(
         q &= Q(app_name__contains=app_name)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, pages = await fill_page_controller.list(
         page=page, page_size=page_size, search=q, order=["-updated_at"]
@@ -92,10 +85,10 @@ async def create_page(
 
     # 确定租户ID
     if is_superuser(current_user):
-        target_tenant_id = page_in.tenant_id or 0
+        target_tenant_id = page_in.tenant_id if page_in.tenant_id > 0 else 0
     else:
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户，无法创建页面")
 
     # 验证应用是否存在
@@ -125,7 +118,7 @@ async def update_page(
             return Fail(code=403, msg="无权操作其他租户的页面")
 
     # 如果修改了应用ID，验证新应用是否存在
-    if page_in.app_id is not None and page_in.app_id != page.app_id:
+    if page_in.app_id > 0 and page_in.app_id != page.app_id:
         app = await app_management_controller.get(id=page_in.app_id)
         if not app:
             return Fail(code=400, msg="应用不存在")
@@ -154,8 +147,8 @@ async def delete_page(
 
 @page_router.get("/page/select", summary="页面下拉列表")
 async def get_page_select(
-    app_name: str = Query(None, description="应用名称"),
-    tenant_id: int = Query(None, description="租户ID"),
+    app_name: str = Query("", description="应用名称"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     """
@@ -166,11 +159,9 @@ async def get_page_select(
     q = Q(is_active=True)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     if app_name:
         q &= Q(app_name=app_name)
@@ -188,8 +179,8 @@ async def list_field_group(
     page_size: int = Query(10, description="每页数量"),
     group_name: str = Query("", description="字段组名称"),
     app_name: str = Query("", description="应用名称"),
-    page_id: int = Query(None, description="页面ID"),
-    tenant_id: int = Query(None, description="租户ID"),
+    page_id: int = Query(0, description="页面ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -198,15 +189,13 @@ async def list_field_group(
         q &= Q(group_name__contains=group_name)
     if app_name:
         q &= Q(app_name__contains=app_name)
-    if page_id is not None:
+    if page_id > 0:
         q &= Q(page_id=page_id)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, groups = await field_group_config_controller.list(
         page=page, page_size=page_size, search=q, order=["-updated_at"]
@@ -246,10 +235,10 @@ async def create_field_group(
 
     # 确定租户ID
     if is_superuser(current_user):
-        target_tenant_id = group_in.tenant_id or 0
+        target_tenant_id = group_in.tenant_id if group_in.tenant_id > 0 else 0
     else:
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户，无法创建字段组")
 
     # 验证页面是否存在
@@ -280,7 +269,7 @@ async def update_field_group(
             return Fail(code=403, msg="无权操作其他租户的字段组")
 
     # 如果修改了页面ID，验证新页面是否存在
-    if group_in.page_id is not None and group_in.page_id != group.page_id:
+    if group_in.page_id > 0 and group_in.page_id != group.page_id:
         page = await fill_page_controller.get(id=group_in.page_id)
         if not page:
             return Fail(code=400, msg="页面不存在")
@@ -310,9 +299,9 @@ async def delete_field_group(
 
 @field_group_router.get("/field_group/select", summary="字段组下拉列表")
 async def get_field_group_select(
-    page_id: int = Query(None, description="页面ID"),
-    app_name: str = Query(None, description="应用名称"),
-    tenant_id: int = Query(None, description="租户ID"),
+    page_id: int = Query(0, description="页面ID"),
+    app_name: str = Query("", description="应用名称"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     """
@@ -323,13 +312,11 @@ async def get_field_group_select(
     q = Q(is_active=True)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
-    if page_id is not None:
+    if page_id > 0:
         q &= Q(page_id=page_id)
     if app_name:
         q &= Q(app_name=app_name)
@@ -347,9 +334,9 @@ async def list_field_spec(
     page_size: int = Query(10, description="每页数量"),
     field_name: str = Query("", description="字段名"),
     field_label: str = Query("", description="字段标签"),
-    field_type: str = Query(None, description="字段类型"),
-    field_group_id: int = Query(None, description="字段组ID"),
-    tenant_id: int = Query(None, description="租户ID"),
+    field_type: str = Query("", description="字段类型"),
+    field_group_id: int = Query(0, description="字段组ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -360,15 +347,13 @@ async def list_field_spec(
         q &= Q(field_label__contains=field_label)
     if field_type:
         q &= Q(field_type=field_type)
-    if field_group_id is not None:
+    if field_group_id > 0:
         q &= Q(field_group_id=field_group_id)
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, specs = await field_spec_controller.list(
         page=page, page_size=page_size, search=q, order=["-updated_at"]

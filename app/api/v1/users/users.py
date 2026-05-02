@@ -6,7 +6,7 @@ from tortoise.expressions import Q
 from app.controllers.dept import dept_controller
 from app.controllers.role import role_controller
 from app.controllers.user import user_controller
-from app.core.dependency import AuthControl
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.core.relation import RelationQuery
 from app.models.admin import Role, Tenant, User, UserRole, UserTenant
 from app.schemas.base import Fail, Success, SuccessExtra
@@ -16,20 +16,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def is_superuser(user: User) -> bool:
-    """检查是否为超级管理员"""
-    return user.is_superuser
-
-
 @router.get("/list", summary="查看用户列表")
 async def list_user(
     page: int = Query(1, description="页码"),
     page_size: int = Query(10, description="每页数量"),
     username: str = Query("", description="用户名称，用于搜索"),
     email: str = Query("", description="邮箱地址"),
-    dept_id: int = Query(None, description="部门ID"),
+    dept_id: int = Query(0, description="部门ID"),
     dept_recursive: bool = Query(True, description="是否递归查询子部门"),
-    tenant_id: int = Query(None, description="租户ID（仅root可见）"),
+    tenant_id: int = Query(0, description="租户ID（仅root可见）"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
@@ -38,7 +33,7 @@ async def list_user(
         q &= Q(username__contains=username)
     if email:
         q &= Q(email__contains=email)
-    if dept_id is not None:
+    if dept_id > 0:
         if dept_recursive:
             from app.models.admin import DeptClosure
             descendant_ids = await DeptClosure.filter(ancestor=dept_id).values_list("descendant", flat=True)
@@ -50,13 +45,10 @@ async def list_user(
             q &= Q(dept_id=dept_id)
 
     # 多租户筛选：仅超级管理员可按租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        tenant_user_ids = await RelationQuery.get_user_ids_by_tenant_id(tenant_id)
+    effective_tenant_id = build_tenant_query(current_user, tenant_id).get("tenant_id", 0)
+    if effective_tenant_id > 0:
+        tenant_user_ids = await RelationQuery.get_user_ids_by_tenant_id(effective_tenant_id)
         q &= Q(id__in=tenant_user_ids)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            tenant_user_ids = await RelationQuery.get_user_ids_by_tenant_id(current_user.current_tenant_id)
-            q &= Q(id__in=tenant_user_ids)
 
     total, user_objs = await user_controller.list(page=page, page_size=page_size, search=q, order=["-updated_at"])
     data = [await obj.to_dict(exclude_fields=["password"]) for obj in user_objs]
@@ -92,8 +84,8 @@ async def list_user(
             item["tenants"] = [tenant_map.get(tid) for tid in user_tenant_map.get(item["id"], []) if tenant_map.get(tid)]
 
     for item in data:
-        dept_id = item.pop("dept_id", None)
-        item["dept"] = await (await dept_controller.get(id=dept_id)).to_dict() if dept_id else {}
+        item_dept_id = item.pop("dept_id", 0)
+        item["dept"] = await (await dept_controller.get(id=item_dept_id)).to_dict() if item_dept_id > 0 else {}
 
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
 
@@ -122,7 +114,7 @@ async def create_user(
     current_user = await AuthControl.is_authed(token)
 
     # 确定租户ID
-    target_tenant_id = None
+    target_tenant_id = 0
     if is_superuser(current_user):
         # 超管使用传参的tenant_id
         target_tenant_id = user_in.tenant_id
@@ -131,8 +123,8 @@ async def create_user(
         import jwt
         from app.settings import settings
         decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
-        target_tenant_id = decode_data.get("current_tenant_id")
-        if not target_tenant_id:
+        target_tenant_id = decode_data.get("current_tenant_id", 0)
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户，无法创建用户")
 
     user = await user_controller.get_by_email(user_in.email)
@@ -256,13 +248,13 @@ async def update_user_tenant_roles(
     # 确定要操作的租户ID
     if is_superuser(current_user):
         # 超管使用传参的tenant_id
-        if not data.tenant_id:
+        if data.tenant_id <= 0:
             return Fail(code=400, msg="请指定租户ID")
         target_tenant_id = data.tenant_id
     else:
         # 普通账号使用JWT中的current_tenant_id
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户")
 
     # 验证所有角色是否都属于该租户（单次查询，同时过滤id和tenant_id）

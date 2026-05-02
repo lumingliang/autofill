@@ -31,6 +31,8 @@ class AuthControl:
             tenant_domain = decode_data.get("tenant_domain")
             if tenant_domain:
                 user.tenant_domain = tenant_domain
+            else:
+                user.tenant_domain = ""
             CTX_USER_ID.set(int(user_id))
             return user
         except jwt.DecodeError:
@@ -68,3 +70,55 @@ class PermissionControl:
 
 DependAuth = Depends(AuthControl.is_authed)
 DependPermission = Depends(PermissionControl.has_permission)
+
+
+def is_superuser(user: User) -> bool:
+    """检查是否为超级管理员"""
+    return user.is_superuser
+
+
+def build_tenant_query(current_user: User, tenant_id: int = 0) -> dict:
+    """
+    构建租户查询条件
+
+    根据当前用户和传入的租户ID，返回租户查询参数
+    - 超级管理员且指定了租户ID：返回指定租户ID
+    - 普通用户：返回当前用户的租户ID（如果已设置）
+    - 无租户限制：返回0
+
+    Args:
+        current_user: 当前用户对象
+        tenant_id: 传入的租户ID（仅超级管理员有效）
+
+    Returns:
+        dict: 包含tenant_id的字典，用于查询条件构建
+    """
+    if tenant_id > 0 and is_superuser(current_user):
+        return {"tenant_id": tenant_id}
+    elif not is_superuser(current_user):
+        if current_user.current_tenant_id > 0:
+            return {"tenant_id": current_user.current_tenant_id}
+    return {"tenant_id": 0}
+
+
+def get_effective_tenant_id(current_user: User, tenant_id: int = 0) -> int:
+    """
+    获取有效的租户ID
+
+    根据当前用户和传入的租户ID，返回实际应该使用的租户ID
+    - 超级管理员且指定了租户ID：返回指定租户ID
+    - 普通用户：返回当前用户的租户ID
+    - 无租户：返回0
+
+    Args:
+        current_user: 当前用户对象
+        tenant_id: 传入的租户ID（仅超级管理员有效）
+
+    Returns:
+        int: 有效的租户ID
+    """
+    if tenant_id > 0 and is_superuser(current_user):
+        return tenant_id
+    elif not is_superuser(current_user):
+        return current_user.current_tenant_id
+    return 0

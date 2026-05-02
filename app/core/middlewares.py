@@ -288,7 +288,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             data["user_id"] = user_obj.id if user_obj else 0
             data["username"] = user_obj.username if user_obj else ""
             # 记录当前租户ID和域名
-            tenant_id = user_obj.current_tenant_id if user_obj else None
+            tenant_id = user_obj.current_tenant_id if user_obj else 0
             data["tenant_id"] = tenant_id
             # 获取租户域名，优先使用token中的
             if tenant_domain:
@@ -296,14 +296,14 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             elif tenant_id:
                 from app.models.admin import Tenant
                 tenant = await Tenant.filter(id=tenant_id).first()
-                data["tenant_domain"] = tenant.domain if tenant else None
+                data["tenant_domain"] = tenant.domain if tenant else ""
             else:
-                data["tenant_domain"] = None
+                data["tenant_domain"] = ""
         except Exception:
             data["user_id"] = 0
             data["username"] = ""
-            data["tenant_id"] = None
-            data["tenant_domain"] = None
+            data["tenant_id"] = 0
+            data["tenant_domain"] = ""
         return data
 
     async def before_request(self, request: Request):

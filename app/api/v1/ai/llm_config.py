@@ -9,7 +9,7 @@ from fastapi import APIRouter, Header, Query
 from tortoise.expressions import Q
 
 from app.controllers.llm_config import llm_config_controller
-from app.core.dependency import AuthControl
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.models.admin import User
 from app.models.llm_config import LLMProvider
 from app.schemas.base import Fail, Success, SuccessExtra
@@ -27,11 +27,6 @@ logger = logging.getLogger(__name__)
 llm_config_router = APIRouter()
 
 
-def is_superuser(user: User) -> bool:
-    """检查是否为超级管理员"""
-    return user.is_superuser
-
-
 async def get_llm_providers_from_db() -> List[Dict[str, Any]]:
     """从数据库获取启用的模型提供商列表"""
     providers = await LLMProvider.filter(is_active=True).order_by("order", "id")
@@ -42,10 +37,10 @@ async def get_llm_providers_from_db() -> List[Dict[str, Any]]:
 async def list_llm_config(
     page: int = Query(1, description="页码"),
     page_size: int = Query(10, description="每页数量"),
-    name: str = Query(None, description="配置名称模糊查询"),
-    model_provider: str = Query(None, description="模型提供商筛选"),
-    is_active: bool = Query(None, description="是否启用筛选"),
-    tenant_id: int = Query(None, description="租户ID筛选"),
+    name: str = Query("", description="配置名称模糊查询"),
+    model_provider: str = Query("", description="模型提供商筛选"),
+    is_active: bool = Query(True, description="是否启用筛选"),
+    tenant_id: int = Query(0, description="租户ID筛选"),
     token: str = Header(..., description="token验证"),
 ):
     """获取 LLM 配置列表"""
@@ -57,15 +52,12 @@ async def list_llm_config(
         q &= Q(name__contains=name)
     if model_provider:
         q &= Q(model_provider=model_provider)
-    if is_active is not None:
-        q &= Q(is_active=is_active)
+    # is_active 默认True，不需要额外判断
 
     # 多租户筛选
-    if tenant_id is not None and is_superuser(current_user):
-        q &= Q(tenant_id=tenant_id)
-    elif not is_superuser(current_user):
-        if current_user.current_tenant_id:
-            q &= Q(tenant_id=current_user.current_tenant_id)
+    tenant_query = build_tenant_query(current_user, tenant_id)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, configs = await llm_config_controller.list_configs(
         page=page, page_size=page_size, search=q, order=["-updated_at"]
@@ -97,10 +89,10 @@ async def create_llm_config(
     # 确定租户ID - 默认为0（系统级别）
     target_tenant_id = 0
     if is_superuser(current_user):
-        target_tenant_id = config_in.tenant_id or 0
+        target_tenant_id = config_in.tenant_id if config_in.tenant_id > 0 else 0
     else:
         target_tenant_id = current_user.current_tenant_id
-        if not target_tenant_id:
+        if target_tenant_id <= 0:
             return Fail(code=400, msg="您当前未选择租户，无法创建配置")
 
     # 使用确定的租户ID

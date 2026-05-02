@@ -9,9 +9,9 @@ from .base import BaseModel, TimestampMixin
 class LLMProvider(BaseModel, TimestampMixin):
     """LLM 提供商表"""
     value = fields.CharField(max_length=64, unique=True, description="提供商标识", index=True)
-    label = fields.CharField(max_length=128, description="提供商显示名称")
-    description = fields.TextField(null=True, description="提供商描述")
-    icon = fields.CharField(max_length=255, null=True, description="图标URL或类名")
+    label = fields.CharField(max_length=128, default="", description="提供商显示名称")
+    description = fields.TextField(default="", description="提供商描述")
+    icon = fields.CharField(max_length=255, default="", description="图标URL或类名")
     is_active = fields.BooleanField(default=True, description="是否启用", index=True)
     order = fields.IntField(default=0, description="排序", index=True)
 
@@ -42,7 +42,7 @@ class LLMConfig(BaseModel, TimestampMixin):
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     is_active = fields.BooleanField(default=True, description="是否启用", index=True)
     is_default = fields.BooleanField(default=False, description="是否为默认配置", index=True)
-    description = fields.TextField(null=True, description="配置描述")
+    description = fields.TextField(default="", description="配置描述")
 
     class Meta:
         table = "llm_config"
@@ -55,38 +55,38 @@ class LLMConfig(BaseModel, TimestampMixin):
                 "with_structured_output": {
                     "supported": True,
                     "failed_count": 0,
-                    "last_error": None,
-                    "last_attempt": None
+                    "last_error": "",
+                    "last_attempt": ""
                 },
                 "bind_tools_stream": {
                     "supported": True,
                     "failed_count": 0,
-                    "last_error": None,
-                    "last_attempt": None
+                    "last_error": "",
+                    "last_attempt": ""
                 },
                 "custom_fc_non_stream": {
                     "supported": True,
                     "failed_count": 0,
-                    "last_error": None,
-                    "last_attempt": None
+                    "last_error": "",
+                    "last_attempt": ""
                 },
                 "custom_fc_stream": {
                     "supported": True,
                     "failed_count": 0,
-                    "last_error": None,
-                    "last_attempt": None
+                    "last_error": "",
+                    "last_attempt": ""
                 },
                 "pydantic_parser": {
                     "supported": True,
                     "failed_count": 0,
-                    "last_error": None,
-                    "last_attempt": None
+                    "last_error": "",
+                    "last_attempt": ""
                 },
                 "json_parser": {
                     "supported": True,
                     "failed_count": 0,
-                    "last_error": None,
-                    "last_attempt": None
+                    "last_error": "",
+                    "last_attempt": ""
                 }
             }
         }
@@ -105,8 +105,8 @@ class LLMConfig(BaseModel, TimestampMixin):
             "is_active": self.is_active,
             "is_default": self.is_default,
             "description": self.description,
-            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
-            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
         }
 
         # 默认隐藏敏感信息

@@ -26,7 +26,7 @@ class AppManagement(BaseModel, TimestampMixin):
     api_key = fields.CharField(max_length=64, default=generate_api_key, description="API密钥", unique=True)
     dify_url = fields.CharField(max_length=255, default="", description="Dify服务地址")
     dify_api_key = fields.CharField(max_length=128, default="", description="Dify API密钥")
-    description = fields.CharField(max_length=255, null=True, description="应用描述")
+    description = fields.CharField(max_length=255, default="", description="应用描述")
     is_active = fields.BooleanField(default=True, description="是否启用", index=True)
 
     class Meta:
@@ -40,7 +40,7 @@ class SummaryTemplate(BaseModel, TimestampMixin):
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
     class_name = fields.CharField(max_length=64, default="", description="模板分类", index=True)
     summary = fields.CharField(max_length=500, default="", description="模板摘要")
-    template_content = fields.TextField(null=True, description="模板内容")
+    template_content = fields.TextField(default="", description="模板内容")
 
     class Meta:
         table = "summary_template"
@@ -49,7 +49,7 @@ class SummaryTemplate(BaseModel, TimestampMixin):
 class DropdownOption(BaseModel, TimestampMixin):
     """下拉选项类填单模板表"""
     summary = fields.CharField(max_length=500, default="", description="字段摘要")
-    description = fields.TextField(null=True, description="详细说明")
+    description = fields.TextField(default="", description="详细说明")
     class_name = fields.CharField(max_length=64, default="", description="模板分类", index=True)
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
@@ -68,11 +68,11 @@ class FillDataRecord(BaseModel, TimestampMixin):
     user_name = fields.CharField(max_length=64, default="", description="用户名称", index=True)
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
-    data = fields.JSONField(null=True, description="填单数据")
+    data = fields.JSONField(default=dict, description="填单数据")
     # AI填单相关字段
     status = fields.CharField(max_length=32, default="pending", description="处理状态: pending/queued/processing/completed/failed/timeout", index=True)
-    result = fields.JSONField(null=True, description="AI填单结果数据")
-    error_msg = fields.TextField(null=True, description="错误信息")
+    result = fields.JSONField(default=dict, description="AI填单结果数据")
+    error_msg = fields.TextField(default="", description="错误信息")
     processed_at = fields.DatetimeField(null=True, description="处理完成时间")
 
     class Meta:
@@ -89,13 +89,13 @@ class FieldType(str, Enum):
 
 class FillPage(BaseModel, TimestampMixin):
     """填单页面管理表"""
-    page_name = fields.CharField(max_length=64, description="页面名称", index=True)
-    page_code = fields.CharField(max_length=64, description="页面编码", index=True)
-    app_id = fields.BigIntField(description="关联应用ID", index=True)
-    app_name = fields.CharField(max_length=64, description="应用名称", index=True)
+    page_name = fields.CharField(max_length=64, default="", description="页面名称", index=True)
+    page_code = fields.CharField(max_length=64, default="", description="页面编码", index=True)
+    app_id = fields.BigIntField(default=0, description="关联应用ID", index=True)
+    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
-    description = fields.TextField(null=True, description="页面描述")
-    is_active = fields.BooleanField(null=True, default=True, description="是否启用")
+    description = fields.TextField(default="", description="页面描述")
+    is_active = fields.BooleanField(default=True, description="是否启用")
 
     class Meta:
         table = "fill_page"
@@ -103,14 +103,14 @@ class FillPage(BaseModel, TimestampMixin):
 
 class FieldGroupConfig(BaseModel, TimestampMixin):
     """字段组配置表"""
-    group_name = fields.CharField(max_length=64, description="字段组名称", index=True)
+    group_name = fields.CharField(max_length=64, default="", description="字段组名称", index=True)
     group_code = fields.CharField(max_length=64, description="字段组编码", unique=True, index=True, default=generate_field_group_code)
-    app_name = fields.CharField(max_length=64, description="应用名称", index=True)
-    page_id = fields.BigIntField(description="关联页面ID", index=True)
-    page_name = fields.CharField(max_length=64, description="页面名称")
-    prompt_template_base = fields.TextField(null=True, description="Prompt基础模板，包含{{fields_instructions}}和{{query}}占位符")
+    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
+    page_id = fields.BigIntField(default=0, description="关联页面ID", index=True)
+    page_name = fields.CharField(max_length=64, default="", description="页面名称")
+    prompt_template_base = fields.TextField(default="", description="Prompt基础模板，包含{{fields_instructions}}和{{query}}占位符")
     output_templates = fields.JSONField(default=dict, description="多输出模板配置，如{key: {template, description}}")
-    description = fields.TextField(null=True, description="字段组描述")
+    description = fields.TextField(default="", description="字段组描述")
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
     is_active = fields.BooleanField(default=True, description="是否启用")
     version = fields.IntField(default=1, description="版本号，用于缓存控制")
@@ -121,15 +121,15 @@ class FieldGroupConfig(BaseModel, TimestampMixin):
 
 class FieldSpec(BaseModel, TimestampMixin):
     """字段明细表 - 核心表"""
-    field_group_id = fields.BigIntField(description="关联字段组ID", index=True)
-    field_name = fields.CharField(max_length=64, description="字段英文名（用于JSON输出）")
-    field_label = fields.CharField(null=True, max_length=128, description="字段显示名称")
+    field_group_id = fields.BigIntField(default=0, description="关联字段组ID", index=True)
+    field_name = fields.CharField(max_length=64, default="", description="字段英文名（用于JSON输出）")
+    field_label = fields.CharField(default="", max_length=128, description="字段显示名称")
     field_type = fields.CharEnumField(FieldType, default=FieldType.TEXT, description="字段类型")
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
-    fill_instruction = fields.TextField(null=True, description="字段填写指引（用于生成LLM描述）")
-    options = fields.JSONField(null=True, description="select类型选项配置，含source/api_identifier/items/last_sync_at")
-    corrections = fields.JSONField(null=True, default=list, description="text类型全局批注列表[{id, text, created_by, created_at}]")
-    is_active = fields.BooleanField(null=True, default=True, description="是否启用")
+    fill_instruction = fields.TextField(default="", description="字段填写指引（用于生成LLM描述）")
+    options = fields.JSONField(default=dict, description="select类型选项配置，含source/api_identifier/items/last_sync_at")
+    corrections = fields.JSONField(default=list, description="text类型全局批注列表[{id, text, created_by, created_at}]")
+    is_active = fields.BooleanField(default=True, description="是否启用")
 
     class Meta:
         table = "field_spec"
