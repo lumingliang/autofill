@@ -10,7 +10,7 @@ from tortoise.expressions import Q
 from app.core.crud import CRUDBase
 from app.models.llm_config import LLMConfig
 from app.schemas.llm_config import LLMConfigCreate, LLMConfigUpdate
-from app.services.litellm_sync_service import litellm_sync_service
+from app.services.llm.litellm_sync_service import litellm_sync_service
 from app.settings.config import settings
 
 

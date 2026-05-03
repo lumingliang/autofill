@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.log import logger
 from app.controllers.llm_config import llm_config_controller
-from app.services.llm_proxy_service import llm_proxy_service
+from app.services.llm.llm_proxy_service import llm_proxy_service
 
 from ..base.types import APIResult
 from ..base.exceptions import AgentError

@@ -11,7 +11,7 @@ from app.schemas.byd_dealer import (
     BYDDealerPublicSearchRequest,
     BYDDealerPublicSearchResponse,
 )
-from app.services.byd_dealer_service import BYDDealerService
+from app.services.dealer.byd_dealer_service import BYDDealerService
 
 byd_dealer_public_router = APIRouter()
 

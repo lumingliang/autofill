@@ -37,7 +37,7 @@ from app.core.relation import RelationQuery
 from app.log import logger
 from app.models.admin import Api, Menu, Role
 from app.schemas.menus import MenuType
-from app.services.ai_fill_service import AIFillService, get_ai_fill_service
+from app.services.autofill.ai_fill_service import AIFillService, get_ai_fill_service
 from app.settings.config import settings
 from app.core.menu_registry import menu_registry
 from app.core.menu_config import register_all_menus

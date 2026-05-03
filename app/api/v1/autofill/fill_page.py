@@ -21,7 +21,7 @@ from app.schemas.fill_page import (
     FillPageCreate,
     FillPageUpdate,
 )
-from app.services.prompt_service import (
+from app.services.autofill.prompt_service import (
     assemble_prompt,
     build_fields_instructions,
     build_function_schema,
