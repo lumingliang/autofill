@@ -2004,7 +2004,46 @@ async def list_data(
 - Service 应该是无状态的，不保存请求相关的状态
 - Service 方法应该明确输入输出，便于单元测试
 - 复杂的业务校验应该在 Service 中完成
-- Service 可以调用多个 Controller 或 Repository 完成业务
+- **⚠️ 禁止**: Service 层禁止依赖 Controller 层，Service 应直接操作 Model
+
+#### Service 层架构约束
+
+> **⚠️ 重要约束**: 严格遵循分层架构，禁止循环依赖
+
+**依赖方向（必须遵守）:**
+```
+API 层 (Routers) → Controller 层 → Service 层 → Model 层
+```
+
+**禁止反向依赖:**
+```python
+# ❌ 禁止: Service 层导入 Controller
+# services/some_service.py
+from app.controllers.llm_config import llm_config_controller  # 禁止！
+from app.controllers.autofill import fill_data_controller     # 禁止！
+
+# ✅ 正确: Service 层直接操作 Model
+# services/some_service.py
+from app.models.llm_config import LLMConfig
+from app.services.llm.llm_config_utils import get_default_llm_config  # 使用 Service 层工具
+
+async def get_config():
+    # 直接查询 Model，不通过 Controller
+    return await LLMConfig.filter(is_default=True).first()
+```
+
+**公共工具函数位置:**
+```python
+# ✅ 正确: 公共 LLM 配置获取函数放在 Service 层
+# app/services/llm/llm_config_utils.py
+async def get_default_llm_config(tenant_id: int = 0, app_name: str = None) -> Optional[LLMConfig]:
+    """获取默认 LLM 配置 - 供所有 Service 使用"""
+    ...
+
+# 其他 Service 导入使用
+# app/services/agent/core/param_extractor.py
+from app.services.llm.llm_config_utils import get_default_llm_config
+```
 
 #### 控制器开发规范
 

@@ -3,14 +3,12 @@ Kafka 生产者组件
 基于 confluent-kafka-python (librdkafka)
 """
 import json
-import logging
 from typing import Any, Dict, Optional, Callable
 
 from confluent_kafka import Producer, KafkaError
 
+from app.log import logger
 from .config import KafkaConfig
-
-logger = logging.getLogger(__name__)
 
 
 class KafkaProducer:

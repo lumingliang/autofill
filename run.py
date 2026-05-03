@@ -1,3 +1,13 @@
+import os
+import sys
+import warnings
+
+# 在导入其他模块前设置环境变量
+os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+
+# 忽略 multiprocessing resource_tracker 警告
+warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
+
 import uvicorn
 
 if __name__ == "__main__":

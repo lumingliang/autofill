@@ -1,7 +1,6 @@
 """
 LLM 配置管理接口 (JWT 认证)
 """
-import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -10,6 +9,7 @@ from tortoise.expressions import Q
 
 from app.controllers.llm_config import llm_config_controller
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.log import logger
 from app.models.admin import User
 from app.models.llm_config import LLMProvider
 from app.schemas.base import Fail, Success, SuccessExtra
@@ -21,8 +21,6 @@ from app.schemas.llm_config import (
     LLMConfigUpdate,
 )
 from app.settings.config import settings
-
-logger = logging.getLogger(__name__)
 
 llm_config_router = APIRouter()
 

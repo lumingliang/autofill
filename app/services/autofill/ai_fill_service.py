@@ -2,7 +2,6 @@
 AI填单服务层
 处理 Dify 请求和异步任务处理
 """
-import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -11,11 +10,10 @@ from fastapi.exceptions import HTTPException
 
 from app.controllers.autofill import fill_data_record_controller
 from app.core.kafka import KafkaConfig, get_kafka_producer
+from app.log import logger
 from app.models.autofill import FillDataRecord
 from app.models.enums import AIFillDataStatus
 from app.settings.config import settings
-
-logger = logging.getLogger(__name__)
 
 
 class AIFillService:

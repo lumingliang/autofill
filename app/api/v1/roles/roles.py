@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, Header, Query
 from fastapi.exceptions import HTTPException
 from tortoise.expressions import Q
@@ -8,11 +6,10 @@ from app.controllers import role_controller
 from app.controllers.user import user_controller
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.core.relation import RelationQuery
+from app.log import logger
 from app.models.admin import Api, Menu, Role, Tenant, User, UserRole, UserTenant
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.roles import *
-
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 

@@ -10,7 +10,6 @@ from tortoise.expressions import Q
 from app.core.crud import CRUDBase
 from app.models.llm_config import LLMConfig
 from app.schemas.llm_config import LLMConfigCreate, LLMConfigUpdate
-from app.services.llm.litellm_sync_service import litellm_sync_service
 from app.settings.config import settings
 
 
@@ -169,6 +168,9 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
 
     async def _sync_to_litellm(self, config: LLMConfig, action: str = "create"):
         """同步配置到 LiteLLM 网关"""
+        # 延迟导入避免循环导入
+        from app.services.llm.litellm_sync_service import litellm_sync_service
+
         try:
             if action in ["create", "update"]:
                 # 添加或更新配置

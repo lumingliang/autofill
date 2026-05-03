@@ -1,6 +1,5 @@
 import csv
 import io
-import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -13,11 +12,10 @@ from app.controllers.autofill import (app_management_controller,
                                       summary_template_controller)
 from app.core.autofill_auth import APIKeyAuth
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query, get_effective_tenant_id
+from app.log import logger
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.models.admin import Tenant, User
 from app.schemas.autofill import *
-
-logger = logging.getLogger(__name__)
 
 # 创建多个 router，分别对应不同的功能模块
 app_router = APIRouter()

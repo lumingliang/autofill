@@ -1,15 +1,12 @@
-import logging
-
 from fastapi import APIRouter, Header, Query
 
 from app.controllers.menu import menu_controller
 from app.core.dependency import AuthControl
 from app.core.relation import RelationQuery
+from app.log import logger
 from app.models.admin import Menu, Role, User
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.menus import *
-
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
