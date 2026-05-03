@@ -5,12 +5,10 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 import time
 
-from app.log import getLogger
+from app.log import logger
 
 from .types import AgentInput, AgentOutput, AgentContext, AgentStatus, AttemptRecord
 from .exceptions import AgentError, MaxAttemptsError
-
-logger = getLogger(__name__)
 
 
 class BaseAgent(ABC):
@@ -18,7 +16,7 @@ class BaseAgent(ABC):
 
     def __init__(self, name: str = "base_agent"):
         self.name = name
-        self.logger = getLogger(f"agent.{name}")
+        self.logger = logger.bind(agent_name=name)
 
     @abstractmethod
     async def run(self, input_data: AgentInput) -> AgentOutput:

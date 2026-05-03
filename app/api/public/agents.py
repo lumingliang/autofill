@@ -9,10 +9,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.core.autofill_auth import APIKeyAuth
-from app.log import getLogger
+from app.log import logger
 from app.services.agent import AgentInput, AgentContext, QueryAgent
-
-logger = getLogger(__name__)
 
 agents_router = APIRouter()
 

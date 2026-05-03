@@ -9,12 +9,10 @@ from fastapi.exceptions import HTTPException
 from app.controllers.llm_config import llm_config_controller
 from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
-from app.log import getLogger
+from app.log import logger
 from app.schemas.base import Fail, Success
 from app.schemas.llm_config import LLMProxyRequest
 from app.services.llm_proxy_service import llm_proxy_service
-
-logger = getLogger(__name__)
 
 llm_proxy_public_router = APIRouter()
 

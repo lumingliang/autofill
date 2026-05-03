@@ -6,12 +6,10 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from app.log import getLogger
+from app.log import logger
 from ..base.types import APIResult
 from ..base.exceptions import APIError
 from .curl_parser import ParsedCurl
-
-logger = getLogger(__name__)
 
 
 class APIExecutor:
@@ -114,7 +112,8 @@ class APIExecutor:
 
         body_data = {}
         for key in parsed.body_params.keys():
-            if key in params:
+            # 优先使用 params 中的非空值，否则使用原始值
+            if key in params and params[key] not in (None, ""):
                 body_data[key] = params[key]
             else:
                 body_data[key] = parsed.body_params[key]

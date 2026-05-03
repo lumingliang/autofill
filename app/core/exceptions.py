@@ -16,9 +16,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from tortoise.exceptions import DoesNotExist, IntegrityError, OperationalError
 
-from app.log import getLogger, get_request_id
-
-logger = getLogger(__name__)
+from app.log import logger, get_request_id
 
 
 class SettingNotFound(Exception):
