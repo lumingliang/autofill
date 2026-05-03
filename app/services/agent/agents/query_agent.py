@@ -1,13 +1,18 @@
 """
-Query Agent - 重构后的简化版本
+Query Agent - 智能查询 Agent
 
-使用新的 Agent 架构：
-- CurlParser: 无需占位符解析 curl
-- ParamExtractor: 复用 llm_proxy 提取参数
-- APIExecutor: 执行 API 调用
-- ResultValidator: 验证结果
+使用 Function Calling 实现多轮交互：
+- call_api: 发起 API 请求
+- validate_result: 验证结果并决定是否继续
+
+流程：
+1. 第一轮：LLM 输出 call_api 参数
+2. 第二轮：将 API 结果返回给 LLM
+3. 第三轮：LLM 使用 validate_result 判断是否需要继续调整
 """
 import time
+import uuid
+import json
 from typing import Any, Dict, List, Optional
 
 from app.log import logger
@@ -15,8 +20,7 @@ from app.log import logger
 from ..base.agent import BaseAgent
 from ..base.types import AgentInput, AgentOutput, AgentStatus, AttemptRecord, APIResult, AgentContext
 from ..base.exceptions import AgentError
-from ..core.curl_parser import CurlParser, ParsedCurl
-from ..core.param_extractor import ParamExtractor
+from ..core.curl_parser import CurlParser, ParsedCurl, ParamSchema
 from ..core.api_executor import APIExecutor
 from ..core.result_validator import ResultValidator
 
@@ -25,13 +29,8 @@ class QueryAgent(BaseAgent):
     """
     查询 Agent
 
-    通过自然语言查询外部 API，自动提取参数并执行查询。
-    支持多次尝试优化参数，直到获得满意结果。
-
-    特点：
-    - 无需 curl 占位符，直接解析完整 curl
-    - 复用 llm_proxy 的 FC 能力提取参数
-    - 简化的架构，易于维护和扩展
+    通过自然语言查询外部 API，使用多轮 Function Calling 自动提取参数、
+    执行查询并验证结果，直到获得满意结果。
     """
 
     def __init__(self, context: Optional[AgentContext] = None):
@@ -40,10 +39,6 @@ class QueryAgent(BaseAgent):
 
         # 初始化组件
         self.curl_parser = CurlParser()
-        self.param_extractor = ParamExtractor(
-            tenant_id=self.context.tenant_id,
-            app_name=self.context.app_name
-        )
         self.api_executor = APIExecutor()
         self.result_validator = ResultValidator(
             tenant_id=self.context.tenant_id,
@@ -70,7 +65,6 @@ class QueryAgent(BaseAgent):
 
             # 2. 检查是否有参数需要提取
             if not parsed.param_schemas:
-                # 没有参数，直接执行
                 result = await self._execute_without_params(parsed)
                 execution_time = int((time.time() - start_time) * 1000)
                 return AgentOutput(
@@ -82,8 +76,8 @@ class QueryAgent(BaseAgent):
                     execution_time_ms=execution_time
                 )
 
-            # 3. 带重试的执行
-            return await self._execute_with_retry(input_data, parsed)
+            # 3. 使用多轮对话执行查询
+            return await self._execute_with_conversation(input_data, parsed)
 
         except Exception as e:
             logger.error(f"[QueryAgent] 执行失败: {e}")
@@ -100,108 +94,110 @@ class QueryAgent(BaseAgent):
         """无需参数，直接执行"""
         return await self.api_executor.execute(parsed, {})
 
-    async def _execute_with_retry(
+    async def _execute_with_conversation(
         self,
         input_data: AgentInput,
         parsed: ParsedCurl
     ) -> AgentOutput:
-        """带重试的执行"""
+        """
+        使用多轮对话执行查询
+
+        每轮对话：
+        1. LLM 决定调用 call_api（输出参数）或 finish（结束）
+        2. 如果是 call_api，执行 API 并将结果返回给 LLM
+        3. LLM 验证结果，决定继续调整参数或结束
+        """
+        from app.services.llm.llm_config_utils import get_default_llm_config
+        from app.services.llm.llm_proxy_service import llm_proxy_service
+
         start_time = time.time()
         attempts = []
-        current_params = {}
+        session_id = str(uuid.uuid4())
+
+        # 获取 LLM 配置
+        config = await get_default_llm_config(
+            tenant_id=self.context.tenant_id,
+            app_name=self.context.app_name
+        )
+
+        if not config:
+            raise AgentError("未找到 LLM 配置")
+
+        # 构建 tools
+        tools = self._build_tools(parsed.param_schemas)
+
+        # 初始查询
+        current_query = input_data.query
+        if input_data.expected_result:
+            current_query = f"{current_query}\n\n预期结果: {input_data.expected_result}"
 
         for attempt in range(input_data.max_attempts):
             logger.info(f"[QueryAgent] 第 {attempt + 1} 次尝试")
 
             try:
-                # 提取/优化参数
-                if attempt == 0:
-                    current_params = await self.param_extractor.extract(
-                        query=input_data.query,
-                        param_schemas=parsed.param_schemas,
-                        system_prompt=input_data.system_prompt,
-                        llm_model=input_data.llm_model,
-                        llm_temperature=input_data.llm_temperature
-                    )
-                else:
-                    # 重试策略：让大模型根据历史记录反省并优化参数
-                    last_params = attempts[-1].params if attempts else {}
-                    last_result = attempts[-1].api_result if attempts else None
-                    last_reason = attempts[-1].reason if attempts else ""
-                    
-                    # 构建历史记录上下文
-                    history_context = self._build_retry_context(attempts)
-                    
-                    # 构建反馈信息
-                    feedback = f"""
-前一次查询未能获得满意结果。
-
-历史尝试记录:
-{history_context}
-
-请分析为什么之前的查询没有返回结果，并调整参数。
-可能的优化方向：
-1. 如果关键词太具体（如"海洋网系列"），尝试更通用的词（如"海洋网"）
-2. 如果某个参数限制太严格，考虑放宽或移除
-3. 如果组合条件太苛刻，尝试减少条件
-4. 检查是否有拼写错误或同义词问题
-
-请给出新的参数组合。"""
-                    
-                    current_params = await self.param_extractor.refine(
-                        query=input_data.query,
-                        param_schemas=parsed.param_schemas,
-                        previous_params=last_params,
-                        previous_result=last_result.raw_response if last_result else "",
-                        feedback=feedback,
-                        llm_model=input_data.llm_model,
-                        llm_temperature=input_data.llm_temperature
-                    )
-
-                logger.info(f"[QueryAgent] 提取参数: {current_params}")
-
-                # 执行 API
-                api_result = await self.api_executor.execute(parsed, current_params)
-
-                # 验证结果
-                is_valid, reason = await self.result_validator.validate(
-                    api_result=api_result,
-                    query=input_data.query,
-                    expected_result=input_data.expected_result,
-                    llm_model=input_data.llm_model,
-                    llm_temperature=input_data.llm_temperature
+                # 调用 LLM，让 LLM 决定下一步
+                # 使用 custom_fc_non_stream 方法支持多 tool 选择
+                result = await llm_proxy_service.process_request(
+                    query=current_query,
+                    tools=tools,
+                    system_prompt=input_data.system_prompt or self._build_system_prompt(parsed),
+                    tool_choice="auto",
+                    method="bind_tools_stream",
+                    config=config,
+                    session_id=session_id,
+                    memory_rounds=input_data.max_attempts * 3
                 )
 
-                # 记录尝试
-                record = AttemptRecord(
-                    attempt_number=attempt + 1,
-                    params=current_params.copy(),
-                    api_result=api_result,
-                    is_valid=is_valid,
-                    reason=reason
-                )
-                attempts.append(record)
+                # 解析 LLM 的决策
+                action = result.get("action")
+                params = result.get("params", {})
+                reason = result.get("reason", "")
 
-                # 检查是否成功
-                if api_result.success and is_valid:
+                if action == "finish":
+                    # LLM 决定结束，返回结果
                     execution_time = int((time.time() - start_time) * 1000)
-                    logger.info(f"[QueryAgent] 查询成功，共 {attempt + 1} 次尝试")
+                    logger.info(f"[QueryAgent] LLM 决定结束查询: {reason}")
+
+                    last_attempt = attempts[-1] if attempts else None
                     return AgentOutput(
                         success=True,
                         status=AgentStatus.SUCCESS,
-                        data=api_result.data,
+                        data=last_attempt.api_result.data if last_attempt else {},
                         attempts=attempts,
                         total_attempts=attempt + 1,
                         execution_time_ms=execution_time
                     )
 
-                logger.info(f"[QueryAgent] 结果不符合预期: {reason}")
+                elif action == "call_api":
+                    # LLM 决定调用 API
+                    logger.info(f"[QueryAgent] LLM 决定调用 API: {params}")
+
+                    # 执行 API
+                    api_result = await self.api_executor.execute(parsed, params)
+
+                    # 记录尝试
+                    record = AttemptRecord(
+                        attempt_number=attempt + 1,
+                        params=params.copy(),
+                        api_result=api_result,
+                        is_valid=False,  # 待验证
+                        reason=""
+                    )
+                    attempts.append(record)
+
+                    # 将 API 结果返回给 LLM，让它决定下一步
+                    current_query = self._build_result_feedback(api_result)
+
+                else:
+                    # 未知的 action，尝试结束
+                    logger.warning(f"[QueryAgent] 未知的 action: {action}")
+                    break
 
             except Exception as e:
                 logger.exception(f"[QueryAgent] 第 {attempt + 1} 次尝试失败: {e}")
                 record = AttemptRecord(
                     attempt_number=attempt + 1,
-                    params=current_params.copy(),
+                    params={},
                     api_result=APIResult(success=False, status_code=0, error=str(e)),
                     is_valid=False,
                     reason=str(e)
@@ -212,7 +208,6 @@ class QueryAgent(BaseAgent):
         execution_time = int((time.time() - start_time) * 1000)
         logger.warning(f"[QueryAgent] 达到最大尝试次数: {input_data.max_attempts}")
 
-        # 返回最后一次尝试的结果
         last_attempt = attempts[-1] if attempts else None
         return AgentOutput(
             success=False,
@@ -224,22 +219,111 @@ class QueryAgent(BaseAgent):
             execution_time_ms=execution_time
         )
 
-    def _build_retry_context(self, attempts: List[AttemptRecord]) -> str:
-        """
-        构建重试上下文，让大模型了解历史尝试记录
-        """
-        if not attempts:
-            return "无历史记录"
+    def _build_tools(self, param_schemas: List[ParamSchema]) -> List[Dict[str, Any]]:
+        """构建 Function Calling tools"""
+        # 构建 call_api 的参数 schema
+        properties = {}
+        required = []
+
+        for schema in param_schemas:
+            properties[schema.name] = {
+                "type": schema.param_type,
+                "description": schema.description
+            }
+            if schema.required:
+                required.append(schema.name)
+
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "call_api",
+                    "description": "调用 API 查询数据",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            **properties,
+                            "reason": {
+                                "type": "string",
+                                "description": "选择这些参数的原因"
+                            }
+                        },
+                        "required": required + ["reason"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "finish",
+                    "description": "结束查询，返回最终结果",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "reason": {
+                                "type": "string",
+                                "description": "结束查询的原因"
+                            }
+                        },
+                        "required": ["reason"]
+                    }
+                }
+            }
+        ]
+
+    def _build_system_prompt(self, parsed: ParsedCurl) -> str:
+        """构建系统提示词"""
+        return f"""你是一个智能信息提取助手。你的任务是分析用户提供的上下文（可能是查询语句、聊天记录或其他文本），从中提取关键信息，然后调用 API 获取相关数据。
+
+API 信息:
+- 方法: {parsed.method}
+- URL: {parsed.url}
+
+你的工作流程:
+1. 仔细分析用户提供的上下文，理解用户真正需要查询什么
+2. 从上下文中提取合适的参数值
+3. 使用 call_api 工具调用 API
+4. 查看 API 返回结果
+5. 如果结果满足需求，使用 finish 工具结束
+6. 如果结果不满足，调整参数再次调用 call_api
+
+注意事项:
+- 用户输入可能是直接查询，也可能是聊天记录，需要你从中提取查询意图
+- 如果关键词太具体（如"海洋网系列"），尝试更通用的词（如"海洋网"）
+- 如果某个参数限制太严格，考虑放宽或移除
+- 如果组合条件太苛刻，尝试减少条件
+- 检查是否有拼写错误或同义词问题"""
+
+    def _build_result_feedback(self, api_result: APIResult, max_length: int = 8000) -> str:
+        """构建 API 结果反馈
         
-        context_lines = []
-        for record in attempts:
-            status = "✓ 成功" if record.is_valid else "✗ 失败"
-            context_lines.append(f"""
-尝试 #{record.attempt_number}:
-- 参数: {record.params}
-- 结果: {status}
-- 原因: {record.reason}
-- API返回: {record.api_result.raw_response[:200] if record.api_result else "N/A"}
-""")
-        
-        return "\n".join(context_lines)
+        Args:
+            api_result: API 调用结果
+            max_length: 最大内容长度，超出将截断
+        """
+        # 处理响应内容，确保是字符串格式
+        if api_result.raw_response:
+            response_content = api_result.raw_response
+        elif api_result.data:
+            try:
+                import json
+                response_content = json.dumps(api_result.data, ensure_ascii=False, indent=2)
+            except:
+                response_content = str(api_result.data)
+        else:
+            response_content = "无响应数据"
+
+        # 截断过长的内容
+        if len(response_content) > max_length:
+            truncated_length = len(response_content) - max_length
+            response_content = response_content[:max_length] + f"\n... (已截断 {truncated_length} 字符)"
+
+        return f"""API 调用结果：
+
+```
+{response_content}
+```
+
+请分析这个结果是否满足用户的需求。
+- 如果满足，请使用 finish 工具结束
+- 如果不满足，请分析原因并使用 call_api 工具调整参数重新查询"""

@@ -212,7 +212,9 @@ class StructuredOutputService:
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        tool_choice: str = "auto",
+        method: str = None
     ) -> StructuredOutputResult:
         """
         生成结构化输出，支持多轮对话记忆
@@ -223,12 +225,38 @@ class StructuredOutputService:
             system_prompt: 系统提示词
             session_id: 会话ID，用于多轮对话记忆
             memory_rounds: 记忆轮数限制，默认使用全局配置
+            tool_choice: 工具选择模式，可选 "auto", "none", "required" 或指定工具名
+            method: 指定使用的方法，可选 "with_structured_output", "bind_tools_stream",
+                   "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser"
+                   如果为 None，则按优先级自动尝试
 
         Returns:
             StructuredOutputResult: 结构化输出结果
         """
         import time
         start_time = time.time()
+
+        # 如果指定了方法，直接使用
+        if method:
+            try:
+                result = await self._try_method(
+                    method=method,
+                    query=query,
+                    tools=tools,
+                    system_prompt=system_prompt,
+                    session_id=session_id,
+                    memory_rounds=memory_rounds,
+                    tool_choice=tool_choice
+                )
+                if result.success:
+                    result.latency_ms = int((time.time() - start_time) * 1000)
+                return result
+            except Exception as e:
+                return StructuredOutputResult(
+                    success=False,
+                    error=f"{type(e).__name__}: {e}",
+                    method=method
+                )
 
         # 确定方法优先级
         methods_to_try = self._get_supported_methods()
@@ -247,7 +275,8 @@ class StructuredOutputService:
                     tools=tools,
                     system_prompt=system_prompt,
                     session_id=session_id,
-                    memory_rounds=memory_rounds
+                    memory_rounds=memory_rounds,
+                    tool_choice=tool_choice
                 )
 
                 if result.success:
@@ -280,21 +309,22 @@ class StructuredOutputService:
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        tool_choice: str = "auto"
     ) -> StructuredOutputResult:
         """尝试使用指定方法"""
         if method == "with_structured_output":
-            return await self._method_with_structured_output(query, tools, system_prompt, session_id, memory_rounds)
+            return await self._method_with_structured_output(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
         elif method == "bind_tools_stream":
-            return await self._method_bind_tools_stream(query, tools, system_prompt, session_id, memory_rounds)
+            return await self._method_bind_tools_stream(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
         elif method == "custom_fc_non_stream":
-            return await self._method_custom_fc_non_stream(query, tools, system_prompt, session_id, memory_rounds)
+            return await self._method_custom_fc_non_stream(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
         elif method == "custom_fc_stream":
-            return await self._method_custom_fc_stream(query, tools, system_prompt, session_id, memory_rounds)
+            return await self._method_custom_fc_stream(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
         elif method == "pydantic_parser":
-            return await self._method_pydantic_parser(query, tools, system_prompt, session_id, memory_rounds)
+            return await self._method_pydantic_parser(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
         elif method == "json_parser":
-            return await self._method_json_parser(query, tools, system_prompt, session_id, memory_rounds)
+            return await self._method_json_parser(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
         else:
             return StructuredOutputResult(
                 success=False,
@@ -351,7 +381,8 @@ class StructuredOutputService:
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        tool_choice: str = "auto"
     ) -> StructuredOutputResult:
         """方法1: with_structured_output - LangChain 官方 Function Calling"""
         try:
@@ -388,7 +419,8 @@ class StructuredOutputService:
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        tool_choice: str = "auto"
     ) -> StructuredOutputResult:
         """方法2: bind_tools + 流式收集"""
         try:
@@ -443,7 +475,8 @@ class StructuredOutputService:
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        tool_choice: str = "auto"
     ) -> StructuredOutputResult:
         """方法3: 自定义 FC 非流式"""
         try:
@@ -480,7 +513,7 @@ class StructuredOutputService:
                 "model": self.model_name,
                 "messages": messages,
                 "tools": tools,
-                "tool_choice": "auto"
+                "tool_choice": tool_choice
             }
 
             async with httpx.AsyncClient() as client:
@@ -530,7 +563,8 @@ class StructuredOutputService:
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        tool_choice: str = "auto"
     ) -> StructuredOutputResult:
         """方法4: 自定义 FC 流式"""
         try:
@@ -567,7 +601,7 @@ class StructuredOutputService:
                 "model": self.model_name,
                 "messages": messages,
                 "tools": tools,
-                "tool_choice": "auto",
+                "tool_choice": tool_choice,
                 "stream": True
             }
 
@@ -637,7 +671,8 @@ class StructuredOutputService:
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        tool_choice: str = "auto"
     ) -> StructuredOutputResult:
         """方法5: PydanticOutputParser"""
         try:
@@ -724,7 +759,8 @@ Please provide your response in the following JSON format:
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        tool_choice: str = "auto"
     ) -> StructuredOutputResult:
         """方法6: JsonOutputParser"""
         try:
