@@ -2,17 +2,15 @@
 LiteLLM 配置同步服务
 负责将数据库中的模型配置同步到 LiteLLM 配置文件
 """
-import logging
 import os
 from typing import Any, Dict, List, Optional
 
 import yaml
 from tortoise.expressions import Q
 
+from app.log import logger
 from app.models.llm_config import LLMConfig
 from app.settings.config import settings
-
-logger = logging.getLogger(__name__)
 
 
 class LiteLLMSyncService:

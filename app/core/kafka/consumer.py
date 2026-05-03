@@ -4,16 +4,14 @@ Kafka 消费者组件
 """
 import asyncio
 import json
-import logging
 import signal
 import threading
 from typing import Any, Callable, Dict, List, Optional
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
+from app.log import logger
 from .config import KafkaConfig
-
-logger = logging.getLogger(__name__)
 
 
 class KafkaConsumer:

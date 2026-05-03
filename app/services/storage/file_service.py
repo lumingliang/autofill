@@ -15,10 +15,8 @@ from io import BytesIO
 from PIL import Image, ImageOps
 from fastapi import UploadFile
 
+from app.log import logger
 from app.settings.config import settings
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 class FileService:

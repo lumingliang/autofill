@@ -3,7 +3,6 @@
 实现6种结构化输出方法
 """
 import json
-import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Type, Union
 
@@ -16,10 +15,9 @@ from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, create_model
 
+from app.log import logger
 from app.models.llm_config import LLMConfig
 from app.settings.config import settings
-
-logger = logging.getLogger(__name__)
 
 
 class StructuredOutputResult:
@@ -204,9 +202,9 @@ class StructuredOutputService:
                     await self._record_method_failure(method, result.error)
 
             except Exception as e:
-                last_error = str(e)
-                logger.error(f"Method {method} failed: {e}")
-                await self._record_method_failure(method, str(e))
+                last_error = f"{type(e).__name__}: {e}"
+                logger.error(f"Method {method} failed: {type(e).__name__}: {e}")
+                await self._record_method_failure(method, f"{type(e).__name__}: {e}")
 
         # 所有方法都失败
         return StructuredOutputResult(
@@ -275,7 +273,7 @@ class StructuredOutputService:
         except Exception as e:
             return StructuredOutputResult(
                 success=False,
-                error=str(e),
+                error=f"{type(e).__name__}: {e}",
                 method="with_structured_output"
             )
 
@@ -330,7 +328,7 @@ class StructuredOutputService:
         except Exception as e:
             return StructuredOutputResult(
                 success=False,
-                error=str(e),
+                error=f"{type(e).__name__}: {e}",
                 method="bind_tools_stream"
             )
 
@@ -403,7 +401,7 @@ class StructuredOutputService:
         except Exception as e:
             return StructuredOutputResult(
                 success=False,
-                error=str(e),
+                error=f"{type(e).__name__}: {e}",
                 method="custom_fc_non_stream"
             )
 
@@ -496,7 +494,7 @@ class StructuredOutputService:
         except Exception as e:
             return StructuredOutputResult(
                 success=False,
-                error=str(e),
+                error=f"{type(e).__name__}: {e}",
                 method="custom_fc_stream"
             )
 
@@ -556,17 +554,17 @@ User query: {query}
                     data=validated.model_dump(),
                     method="pydantic_parser"
                 )
-            except:
+            except Exception as inner_e:
                 return StructuredOutputResult(
                     success=False,
-                    error=str(e),
+                    error=f"{type(inner_e).__name__}: {inner_e}",
                     method="pydantic_parser"
                 )
 
         except Exception as e:
             return StructuredOutputResult(
                 success=False,
-                error=str(e),
+                error=f"{type(e).__name__}: {e}",
                 method="pydantic_parser"
             )
 
@@ -624,10 +622,10 @@ User query: {query}
                     data=data,
                     method="json_parser"
                 )
-            except:
+            except Exception as inner_e:
                 return StructuredOutputResult(
                     success=False,
-                    error=str(e),
+                    error=f"{type(inner_e).__name__}: {inner_e}",
                     method="json_parser"
                 )
 

@@ -7,9 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, UploadFile, Depends
 
 from app.core.dependency import AuthControl
-import logging
-
-logger = logging.getLogger(__name__)
+from app.log import logger
 from app.models import User
 from app.schemas.base import Success, Fail
 from app.services.storage.file_service import FileService, file_service

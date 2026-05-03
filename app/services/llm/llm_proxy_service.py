@@ -2,14 +2,12 @@
 LLM 代理服务
 处理 LLM 代理请求
 """
-import logging
 from typing import Any, Dict, List, Optional
 
-from app.controllers.llm_config import llm_config_controller
+from app.log import logger
 from app.models.llm_config import LLMConfig
 from app.services.llm.structured_output import StructuredOutputResult, StructuredOutputService
-
-logger = logging.getLogger(__name__)
+from app.services.llm.llm_config_utils import get_default_llm_config
 
 
 class LLMProxyService:
@@ -42,7 +40,7 @@ class LLMProxyService:
         """
         # 获取配置
         if config is None:
-            config = await llm_config_controller.get_default_config()
+            config = await get_default_llm_config()
             if config is None:
                 raise ValueError("No LLM configuration found")
 
@@ -86,7 +84,7 @@ class LLMProxyService:
             Dict: 健康检查结果
         """
         if config is None:
-            config = await llm_config_controller.get_default_config()
+            config = await get_default_llm_config()
             if config is None:
                 return {
                     "status": "unhealthy",
