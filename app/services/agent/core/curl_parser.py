@@ -8,10 +8,8 @@ from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlparse
 
-from app.log import getLogger
+from app.log import logger
 from ..base.exceptions import ParseError
-
-logger = getLogger(__name__)
 
 
 @dataclass
@@ -220,16 +218,21 @@ class CurlParser:
         query_params: Dict[str, Any],
         body_params: Dict[str, Any]
     ) -> List[ParamSchema]:
-        """构建参数 Schema"""
+        """构建参数 Schema
+        
+        包含所有参数，根据值推断参数类型
+        有值的参数作为示例，空值参数需要 Agent 填充
+        """
         schemas = []
 
         # Query 参数
         for key, value in query_params.items():
+            is_empty = value in (None, "", [])
             schemas.append(ParamSchema(
                 name=key,
-                param_type=cls._get_type_name(value),
-                description=f"URL 查询参数: {key}",
-                required=True,
+                param_type=cls._get_type_name(value) if value else "string",
+                description=f"URL 查询参数: {key}" + (" (需要填充)" if is_empty else f"，示例: {value}"),
+                required=is_empty,  # 空值参数需要填充
                 example=value
             ))
 
@@ -237,11 +240,12 @@ class CurlParser:
         for key, value in body_params.items():
             if key == "_raw":
                 continue
+            is_empty = value in (None, "", [])
             schemas.append(ParamSchema(
                 name=key,
-                param_type=cls._get_type_name(value),
-                description=f"请求体参数: {key}",
-                required=True,
+                param_type=cls._get_type_name(value) if value else "string",
+                description=f"请求体参数: {key}" + (" (需要填充)" if is_empty else f"，示例: {value}"),
+                required=is_empty,  # 空值参数需要填充
                 example=value
             ))
 

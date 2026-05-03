@@ -16,13 +16,11 @@ from app.controllers.autofill import (dropdown_option_controller,
                                       summary_template_controller)
 from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
-from app.log import getLogger
+from app.log import logger
 from app.schemas.base import Fail, Success
 from app.schemas.autofill import *
 from app.services.ai_fill_service import get_ai_fill_service
 from app.settings.config import settings
-
-logger = getLogger(__name__)
 
 autofill_public_router = APIRouter()
 

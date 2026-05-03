@@ -1,10 +1,8 @@
 import uvicorn
 
-# 先初始化项目日志配置
-from app.log import logger
-
 if __name__ == "__main__":
     # 使用 uvicorn 的默认日志配置，但禁用访问日志（我们在中间件中处理）
+    # 日志配置已在 app/__init__.py 中初始化
     uvicorn.run(
         "app:app",
         host="0.0.0.0",

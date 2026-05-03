@@ -10,7 +10,7 @@ Query Agent - 重构后的简化版本
 import time
 from typing import Any, Dict, List, Optional
 
-from app.log import getLogger
+from app.log import logger
 
 from ..base.agent import BaseAgent
 from ..base.types import AgentInput, AgentOutput, AgentStatus, AttemptRecord, APIResult, AgentContext
@@ -19,8 +19,6 @@ from ..core.curl_parser import CurlParser, ParsedCurl
 from ..core.param_extractor import ParamExtractor
 from ..core.api_executor import APIExecutor
 from ..core.result_validator import ResultValidator
-
-logger = getLogger(__name__)
 
 
 class QueryAgent(BaseAgent):
@@ -126,13 +124,35 @@ class QueryAgent(BaseAgent):
                         llm_temperature=input_data.llm_temperature
                     )
                 else:
-                    # 根据反馈优化参数
-                    feedback = attempts[-1].reason if attempts else ""
+                    # 重试策略：让大模型根据历史记录反省并优化参数
+                    last_params = attempts[-1].params if attempts else {}
+                    last_result = attempts[-1].api_result if attempts else None
+                    last_reason = attempts[-1].reason if attempts else ""
+                    
+                    # 构建历史记录上下文
+                    history_context = self._build_retry_context(attempts)
+                    
+                    # 构建反馈信息
+                    feedback = f"""
+前一次查询未能获得满意结果。
+
+历史尝试记录:
+{history_context}
+
+请分析为什么之前的查询没有返回结果，并调整参数。
+可能的优化方向：
+1. 如果关键词太具体（如"海洋网系列"），尝试更通用的词（如"海洋网"）
+2. 如果某个参数限制太严格，考虑放宽或移除
+3. 如果组合条件太苛刻，尝试减少条件
+4. 检查是否有拼写错误或同义词问题
+
+请给出新的参数组合。"""
+                    
                     current_params = await self.param_extractor.refine(
                         query=input_data.query,
                         param_schemas=parsed.param_schemas,
-                        previous_params=current_params,
-                        previous_result=attempts[-1].api_result.raw_response if attempts else "",
+                        previous_params=last_params,
+                        previous_result=last_result.raw_response if last_result else "",
                         feedback=feedback,
                         llm_model=input_data.llm_model,
                         llm_temperature=input_data.llm_temperature
@@ -178,7 +198,7 @@ class QueryAgent(BaseAgent):
                 logger.info(f"[QueryAgent] 结果不符合预期: {reason}")
 
             except Exception as e:
-                logger.error(f"[QueryAgent] 第 {attempt + 1} 次尝试失败: {e}")
+                logger.exception(f"[QueryAgent] 第 {attempt + 1} 次尝试失败: {e}")
                 record = AttemptRecord(
                     attempt_number=attempt + 1,
                     params=current_params.copy(),
@@ -203,3 +223,23 @@ class QueryAgent(BaseAgent):
             total_attempts=len(attempts),
             execution_time_ms=execution_time
         )
+
+    def _build_retry_context(self, attempts: List[AttemptRecord]) -> str:
+        """
+        构建重试上下文，让大模型了解历史尝试记录
+        """
+        if not attempts:
+            return "无历史记录"
+        
+        context_lines = []
+        for record in attempts:
+            status = "✓ 成功" if record.is_valid else "✗ 失败"
+            context_lines.append(f"""
+尝试 #{record.attempt_number}:
+- 参数: {record.params}
+- 结果: {status}
+- 原因: {record.reason}
+- API返回: {record.api_result.raw_response[:200] if record.api_result else "N/A"}
+""")
+        
+        return "\n".join(context_lines)

@@ -3,14 +3,12 @@
 """
 from typing import Any, Dict, List, Optional
 
-from app.log import getLogger
+from app.log import logger
 from app.controllers.llm_config import llm_config_controller
 from app.services.llm_proxy_service import llm_proxy_service
 
 from ..base.exceptions import AgentError
 from .curl_parser import ParamSchema
-
-logger = getLogger(__name__)
 
 
 class ParamExtractor:
@@ -25,7 +23,7 @@ class ParamExtractor:
         query: str,
         param_schemas: List[ParamSchema],
         system_prompt: str = "",
-        llm_model: str = "gpt-4o-mini",
+        llm_model: str = "",
         llm_temperature: float = 0.0,
         context: str = ""
     ) -> Dict[str, Any]:
@@ -174,6 +172,13 @@ API 返回结果: {previous_result[:500]}
 
 需要从查询中提取以下参数:
 {param_desc}
+
+重要提示:
+1. 提取关键词时，只保留最核心的词汇，去除修饰词
+2. 例如"海洋网系列"应提取为"海洋网"，"王朝网车型"应提取为"王朝网"
+3. 城市名称保持完整，如"重庆"、"广州"
+4. 区域/地址提取核心地名，如"沙坪坝区"提取为"沙坪坝"
+5. 如果参数未提及，返回空字符串""，不要猜测
 """
 
         if context:

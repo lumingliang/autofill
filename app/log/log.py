@@ -1,308 +1,155 @@
 """
-统一日志模块 - 参考 FastAPI 最佳实践
-使用 loguru 作为核心，拦截标准库 logging 的日志
+统一日志模块 - FastAPI + Loguru + JSON 格式
 """
 import json
 import logging
 import os
 import sys
 from contextvars import ContextVar
-from typing import Any, Dict
 
-from loguru import logger as loguru_logger
+from loguru import logger
 
 # 请求追踪 ID 上下文变量
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 tenant_domain_var: ContextVar[str] = ContextVar("tenant_domain", default="")
 
-# 全局变量，用于延迟初始化
-_logger = None
-
 
 def get_request_id() -> str:
-    """获取当前请求的追踪 ID"""
     return request_id_var.get()
 
 
 def set_request_id(request_id: str):
-    """设置当前请求的追踪 ID"""
     request_id_var.set(request_id)
 
 
 def get_tenant_domain() -> str:
-    """获取当前租户域名"""
     return tenant_domain_var.get()
 
 
 def set_tenant_domain(tenant_domain: str):
-    """设置当前租户域名"""
     tenant_domain_var.set(tenant_domain)
 
 
+def patch_record(record):
+    """在序列化前修改记录，添加自定义字段"""
+    exc = record.get("exception")
+    
+    # 获取异常发生的位置（最底层帧）
+    exc_location = None
+    if exc:
+        tb = exc.traceback
+        while tb:
+            exc_location = f"{tb.tb_frame.f_code.co_filename}:{tb.tb_lineno}"
+            tb = tb.tb_next
+    
+    # 构建 JSON 数据
+    log_data = {
+        "time": record["time"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+        "level": record["level"].name,
+        "location": f"{record['file'].path}:{record['line']}" if hasattr(record['file'], 'path') else f"{record['name']}:{record['line']}",
+        "message": record["message"],
+    }
+    
+    # 添加异常信息
+    if exc:
+        log_data["error"] = {
+            "type": exc.type.__name__,
+            "message": str(exc.value),
+            "location": exc_location
+        }
+    
+    # 添加请求追踪信息
+    req_id = get_request_id()
+    if req_id:
+        log_data["request_id"] = req_id
+    
+    tenant_domain = get_tenant_domain()
+    if tenant_domain:
+        log_data["tenant_domain"] = tenant_domain
+    
+    # 存储序列化后的 JSON
+    record["extra"]["_json"] = json.dumps(log_data, ensure_ascii=False, default=str)
+    
+    # 清除异常信息，防止 loguru 输出 traceback 到控制台
+    if record.get("exception"):
+        record["exception"] = None
+
+
+# 应用 patch
+logger = logger.patch(patch_record)
+
+
+# 拦截 uvicorn 原生日志
 class InterceptHandler(logging.Handler):
-    """
-    拦截标准库 logging 的日志并转发到 loguru
-    这是 FastAPI 社区的标准做法
-    """
-
-    def emit(self, record: logging.LogRecord) -> None:
-        # 获取 logger 实例（确保已初始化）
-        logger_instance = get_logger()
-
-        # 获取对应的 loguru 级别
+    def emit(self, record):
         try:
-            level = logger_instance.level(record.levelname).name
+            level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
-
-        # 找到调用日志的原始位置
+        
+        # 自动回溯真实调用代码行
         frame, depth = logging.currentframe(), 2
         while frame.f_code.co_filename == logging.__file__:
             frame = frame.f_back
             depth += 1
+        
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
-        # 使用 loguru 记录日志
-        logger_instance.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
+
+def setup_logger():
+    """初始化日志配置"""
+    # 清空 loguru 默认处理器
+    logger.remove()
+    
+    from app.settings import settings
+    
+    # JSON 格式模板
+    json_format = "{extra[_json]}\n"
+    
+    # 1. 控制台 JSON 输出
+    if settings.LOG_CONSOLE_OUTPUT:
+        logger.add(
+            sys.stdout,
+            level=settings.LOG_LEVEL,
+            format=json_format,
+            enqueue=True,
+            backtrace=False,
+            diagnose=False,
         )
-
-
-def setup_logging_intercept():
-    """配置标准库 logging 的拦截"""
-    # 拦截所有标准库日志
+    
+    # 2. 文件 JSON 日志
+    if settings.LOG_FILE_OUTPUT:
+        log_dir = os.path.dirname(settings.LOG_FILE)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        
+        logger.add(
+            settings.LOG_FILE,
+            level=settings.LOG_LEVEL,
+            format=json_format,
+            rotation=settings.LOG_MAX_BYTES * 1024 * 1024,
+            retention=settings.LOG_BACKUP_COUNT,
+            encoding="utf-8",
+            enqueue=True,
+            compression="gz",
+            backtrace=False,
+            diagnose=False,
+        )
+    
+    # 全局接管 uvicorn/fastapi 所有日志
     logging.basicConfig(
         handlers=[InterceptHandler()],
-        level=logging.NOTSET,
-        force=True,
+        level=logging.INFO,
+        force=True
     )
-
-    # 拦截第三方库的日志
-    for logger_name in logging.root.manager.loggerDict:
-        logger = logging.getLogger(logger_name)
-        logger.handlers = [InterceptHandler()]
-        logger.propagate = False
-
-
-def patching(record: Dict[str, Any]) -> None:
-    """在日志记录被序列化前修改它，添加自定义字段"""
-    # 添加请求追踪 ID
-    req_id = get_request_id()
-    if req_id:
-        record["extra"]["request_id"] = req_id
-
-    # 添加租户域名
-    tenant_domain = get_tenant_domain()
-    if tenant_domain:
-        record["extra"]["tenant_domain"] = tenant_domain
-
-    # 构建完整的 extra 数据用于 JSON 输出
-    extra_data = dict(record["extra"])
-
-    # 创建序列化后的 JSON 字符串存储在 extra 中
-    log_data: Dict[str, Any] = {
-        "timestamp": record["time"].isoformat(),
-        "level": record["level"].name,
-        "message": record["message"],
-        "logger": record["name"],
-        "file": record["file"].path,
-        "line": record["line"],
-        "function": record["function"],
-        "thread": record["thread"].id,
-        "process": record["process"].id,
-    }
-
-    # 添加请求追踪 ID 到主数据
-    if req_id:
-        log_data["request_id"] = req_id
-
-    # 添加租户域名到主数据
-    if tenant_domain:
-        log_data["tenant_domain"] = tenant_domain
-
-    # 添加额外的上下文信息
-    if extra_data:
-        for key, value in extra_data.items():
-            if key not in log_data and key not in ("request_id", "tenant_domain", "_json_output"):
-                log_data[key] = value
-
-    # 添加异常信息
-    if record["exception"] is not None:
-        exception_data = record["exception"]
-        log_data["exception"] = {
-            "type": exception_data.type.__name__ if exception_data.type else None,
-            "value": str(exception_data.value) if exception_data.value else None,
-            "traceback": exception_data.traceback,
-        }
-
-    # 将序列化后的 JSON 存储在 extra 中，供 formatter 使用
-    record["extra"]["_json_output"] = json.dumps(log_data, ensure_ascii=False, default=str)
+    
+    # 清除 uvicorn 原有 handler，防止重复输出
+    for log_name in ["uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"]:
+        _logger = logging.getLogger(log_name)
+        _logger.handlers.clear()
+        _logger.propagate = True
+    
+    return logger
 
 
-class Loggin:
-    def __init__(self) -> None:
-        # 延迟导入 settings，确保配置已加载
-        from app.settings import settings
-
-        # 从配置读取日志设置
-        self.level = settings.LOG_LEVEL
-        self.log_file = settings.LOG_FILE
-        self.max_bytes = settings.LOG_MAX_BYTES * 1024 * 1024  # 转换为字节
-        self.backup_count = settings.LOG_BACKUP_COUNT
-        self.console_output = settings.LOG_CONSOLE_OUTPUT
-        self.file_output = settings.LOG_FILE_OUTPUT
-
-    def setup_logger(self):
-        _logger = loguru_logger
-        _logger.remove()
-
-        # 应用 patch 来修改记录
-        _logger = _logger.patch(patching)
-
-        # JSON 格式字符串，使用 extra 中存储的序列化 JSON
-        json_formatter = "{extra[_json_output]}\n"
-
-        # 控制台输出 - JSON 格式
-        if self.console_output:
-            _logger.add(
-                sink=sys.stdout,
-                level=self.level,
-                format=json_formatter,
-            )
-
-        # 文件输出 - JSON 格式，支持轮转
-        if self.file_output:
-            log_dir = os.path.dirname(self.log_file)
-            if log_dir and not os.path.exists(log_dir):
-                os.makedirs(log_dir, exist_ok=True)
-
-            _logger.add(
-                sink=self.log_file,
-                level=self.level,
-                format=json_formatter,
-                rotation=self.max_bytes,
-                retention=self.backup_count,
-                encoding="utf-8",
-                enqueue=True,
-                compression="gz",  # 压缩旧日志文件
-            )
-
-        return _logger
-
-
-def get_logger():
-    """延迟初始化 logger"""
-    global _logger
-    if _logger is None:
-        loggin = Loggin()
-        _logger = loggin.setup_logger()
-        # 设置拦截器，捕获标准库日志
-        setup_logging_intercept()
-    return _logger
-
-
-# 为了保持兼容性，使用代理对象
-class LoggerProxy:
-    """logger 代理类，延迟初始化实际的 logger"""
-
-    def __init__(self):
-        self._logger = None
-
-    def _get_logger(self):
-        if self._logger is None:
-            self._logger = get_logger()
-        return self._logger
-
-    def __getattr__(self, name):
-        return getattr(self._get_logger(), name)
-
-    def __call__(self, *args, **kwargs):
-        return self._get_logger()(*args, **kwargs)
-
-    # 直接代理常用日志方法，确保它们能被正确调用
-    def debug(self, msg, *args, **kwargs):
-        return self._get_logger().debug(msg, *args, **kwargs)
-
-    def info(self, msg, *args, **kwargs):
-        return self._get_logger().info(msg, *args, **kwargs)
-
-    def warning(self, msg, *args, **kwargs):
-        return self._get_logger().warning(msg, *args, **kwargs)
-
-    def error(self, msg, *args, **kwargs):
-        return self._get_logger().error(msg, *args, **kwargs)
-
-    def critical(self, msg, *args, **kwargs):
-        return self._get_logger().critical(msg, *args, **kwargs)
-
-    def exception(self, msg, *args, **kwargs):
-        return self._get_logger().exception(msg, *args, **kwargs)
-
-    # 添加上下文日志方法
-    def bind(self, **kwargs):
-        """绑定上下文信息到日志"""
-        return self._get_logger().bind(**kwargs)
-
-    def context(self, **kwargs):
-        """创建带上下文的日志记录器"""
-        return self._get_logger().bind(**kwargs)
-
-
-# 主 logger 实例
-logger = LoggerProxy()
-
-
-# 兼容性函数：允许继续使用 logging.getLogger 方式
-def getLogger(name: str = None):
-    """
-    兼容标准库 logging.getLogger 的接口
-    返回一个代理对象，将日志转发到 loguru
-    """
-    return _StandardLoggerProxy(name)
-
-
-class _StandardLoggerProxy:
-    """兼容标准库 logging.Logger 的代理类"""
-
-    def __init__(self, name: str = None):
-        self.name = name or "__main__"
-        self._loguru_logger = logger.bind(logger_name=name)
-
-    def debug(self, msg, *args, **kwargs):
-        self._loguru_logger.debug(msg, *args, **kwargs)
-
-    def info(self, msg, *args, **kwargs):
-        self._loguru_logger.info(msg, *args, **kwargs)
-
-    def warning(self, msg, *args, **kwargs):
-        self._loguru_logger.warning(msg, *args, **kwargs)
-
-    def warn(self, msg, *args, **kwargs):
-        self._loguru_logger.warning(msg, *args, **kwargs)
-
-    def error(self, msg, *args, **kwargs):
-        self._loguru_logger.error(msg, *args, **kwargs)
-
-    def critical(self, msg, *args, **kwargs):
-        self._loguru_logger.critical(msg, *args, **kwargs)
-
-    def exception(self, msg, *args, **kwargs):
-        self._loguru_logger.exception(msg, *args, **kwargs)
-
-    def log(self, level, msg, *args, **kwargs):
-        self._loguru_logger.log(level, msg, *args, **kwargs)
-
-    def bind(self, **kwargs):
-        """绑定上下文信息到日志"""
-        return self._loguru_logger.bind(**kwargs)
-
-    def isEnabledFor(self, level):
-        return True
-
-    def setLevel(self, level):
-        pass
-
-    def addHandler(self, handler):
-        pass
-
-    def removeHandler(self, handler):
-        pass
+__all__ = ["logger", "setup_logger", "set_request_id", "get_request_id", "set_tenant_domain", "get_tenant_domain"]

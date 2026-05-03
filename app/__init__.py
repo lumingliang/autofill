@@ -15,12 +15,16 @@ from app.core.init_app import (
     register_routers,
 )
 from app.core.redis import redis_client
+from app.log import setup_logger
 from app.settings.config import settings
 
 try:
     from app.settings.config import settings
 except ImportError:
     raise SettingNotFound("Can not import settings")
+
+# 初始化日志配置（只执行一次）
+setup_logger()
 
 
 @asynccontextmanager
