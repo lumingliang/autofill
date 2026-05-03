@@ -19,7 +19,7 @@ from tortoise import Tortoise
 
 from app.models.byd_dealer import BYDDealer
 from app.models.autofill import AppManagement
-from app.services.byd_dealer_service import BYDDealerService
+from app.services.dealer.byd_dealer_service import BYDDealerService
 from app.schemas.byd_dealer import BYDDealerPublicSearchRequest
 from app.settings.config import settings
 

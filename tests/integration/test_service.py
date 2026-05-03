@@ -1,6 +1,6 @@
 import asyncio
 from app.models.llm_config import LLMConfig
-from app.services.structured_output import StructuredOutputService
+from app.services.llm.structured_output import StructuredOutputService
 from app.settings.config import settings
 from tortoise import Tortoise
 

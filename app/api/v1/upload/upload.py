@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 from app.models import User
 from app.schemas.base import Success, Fail
-from app.services.file_service import FileService, file_service
+from app.services.storage.file_service import FileService, file_service
 
 router = APIRouter()
 

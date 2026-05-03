@@ -1,6 +1,6 @@
 import asyncio
 from app.models.llm_config import LLMConfig
-from app.services.litellm_sync_service import litellm_sync_service
+from app.services.llm.litellm_sync_service import litellm_sync_service
 from app.settings.config import settings
 from tortoise import Tortoise
 

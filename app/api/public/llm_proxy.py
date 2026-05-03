@@ -12,7 +12,7 @@ from app.core.request_parser import parse_request_params
 from app.log import logger
 from app.schemas.base import Fail, Success
 from app.schemas.llm_config import LLMProxyRequest
-from app.services.llm_proxy_service import llm_proxy_service
+from app.services.llm.llm_proxy_service import llm_proxy_service
 
 llm_proxy_public_router = APIRouter()
 

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from app.controllers.llm_config import llm_config_controller
 from app.models.llm_config import LLMConfig
-from app.services.structured_output import StructuredOutputResult, StructuredOutputService
+from app.services.llm.structured_output import StructuredOutputResult, StructuredOutputService
 
 logger = logging.getLogger(__name__)
 

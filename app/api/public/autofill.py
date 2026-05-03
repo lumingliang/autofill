@@ -19,7 +19,7 @@ from app.core.request_parser import parse_request_params
 from app.log import logger
 from app.schemas.base import Fail, Success
 from app.schemas.autofill import *
-from app.services.ai_fill_service import get_ai_fill_service
+from app.services.autofill.ai_fill_service import get_ai_fill_service
 from app.settings.config import settings
 
 autofill_public_router = APIRouter()
@@ -521,8 +521,8 @@ async def llm_fill_handler(
     if not field_specs:
         raise HTTPException(status_code=404, detail="No fields found in this group")
 
-    from app.services.prompt_service import build_function_schema
-    from app.services.llm_proxy_service import llm_proxy_service
+    from app.services.autofill.prompt_service import build_function_schema
+    from app.services.llm.llm_proxy_service import llm_proxy_service
     from app.controllers.llm_config import llm_config_controller
 
     query = params.get("input_data", {}).get("query", "")

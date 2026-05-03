@@ -11,7 +11,7 @@ from tortoise import Tortoise
 
 from app.models.byd_dealer import BYDDealer
 from app.models.autofill import AppManagement
-from app.services.byd_dealer_service import BYDDealerService
+from app.services.dealer.byd_dealer_service import BYDDealerService
 
 
 # 比亚迪经销商数据模板

@@ -719,7 +719,7 @@ from app.core.dependency import AuthControl
 from app.models.admin import User
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import *
-from app.services.prompt_service import update_field_group_prompt
+from app.services.autofill.prompt_service import update_field_group_prompt
 
 page_router = APIRouter()
 
@@ -931,7 +931,7 @@ from app.core.dependency import AuthControl
 from app.models.admin import User
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import *
-from app.services.prompt_service import update_field_group_prompt
+from app.services.autofill.prompt_service import update_field_group_prompt
 
 field_group_router = APIRouter()
 
@@ -1107,7 +1107,7 @@ from app.core.dependency import AuthControl
 from app.models.admin import User
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import *
-from app.services.prompt_service import update_field_group_prompt
+from app.services.autofill.prompt_service import update_field_group_prompt
 
 field_spec_router = APIRouter()
 
