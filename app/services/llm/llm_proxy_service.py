@@ -21,6 +21,8 @@ class LLMProxyService:
         config: LLMConfig = None,
         session_id: str = None,
         memory_rounds: int = None,
+        tool_choice: str = "auto",
+        method: str = None,
         tenant_id: int = 0,
         app_name: str = None
     ) -> Dict[str, Any]:
@@ -34,6 +36,9 @@ class LLMProxyService:
             config: LLM 配置，如果为 None 则使用默认配置
             session_id: 会话ID，用于多轮对话记忆
             memory_rounds: 记忆轮数限制
+            tool_choice: 工具选择模式，可选 "auto", "none", "required" 或指定工具名
+            method: 指定使用的方法，可选 "with_structured_output", "bind_tools_stream",
+                   "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser"
             tenant_id: 租户ID
             app_name: 应用名称
 
@@ -55,7 +60,9 @@ class LLMProxyService:
             tools=tools,
             system_prompt=system_prompt,
             session_id=session_id,
-            memory_rounds=memory_rounds
+            memory_rounds=memory_rounds,
+            tool_choice=tool_choice,
+            method=method
         )
 
         if not result.success:

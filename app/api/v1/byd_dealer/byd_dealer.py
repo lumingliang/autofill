@@ -127,15 +127,3 @@ async def get_all_cities(
 
     cities = await BYDDealerService.get_all_cities(tenant_id=tenant_id, app_id=app_id)
     return cities
-
-
-@byd_dealer_router.get("/dealers/statistics/overview", summary="获取统计信息")
-async def get_statistics(
-    current_user: dict = Depends(get_current_user)
-):
-    """获取门店统计信息"""
-    tenant_id = current_user.get("tenant_id", 0)
-    app_id = current_user.get("app_id", 0)
-
-    stats = await BYDDealerService.get_statistics(tenant_id=tenant_id, app_id=app_id)
-    return stats

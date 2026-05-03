@@ -22,9 +22,7 @@ class ResultValidator:
         self,
         api_result: APIResult,
         query: str,
-        expected_result: str = "",
-        llm_model: str = "gpt-4o-mini",
-        llm_temperature: float = 0.0
+        expected_result: str = ""
     ) -> Tuple[bool, str]:
         """
         验证 API 结果是否符合预期
@@ -33,8 +31,6 @@ class ResultValidator:
             api_result: API 执行结果
             query: 原始查询
             expected_result: 预期结果描述
-            llm_model: 模型名称
-            llm_temperature: 温度参数
 
         Returns:
             Tuple[bool, str]: (是否通过, 原因)
@@ -88,16 +84,16 @@ class ResultValidator:
         expected_result: str
     ) -> str:
         """构建验证提示词"""
+        expected_section = f"\n预期结果: {expected_result}\n" if expected_result else ""
+
         return f"""请验证以下 API 结果是否符合预期：
 
 原始查询: {query}
-
-预期结果: {expected_result}
-
+{expected_section}
 API 结果:
-- 状态码: {api_result.status_code}
-- 响应数据: {api_result.response_data}
-- 错误信息: {api_result.error_message}
+```json
+{api_result.raw_response}
+```
 
 请判断 API 结果是否满足用户的查询需求。"""
 
