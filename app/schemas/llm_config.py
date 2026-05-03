@@ -80,10 +80,12 @@ class LLMProvider(BaseModel):
 class LLMProxyRequest(BaseModel):
     system_prompt: str = Field("", description="系统提示词")
     query: str = Field(..., description="用户输入/对话内容")
-    tools: List[Dict[str, Any]] = Field(default_factory=list, description="工具/函数定义列表")
+    tools: List[Dict[str, Any]] = Field(..., description="工具/函数定义列表")
     tool_choice: str = Field("auto", description="工具选择策略")
     context: str = Field("", description="额外上下文")
     preferred_methods: List[str] = Field(default=[], description="手动指定方法优先级列表")
+    session_id: str = Field("", description="会话ID，用于多轮对话记忆")
+    memory_rounds: int = Field(0, description="记忆轮数限制，0表示使用默认配置")
 
 
 class LLMProxyResponse(BaseModel):

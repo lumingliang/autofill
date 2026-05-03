@@ -36,9 +36,9 @@ toml==0.10.2
 loguru==0.7.3
 
 # LLM & LangChain
-langchain==0.3.23
-langchain-openai==0.3.14
-langchain-community==0.3.21
+langchain==1.2.15
+langchain-openai==0.3.22
+langchain-community==0.3.27
 openai==1.75.0
 litellm==1.66.1
 

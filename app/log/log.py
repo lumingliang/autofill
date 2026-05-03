@@ -33,7 +33,7 @@ def set_tenant_domain(tenant_domain: str):
 def patch_record(record):
     """在序列化前修改记录，添加自定义字段"""
     exc = record.get("exception")
-    
+
     # 获取异常发生的位置（最底层帧）
     exc_location = None
     if exc:
@@ -41,7 +41,7 @@ def patch_record(record):
         while tb:
             exc_location = f"{tb.tb_frame.f_code.co_filename}:{tb.tb_lineno}"
             tb = tb.tb_next
-    
+
     # 构建 JSON 数据
     log_data = {
         "time": record["time"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
@@ -49,7 +49,7 @@ def patch_record(record):
         "location": f"{record['file'].path}:{record['line']}" if hasattr(record['file'], 'path') else f"{record['name']}:{record['line']}",
         "message": record["message"],
     }
-    
+
     # 添加异常信息
     if exc:
         log_data["error"] = {
@@ -57,19 +57,25 @@ def patch_record(record):
             "message": str(exc.value),
             "location": exc_location
         }
-    
+
     # 添加请求追踪信息
     req_id = get_request_id()
     if req_id:
         log_data["request_id"] = req_id
-    
+
     tenant_domain = get_tenant_domain()
     if tenant_domain:
         log_data["tenant_domain"] = tenant_domain
-    
+
+    # 添加 extra 中绑定的其他字段（如 request_params, response 等）
+    # 排除内部使用的 _json 字段
+    extra_data = {k: v for k, v in record["extra"].items() if not k.startswith("_")}
+    if extra_data:
+        log_data.update(extra_data)
+
     # 存储序列化后的 JSON
     record["extra"]["_json"] = json.dumps(log_data, ensure_ascii=False, default=str)
-    
+
     # 清除异常信息，防止 loguru 输出 traceback 到控制台
     if record.get("exception"):
         record["exception"] = None
@@ -136,18 +142,24 @@ def setup_logger():
             diagnose=False,
         )
     
-    # 全局接管 uvicorn/fastapi 所有日志
+    # 全局接管 uvicorn/fastapi 日志（排除 uvicorn.access，由 RequestLoggingMiddleware 处理）
     logging.basicConfig(
         handlers=[InterceptHandler()],
         level=logging.INFO,
         force=True
     )
-    
+
     # 清除 uvicorn 原有 handler，防止重复输出
-    for log_name in ["uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"]:
+    for log_name in ["uvicorn", "uvicorn.error", "fastapi"]:
         _logger = logging.getLogger(log_name)
         _logger.handlers.clear()
         _logger.propagate = True
+
+    # 禁用 uvicorn.access 日志，避免与 RequestLoggingMiddleware 重复
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.handlers.clear()
+    uvicorn_access.addHandler(logging.NullHandler())
+    uvicorn_access.propagate = False
     
     return logger
 
