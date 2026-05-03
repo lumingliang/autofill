@@ -1,6 +1,6 @@
 """
 结构化输出服务
-实现6种结构化输出方法
+实现6种结构化输出方法，支持多轮对话记忆（使用LangChain原生组件）
 """
 import json
 from datetime import datetime
@@ -9,15 +9,60 @@ from typing import Any, Dict, List, Optional, Type, Union
 import httpx
 from langchain_core.output_parsers import PydanticOutputParser, JsonOutputParser
 from langchain_core.exceptions import OutputParserException
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import BaseTool
+from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, create_model
 
 from app.log import logger
 from app.models.llm_config import LLMConfig
 from app.settings.config import settings
+
+
+class SessionHistoryManager:
+    """
+    会话历史管理器 - 使用LangChain原生InMemoryChatMessageHistory
+    支持滑动窗口记忆（通过max_rounds限制消息数量）
+    """
+
+    def __init__(self, max_rounds: int = 10):
+        self.max_rounds = max_rounds
+        self._histories: Dict[str, InMemoryChatMessageHistory] = {}
+
+    def get_history(self, session_id: str) -> InMemoryChatMessageHistory:
+        """获取或创建指定session的聊天历史"""
+        if session_id not in self._histories:
+            self._histories[session_id] = InMemoryChatMessageHistory()
+        return self._histories[session_id]
+
+    def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
+        """供RunnableWithMessageHistory使用的回调函数"""
+        return self.get_history(session_id)
+
+    def clear_session(self, session_id: str):
+        """清除指定session的历史"""
+        if session_id in self._histories:
+            del self._histories[session_id]
+
+    def trim_history(self, session_id: str, max_rounds: int = None):
+        """
+        修剪历史消息，保留最近N轮对话
+        每轮对话包含一条HumanMessage和一条AIMessage
+        """
+        if session_id not in self._histories:
+            return
+
+        history = self._histories[session_id]
+        max_rounds = max_rounds or self.max_rounds
+        max_messages = max_rounds * 2  # 每轮2条消息
+
+        messages = history.messages
+        if len(messages) > max_messages:
+            # 保留最近的消息
+            history.messages = messages[-max_messages:]
 
 
 class StructuredOutputResult:
@@ -41,7 +86,7 @@ class StructuredOutputResult:
 
 
 class StructuredOutputService:
-    """结构化输出服务"""
+    """结构化输出服务 - 支持多轮对话记忆（LangChain原生实现）"""
 
     # 默认方法优先级
     DEFAULT_METHOD_PRIORITY = [
@@ -52,6 +97,9 @@ class StructuredOutputService:
         "pydantic_parser",
         "json_parser"
     ]
+
+    # 类级别的历史管理器（所有实例共享）
+    _history_manager = SessionHistoryManager(max_rounds=10)
 
     def __init__(self, config: LLMConfig):
         self.config = config
@@ -66,6 +114,16 @@ class StructuredOutputService:
         self.failed_threshold = self.structured_config.get("failed_threshold", 2)
         self.enable_fallback = self.structured_config.get("enable_fallback", True)
         self.max_attempt_methods = self.structured_config.get("max_attempt_methods", 6)
+
+    @classmethod
+    def get_history_manager(cls) -> SessionHistoryManager:
+        """获取历史管理器"""
+        return cls._history_manager
+
+    @classmethod
+    def clear_session(cls, session_id: str):
+        """清除指定session的历史"""
+        cls._history_manager.clear_session(session_id)
 
     def _create_llm(self, temperature: float = 0.0) -> ChatOpenAI:
         """创建 LangChain LLM 实例"""
@@ -153,18 +211,18 @@ class StructuredOutputService:
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        context: str = None,
-        preferred_methods: List[str] = None
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> StructuredOutputResult:
         """
-        生成结构化输出
+        生成结构化输出，支持多轮对话记忆
 
         Args:
             query: 用户查询
             tools: 工具/函数定义列表
             system_prompt: 系统提示词
-            context: 额外上下文
-            preferred_methods: 优先使用方法列表
+            session_id: 会话ID，用于多轮对话记忆
+            memory_rounds: 记忆轮数限制，默认使用全局配置
 
         Returns:
             StructuredOutputResult: 结构化输出结果
@@ -173,15 +231,13 @@ class StructuredOutputService:
         start_time = time.time()
 
         # 确定方法优先级
-        if preferred_methods:
-            methods_to_try = preferred_methods
-        else:
-            methods_to_try = self._get_supported_methods()
+        methods_to_try = self._get_supported_methods()
 
         # 限制最大尝试方法数
         methods_to_try = methods_to_try[:self.max_attempt_methods]
 
         last_error = None
+        result = None
 
         for method in methods_to_try:
             try:
@@ -190,12 +246,13 @@ class StructuredOutputService:
                     query=query,
                     tools=tools,
                     system_prompt=system_prompt,
-                    context=context
+                    session_id=session_id,
+                    memory_rounds=memory_rounds
                 )
 
                 if result.success:
                     result.latency_ms = int((time.time() - start_time) * 1000)
-                    return result
+                    break
                 else:
                     last_error = result.error
                     # 记录失败
@@ -205,6 +262,9 @@ class StructuredOutputService:
                 last_error = f"{type(e).__name__}: {e}"
                 logger.error(f"Method {method} failed: {type(e).__name__}: {e}")
                 await self._record_method_failure(method, f"{type(e).__name__}: {e}")
+
+        if result and result.success:
+            return result
 
         # 所有方法都失败
         return StructuredOutputResult(
@@ -219,21 +279,22 @@ class StructuredOutputService:
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        context: str = None
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> StructuredOutputResult:
         """尝试使用指定方法"""
         if method == "with_structured_output":
-            return await self._method_with_structured_output(query, tools, system_prompt, context)
+            return await self._method_with_structured_output(query, tools, system_prompt, session_id, memory_rounds)
         elif method == "bind_tools_stream":
-            return await self._method_bind_tools_stream(query, tools, system_prompt, context)
+            return await self._method_bind_tools_stream(query, tools, system_prompt, session_id, memory_rounds)
         elif method == "custom_fc_non_stream":
-            return await self._method_custom_fc_non_stream(query, tools, system_prompt, context)
+            return await self._method_custom_fc_non_stream(query, tools, system_prompt, session_id, memory_rounds)
         elif method == "custom_fc_stream":
-            return await self._method_custom_fc_stream(query, tools, system_prompt, context)
+            return await self._method_custom_fc_stream(query, tools, system_prompt, session_id, memory_rounds)
         elif method == "pydantic_parser":
-            return await self._method_pydantic_parser(query, tools, system_prompt, context)
+            return await self._method_pydantic_parser(query, tools, system_prompt, session_id, memory_rounds)
         elif method == "json_parser":
-            return await self._method_json_parser(query, tools, system_prompt, context)
+            return await self._method_json_parser(query, tools, system_prompt, session_id, memory_rounds)
         else:
             return StructuredOutputResult(
                 success=False,
@@ -241,12 +302,56 @@ class StructuredOutputService:
                 method=method
             )
 
+    def _build_messages_with_history(
+        self,
+        query: str,
+        system_prompt: str = None,
+        session_id: str = None,
+        memory_rounds: int = None
+    ) -> List[BaseMessage]:
+        """
+        构建消息列表，包含历史对话
+        使用LangChain原生历史管理，通过trim_history实现滑动窗口
+        """
+        messages = []
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
+
+        # 添加历史消息（如果存在session_id）
+        if session_id:
+            # 先修剪历史，实现滑动窗口
+            self._history_manager.trim_history(session_id, memory_rounds)
+            history = self._history_manager.get_history(session_id)
+            messages.extend(history.messages)
+
+        # 添加当前查询
+        messages.append(HumanMessage(content=query))
+
+        return messages
+
+    def _save_exchange_to_history(
+        self,
+        session_id: str,
+        query: str,
+        result: StructuredOutputResult
+    ):
+        """保存对话到历史记录"""
+        if not session_id:
+            return
+
+        history = self._history_manager.get_history(session_id)
+        history.add_user_message(query)
+        assistant_response = json.dumps(result.data, ensure_ascii=False) if result.data else "{}"
+        history.add_ai_message(assistant_response)
+        logger.debug(f"Saved exchange to session: {session_id}")
+
     async def _method_with_structured_output(
         self,
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        context: str = None
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> StructuredOutputResult:
         """方法1: with_structured_output - LangChain 官方 Function Calling"""
         try:
@@ -255,20 +360,20 @@ class StructuredOutputService:
 
             structured_llm = llm.with_structured_output(DynamicModel)
 
-            messages = []
-            if system_prompt:
-                messages.append(SystemMessage(content=system_prompt))
-            if context:
-                messages.append(SystemMessage(content=f"Context: {context}"))
-            messages.append(HumanMessage(content=query))
+            # 构建包含历史的messages
+            messages = self._build_messages_with_history(query, system_prompt, session_id, memory_rounds)
 
-            result = await structured_llm.ainvoke(messages)
+            result_data = await structured_llm.ainvoke(messages)
 
-            return StructuredOutputResult(
+            # 保存对话到历史
+            result = StructuredOutputResult(
                 success=True,
-                data=result.model_dump(),
+                data=result_data.model_dump(),
                 method="with_structured_output"
             )
+            self._save_exchange_to_history(session_id, query, result)
+
+            return result
 
         except Exception as e:
             return StructuredOutputResult(
@@ -282,7 +387,8 @@ class StructuredOutputService:
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        context: str = None
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> StructuredOutputResult:
         """方法2: bind_tools + 流式收集"""
         try:
@@ -295,12 +401,8 @@ class StructuredOutputService:
 
             llm_with_tools = llm.bind_tools(lc_tools)
 
-            messages = []
-            if system_prompt:
-                messages.append(SystemMessage(content=system_prompt))
-            if context:
-                messages.append(SystemMessage(content=f"Context: {context}"))
-            messages.append(HumanMessage(content=query))
+            # 构建包含历史的messages
+            messages = self._build_messages_with_history(query, system_prompt, session_id, memory_rounds)
 
             # 流式调用并收集 tool_calls
             tool_calls_data = []
@@ -313,11 +415,14 @@ class StructuredOutputService:
                 args = tool_calls_data[0].get("args", {})
                 # 验证
                 validated = DynamicModel(**args)
-                return StructuredOutputResult(
+
+                result = StructuredOutputResult(
                     success=True,
                     data=validated.model_dump(),
                     method="bind_tools_stream"
                 )
+                self._save_exchange_to_history(session_id, query, result)
+                return result
             else:
                 return StructuredOutputResult(
                     success=False,
@@ -337,7 +442,8 @@ class StructuredOutputService:
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        context: str = None
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> StructuredOutputResult:
         """方法3: 自定义 FC 非流式"""
         try:
@@ -353,11 +459,21 @@ class StructuredOutputService:
                 "Authorization": f"Bearer {master_key}"
             }
 
+            # 构建包含历史的messages
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
-            if context:
-                messages.append({"role": "system", "content": f"Context: {context}"})
+
+            # 添加历史消息
+            if session_id:
+                self._history_manager.trim_history(session_id, memory_rounds)
+                history = self._history_manager.get_history(session_id)
+                for msg in history.messages:
+                    if isinstance(msg, HumanMessage):
+                        messages.append({"role": "user", "content": msg.content})
+                    elif isinstance(msg, AIMessage):
+                        messages.append({"role": "assistant", "content": msg.content})
+
             messages.append({"role": "user", "content": query})
 
             payload = {
@@ -375,22 +491,25 @@ class StructuredOutputService:
                     timeout=self.timeout
                 )
                 response.raise_for_status()
-                result = response.json()
+                result_data = response.json()
 
             # 解析 tool_calls
-            message = result.get("choices", [{}])[0].get("message", {})
+            message = result_data.get("choices", [{}])[0].get("message", {})
             tool_calls = message.get("tool_calls", [])
 
             if tool_calls:
                 args = json.loads(tool_calls[0].get("function", {}).get("arguments", "{}"))
                 validated = DynamicModel(**args)
-                return StructuredOutputResult(
+
+                result = StructuredOutputResult(
                     success=True,
                     data=validated.model_dump(),
                     method="custom_fc_non_stream",
-                    prompt_tokens=result.get("usage", {}).get("prompt_tokens", 0),
-                    completion_tokens=result.get("usage", {}).get("completion_tokens", 0)
+                    prompt_tokens=result_data.get("usage", {}).get("prompt_tokens", 0),
+                    completion_tokens=result_data.get("usage", {}).get("completion_tokens", 0)
                 )
+                self._save_exchange_to_history(session_id, query, result)
+                return result
             else:
                 return StructuredOutputResult(
                     success=False,
@@ -410,7 +529,8 @@ class StructuredOutputService:
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        context: str = None
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> StructuredOutputResult:
         """方法4: 自定义 FC 流式"""
         try:
@@ -426,11 +546,21 @@ class StructuredOutputService:
                 "Authorization": f"Bearer {master_key}"
             }
 
+            # 构建包含历史的messages
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
-            if context:
-                messages.append({"role": "system", "content": f"Context: {context}"})
+
+            # 添加历史消息
+            if session_id:
+                self._history_manager.trim_history(session_id, memory_rounds)
+                history = self._history_manager.get_history(session_id)
+                for msg in history.messages:
+                    if isinstance(msg, HumanMessage):
+                        messages.append({"role": "user", "content": msg.content})
+                    elif isinstance(msg, AIMessage):
+                        messages.append({"role": "assistant", "content": msg.content})
+
             messages.append({"role": "user", "content": query})
 
             payload = {
@@ -479,11 +609,14 @@ class StructuredOutputService:
                 first_tc = tool_calls_buffer[0]
                 args = json.loads(first_tc.get("function", {}).get("arguments", "{}"))
                 validated = DynamicModel(**args)
-                return StructuredOutputResult(
+
+                result = StructuredOutputResult(
                     success=True,
                     data=validated.model_dump(),
                     method="custom_fc_stream"
                 )
+                self._save_exchange_to_history(session_id, query, result)
+                return result
             else:
                 return StructuredOutputResult(
                     success=False,
@@ -503,7 +636,8 @@ class StructuredOutputService:
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        context: str = None
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> StructuredOutputResult:
         """方法5: PydanticOutputParser"""
         try:
@@ -514,14 +648,25 @@ class StructuredOutputService:
             # 构建提示模板
             format_instructions = parser.get_format_instructions()
 
-            prompt_text = f"""{system_prompt or 'You are a helpful assistant.'}
+            # 使用LangChain原生历史管理
+            history_messages = []
+            if session_id:
+                self._history_manager.trim_history(session_id, memory_rounds)
+                history = self._history_manager.get_history(session_id)
+                for msg in history.messages:
+                    if isinstance(msg, HumanMessage):
+                        history_messages.append(f"User: {msg.content}")
+                    elif isinstance(msg, AIMessage):
+                        history_messages.append(f"Assistant: {msg.content}")
 
-{context if context else ''}
+            history_text = "\n".join(history_messages) + "\n\n" if history_messages else ""
+
+            prompt_text = f"""{system_prompt or 'You are a helpful assistant.'}
 
 Please provide your response in the following JSON format:
 {format_instructions}
 
-User query: {query}
+{history_text}User query: {query}
 """
 
             messages = [HumanMessage(content=prompt_text)]
@@ -531,11 +676,13 @@ User query: {query}
             # 解析结果
             parsed = parser.parse(content)
 
-            return StructuredOutputResult(
+            result = StructuredOutputResult(
                 success=True,
                 data=parsed.model_dump(),
                 method="pydantic_parser"
             )
+            self._save_exchange_to_history(session_id, query, result)
+            return result
 
         except OutputParserException as e:
             # 尝试修复 JSON
@@ -549,11 +696,14 @@ User query: {query}
 
                 data = json.loads(content.strip())
                 validated = DynamicModel(**data)
-                return StructuredOutputResult(
+
+                result = StructuredOutputResult(
                     success=True,
                     data=validated.model_dump(),
                     method="pydantic_parser"
                 )
+                self._save_exchange_to_history(session_id, query, result)
+                return result
             except Exception as inner_e:
                 return StructuredOutputResult(
                     success=False,
@@ -573,7 +723,8 @@ User query: {query}
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        context: str = None
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> StructuredOutputResult:
         """方法6: JsonOutputParser"""
         try:
@@ -584,14 +735,25 @@ User query: {query}
             # 构建提示模板
             format_instructions = parser.get_format_instructions()
 
-            prompt_text = f"""{system_prompt or 'You are a helpful assistant.'}
+            # 使用LangChain原生历史管理
+            history_messages = []
+            if session_id:
+                self._history_manager.trim_history(session_id, memory_rounds)
+                history = self._history_manager.get_history(session_id)
+                for msg in history.messages:
+                    if isinstance(msg, HumanMessage):
+                        history_messages.append(f"User: {msg.content}")
+                    elif isinstance(msg, AIMessage):
+                        history_messages.append(f"Assistant: {msg.content}")
 
-{context if context else ''}
+            history_text = "\n".join(history_messages) + "\n\n" if history_messages else ""
+
+            prompt_text = f"""{system_prompt or 'You are a helpful assistant.'}
 
 Please provide your response in the following JSON format:
 {format_instructions}
 
-User query: {query}
+{history_text}User query: {query}
 """
 
             messages = [HumanMessage(content=prompt_text)]
@@ -601,11 +763,13 @@ User query: {query}
             # 解析结果
             parsed = parser.parse(content)
 
-            return StructuredOutputResult(
+            result = StructuredOutputResult(
                 success=True,
                 data=parsed,
                 method="json_parser"
             )
+            self._save_exchange_to_history(session_id, query, result)
+            return result
 
         except Exception as e:
             # 尝试直接解析 JSON
@@ -617,11 +781,14 @@ User query: {query}
                     content = content.split("```")[1].split("```")[0]
 
                 data = json.loads(content.strip())
-                return StructuredOutputResult(
+
+                result = StructuredOutputResult(
                     success=True,
                     data=data,
                     method="json_parser"
                 )
+                self._save_exchange_to_history(session_id, query, result)
+                return result
             except Exception as inner_e:
                 return StructuredOutputResult(
                     success=False,

@@ -5,11 +5,11 @@ from datetime import datetime
 from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from fastapi.routing import APIRoute
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
 from app.core.dependency import AuthControl
 from app.log import logger, set_request_id, set_tenant_domain
@@ -70,173 +70,125 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """请求日志记录中间件 - 记录入参、出参和异常信息"""
+class RequestLoggingMiddleware:
+    """
+    请求日志记录中间件 - 统一记录入参、出参和异常信息
 
-    def __init__(self, app):
-        super().__init__(app)
+    设计原则：
+    1. 使用结构化JSON日志，便于日志收集和分析
+    2. 自动过滤敏感字段（密码、token等）
+    3. 限制大响应体的日志大小
+    4. 与loguru集成，复用日志配置
+    """
 
-    async def _get_tenant_domain(self, request: Request) -> str:
-        """获取租户域名，优先从token中解析，默认为 root"""
-        try:
-            token = request.headers.get("token")
-            if token:
-                # 优先从token中直接解析域名，避免查数据库
-                import jwt
-                from app.settings import settings
-                decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
-                tenant_domain = decode_data.get("tenant_domain")
-                if tenant_domain:
-                    return tenant_domain
-                # 兼容旧token：从token解析用户后查数据库
-                user_obj: User = await AuthControl.is_authed(token)
-                if user_obj and user_obj.current_tenant_id:
-                    from app.models.admin import Tenant
-                    tenant = await Tenant.filter(id=user_obj.current_tenant_id).first()
-                    if tenant and tenant.domain:
-                        return tenant.domain
-        except Exception:
-            pass
-        return "root"
+    # 跳过日志记录的路径前缀
+    SKIP_PATHS = {"/docs", "/openapi.json", "/redoc", "/health", "/uploads/"}
 
-    async def _get_request_body(self, request: Request) -> dict:
-        """获取请求体参数"""
-        args = {}
-        # 获取查询参数
-        for key, value in request.query_params.items():
-            args[key] = value
+    # 敏感字段列表（大小写不敏感）
+    SENSITIVE_FIELDS = {"password", "token", "secret", "key", "auth", "authorization", "cookie"}
 
-        # 获取请求体
-        content_type = request.headers.get("content-type", "")
-        if request.method in ["POST", "PUT", "PATCH"]:
-            # 跳过 multipart/form-data 文件上传
-            if "multipart/form-data" in content_type:
-                args["_note"] = "multipart/form-data upload"
-                return args
+    # 响应体大小限制（字符数）
+    MAX_RESPONSE_LOG_SIZE = 10000  # 10KB
 
-            try:
-                body = await request.body()
-                if body:
-                    body_json = json.loads(body)
-                    # 过滤敏感字段
-                    body_json = self._sanitize_sensitive_data(body_json)
-                    args.update(body_json)
-            except json.JSONDecodeError:
-                # 非JSON数据，尝试表单
-                try:
-                    form_data = await request.form()
-                    for k, v in form_data.items():
-                        if hasattr(v, "filename"):
-                            args[k] = f"<file:{v.filename}>"
-                        else:
-                            args[k] = str(v)
-                except Exception:
-                    pass
-            except Exception:
-                pass
+    def __init__(self, app: ASGIApp):
+        self.app = app
 
-        return args
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-    def _sanitize_sensitive_data(self, data: Any) -> Any:
-        """过滤敏感数据"""
-        if isinstance(data, dict):
-            sanitized = {}
-            for k, v in data.items():
-                # 过滤密码、token等敏感字段
-                if any(sensitive in k.lower() for sensitive in ["password", "token", "secret", "key", "auth"]):
-                    sanitized[k] = "***"
-                else:
-                    sanitized[k] = self._sanitize_sensitive_data(v)
-            return sanitized
-        elif isinstance(data, list):
-            return [self._sanitize_sensitive_data(item) for item in data]
-        return data
-
-    async def _get_response_body(self, response: Response) -> Any:
-        """获取响应体内容"""
-        try:
-            # 检查Content-Type
-            content_type = response.headers.get("content-type", "")
-            if not content_type.startswith("application/json"):
-                return None
-
-            # 检查Content-Length
-            content_length = response.headers.get("content-length")
-            if content_length and int(content_length) > 1024 * 1024:  # 1MB限制
-                return {"_note": "Response too large to log"}
-
-            # 读取响应体
-            if hasattr(response, "body"):
-                body = response.body
-                if body:
-                    return json.loads(body)
-            return None
-        except Exception:
-            return None
-
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # 跳过健康检查和静态资源
-        if self._should_skip_logging(request):
-            return await call_next(request)
+        path = scope.get("path", "")
+        if any(path.startswith(p) for p in self.SKIP_PATHS):
+            await self.app(scope, receive, send)
+            return
 
         start_time = datetime.now()
 
         # 获取请求信息
-        client_ip = self._get_client_ip(request)
-        user_agent = request.headers.get("user-agent", "")
-        tenant_domain = await self._get_tenant_domain(request)
+        headers = dict(scope.get("headers", []))
+        client_ip = self._get_client_ip_from_scope(scope, headers)
+        user_agent = headers.get(b"user-agent", b"").decode("utf-8", errors="ignore")
+        tenant_domain = "root"  # 简化处理，后续可从token解析
 
         # 设置租户域名到上下文变量
         set_tenant_domain(tenant_domain)
 
-        # 获取请求参数
-        request_body = await self._get_request_body(request)
+        # 用于缓存请求体
+        request_body = None
+        receive_buffer = []
+
+        # 包装 receive 来捕获请求体
+        async def wrapped_receive() -> Message:
+            nonlocal request_body
+            message = await receive()
+            if message["type"] == "http.request":
+                body = message.get("body", b"")
+                if body:
+                    receive_buffer.append(body)
+                if not message.get("more_body", False):
+                    # 请求体接收完毕
+                    full_body = b"".join(receive_buffer)
+                    request_body = self._parse_request_body(full_body, headers)
+            return message
+
+        # 用于捕获响应体
+        response_body_chunks = []
+        response_status = None
+        response_headers = None
+
+        # 包装 send 函数来捕获响应体
+        async def wrapped_send(message: Message) -> None:
+            nonlocal response_status, response_headers
+            if message["type"] == "http.response.start":
+                response_status = message.get("status")
+                response_headers = message.get("headers", [])
+            elif message["type"] == "http.response.body":
+                body = message.get("body", b"")
+                if body:
+                    response_body_chunks.append(body)
+            await send(message)
 
         try:
-            response = await call_next(request)
+            # 调用应用处理请求
+            await self.app(scope, wrapped_receive, wrapped_send)
+
             duration = (datetime.now() - start_time).total_seconds() * 1000
 
-            # 获取响应体
-            response_body = await self._get_response_body(response)
+            # 解析响应体
+            response_body = None
+            if response_body_chunks:
+                full_body = b"".join(response_body_chunks)
+                response_body = self._parse_response_body(full_body, response_headers)
 
-            # 记录访问日志（包含入参和出参）
+            # 构建日志数据
             log_data = {
-                "method": request.method,
-                "path": request.url.path,
-                "query": str(request.query_params),
-                "status_code": response.status_code,
+                "method": scope.get("method", ""),
+                "path": path,
+                "query": scope.get("query_string", b"").decode("utf-8", errors="ignore"),
+                "status_code": response_status or 200,
                 "duration_ms": round(duration, 2),
                 "client_ip": client_ip,
                 "user_agent": user_agent,
                 "tenant_domain": tenant_domain,
-                "request_params": request_body,
+                "request_params": request_body or {},
             }
 
-            # 只记录成功的响应体，避免日志过大
-            if response_body and response.status_code < 400:
-                # 限制响应体大小
-                response_str = json.dumps(response_body, ensure_ascii=False)
-                if len(response_str) > 10000:  # 10KB限制
-                    log_data["response"] = {"_note": f"Response too large ({len(response_str)} bytes)"}
-                else:
-                    log_data["response"] = response_body
+            # 记录响应体
+            if response_body:
+                log_data["response"] = response_body
 
-            logger.bind(**log_data).info(f"{request.method} {request.url.path} - {response.status_code}")
-
-            return response
+            logger.bind(**log_data).info(f"{scope.get('method', '')} {path} - {response_status or 200}")
 
         except Exception as exc:
             duration = (datetime.now() - start_time).total_seconds() * 1000
 
-            # 获取异常详细信息
-            import traceback
-            exc_info = traceback.format_exc()
-
             logger.bind(
-                method=request.method,
-                path=request.url.path,
-                query=str(request.query_params),
-                request_params=request_body,
+                method=scope.get("method", ""),
+                path=path,
+                query=scope.get("query_string", b"").decode("utf-8", errors="ignore"),
+                request_params=request_body or {},
                 status_code=500,
                 duration_ms=round(duration, 2),
                 client_ip=client_ip,
@@ -244,24 +196,75 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 tenant_domain=tenant_domain,
                 error=str(exc),
                 error_type=type(exc).__name__,
-                traceback=exc_info,
-            ).error(f"{request.method} {request.url.path} - 500 - {str(exc)}")
+            ).error(f"{scope.get('method', '')} {path} - 500 - {str(exc)}")
             raise
 
-    def _should_skip_logging(self, request: Request) -> bool:
-        """检查是否应该跳过日志记录"""
-        skip_paths = ["/docs", "/openapi.json", "/redoc", "/health", "/uploads/"]
-        return any(request.url.path.startswith(path) for path in skip_paths)
+    def _parse_request_body(self, body: bytes, headers: dict) -> dict:
+        """解析请求体"""
+        try:
+            if not body:
+                return {}
 
-    def _get_client_ip(self, request: Request) -> str:
-        """获取客户端真实 IP"""
-        forwarded = request.headers.get("X-Forwarded-For")
+            # 检查 content-type
+            content_type = headers.get(b"content-type", b"").decode("utf-8", errors="ignore")
+            if "application/json" not in content_type:
+                return {}
+
+            data = json.loads(body)
+            return self._sanitize(data) if isinstance(data, dict) else {"_data": data}
+        except Exception:
+            return {}
+
+    def _parse_response_body(self, body: bytes, headers: list) -> Any:
+        """解析响应体内容"""
+        try:
+            if not body:
+                return None
+
+            # 检查 content-type
+            content_type = ""
+            for name, value in headers or []:
+                if name.lower() == b"content-type":
+                    content_type = value.decode("utf-8", errors="ignore")
+                    break
+
+            if not content_type.startswith("application/json"):
+                return None
+
+            data = json.loads(body)
+            # 应用大小限制
+            body_str = json.dumps(data, ensure_ascii=False)
+            if len(body_str) > self.MAX_RESPONSE_LOG_SIZE:
+                return {"_note": f"Response too large ({len(body_str)} bytes)"}
+            return data
+        except Exception:
+            return None
+
+    def _get_client_ip_from_scope(self, scope: Scope, headers: dict) -> str:
+        """从 scope 获取客户端真实 IP"""
+        # 从 headers 获取
+        forwarded = headers.get(b"x-forwarded-for", b"").decode("utf-8", errors="ignore")
         if forwarded:
             return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("X-Real-IP")
+        real_ip = headers.get(b"x-real-ip", b"").decode("utf-8", errors="ignore")
         if real_ip:
             return real_ip
-        return request.client.host if request.client else "unknown"
+        # 从 client 获取
+        client = scope.get("client")
+        if client:
+            return client[0]
+        return "unknown"
+
+    def _sanitize(self, data: Any) -> Any:
+        """递归过滤敏感数据"""
+        if isinstance(data, dict):
+            return {
+                k: "***" if any(s in k.lower() for s in self.SENSITIVE_FIELDS) else self._sanitize(v)
+                for k, v in data.items()
+            }
+        elif isinstance(data, list):
+            return [self._sanitize(item) for item in data]
+        return data
 
 
 class HttpAuditLogMiddleware(BaseHTTPMiddleware):
@@ -278,158 +281,140 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         for key, value in request.query_params.items():
             args[key] = value
 
-        # 获取请求体 - 跳过 multipart/form-data 文件上传
-        content_type = request.headers.get("content-type", "")
-        if request.method in ["POST", "PUT", "PATCH"]:
-            # 完全跳过 multipart/form-data 请求，不读取请求体
-            # 因为 request.form() 会消耗请求体，导致后续路由无法读取文件
-            if "multipart/form-data" in content_type:
-                args["_note"] = "multipart/form-data upload"
-                return args
+        # 获取路径参数
+        if hasattr(request.state, 'path_params'):
+            args.update(request.state.path_params)
 
-            try:
-                body = await request.json()
-                args.update(body)
-            except json.JSONDecodeError:
-                # 对于非 multipart 的表单数据，尝试解析
+        # 获取请求体
+        if request.method in ["POST", "PUT", "PATCH"]:
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
                 try:
-                    body = await request.form()
-                    for k, v in body.items():
-                        if hasattr(v, "filename"):  # 文件上传行为
-                            args[k] = f"<file:{v.filename}>"
-                        elif isinstance(v, list) and v and hasattr(v[0], "filename"):
-                            args[k] = [f"<file:{file.filename}>" for file in v]
-                        else:
-                            args[k] = str(v)
+                    body = await request.body()
+                    if body:
+                        body_data = json.loads(body)
+                        if isinstance(body_data, dict):
+                            args.update(body_data)
                 except Exception:
                     pass
 
         return args
 
-    async def get_response_body(self, request: Request, response: Response) -> Any:
-        # 检查Content-Type，跳过非JSON内容（如图片、文件等）
-        content_type = response.headers.get("content-type", "")
-        if not content_type.startswith("application/json"):
-            return None
+    def should_log(self, request: Request, response: Response) -> bool:
+        """判断是否需要记录审计日志"""
+        # 只记录指定的 HTTP 方法
+        if request.method not in self.methods:
+            return False
 
-        # 检查Content-Length
-        content_length = response.headers.get("content-length")
-        if content_length and int(content_length) > self.max_body_size:
-            return {"code": 0, "msg": "Response too large to log", "data": None}
+        # 排除特定路径
+        path = request.url.path
+        for exclude_path in self.exclude_paths:
+            if path.startswith(exclude_path):
+                return False
 
-        if hasattr(response, "body"):
-            body = response.body
-        else:
-            body_chunks = []
+        # 只记录成功的请求
+        if response.status_code < 200 or response.status_code >= 300:
+            return False
+
+        return True
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+
+        # 检查是否需要记录
+        if not self.should_log(request, response):
+            return response
+
+        # 获取请求参数
+        request_args = await self.get_request_args(request)
+
+        # 获取响应内容
+        response_body = b""
+        if hasattr(response, 'body_iterator'):
             async for chunk in response.body_iterator:
-                if not isinstance(chunk, bytes):
-                    chunk = chunk.encode(response.charset)
-                body_chunks.append(chunk)
+                response_body += chunk
 
-            response.body_iterator = self._async_iter(body_chunks)
-            body = b"".join(body_chunks)
+            # 重新构建响应
+            response = Response(
+                content=response_body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type
+            )
 
-        if any(request.url.path.startswith(path) for path in self.audit_log_paths):
-            try:
-                data = self.lenient_json(body)
-                # 只保留基本信息，去除详细的响应内容
-                if isinstance(data, dict):
-                    data.pop("response_body", None)
-                    if "data" in data and isinstance(data["data"], list):
-                        for item in data["data"]:
-                            item.pop("response_body", None)
-                return data
-            except Exception:
-                return None
+        # 解析响应内容
+        response_content = ""
+        try:
+            if len(response_body) < self.max_body_size:
+                response_content = response_body.decode('utf-8')
+        except Exception:
+            pass
 
-        return self.lenient_json(body)
-
-    def lenient_json(self, v: Any) -> Any:
-        if isinstance(v, (str, bytes)):
-            try:
-                return json.loads(v)
-            except (ValueError, TypeError):
-                pass
-        return v
-
-    async def _async_iter(self, items: list[bytes]) -> AsyncGenerator[bytes, None]:
-        for item in items:
-            yield item
-
-    async def get_request_log(self, request: Request, response: Response) -> dict:
-        """
-        根据request和response对象获取对应的日志记录数据
-        """
-        data: dict = {"path": request.url.path, "status": response.status_code, "method": request.method}
-        # 路由信息
-        app: FastAPI = request.app
-        for route in app.routes:
-            if (
-                isinstance(route, APIRoute)
-                and route.path_regex.match(request.url.path)
-                and request.method in route.methods
-            ):
-                data["module"] = ",".join(route.tags)
-                data["summary"] = route.summary
-        # 获取用户信息
+        # 获取当前用户信息（API Key 认证无用户信息）
+        user_id = None
+        username = None
         try:
             token = request.headers.get("token")
-            user_obj = None
-            tenant_domain = None
             if token:
-                # 优先从token中解析域名，避免查数据库
-                import jwt
-                from app.settings import settings
-                try:
-                    decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
-                    tenant_domain = decode_data.get("tenant_domain")
-                except Exception:
-                    pass
                 user_obj: User = await AuthControl.is_authed(token)
-            data["user_id"] = user_obj.id if user_obj else 0
-            data["username"] = user_obj.username if user_obj else ""
-            # 记录当前租户ID和域名
-            tenant_id = user_obj.current_tenant_id if user_obj else 0
-            data["tenant_id"] = tenant_id
-            # 获取租户域名，优先使用token中的
-            if tenant_domain:
-                data["tenant_domain"] = tenant_domain
-            elif tenant_id:
-                from app.models.admin import Tenant
-                tenant = await Tenant.filter(id=tenant_id).first()
-                data["tenant_domain"] = tenant.domain if tenant else ""
-            else:
-                data["tenant_domain"] = ""
+                if user_obj:
+                    user_id = user_obj.id
+                    username = user_obj.username
         except Exception:
-            data["user_id"] = 0
-            data["username"] = ""
-            data["tenant_id"] = 0
-            data["tenant_domain"] = ""
-        return data
+            pass
 
-    async def before_request(self, request: Request):
-        request_args = await self.get_request_args(request)
-        request.state.request_args = request_args
+        # 没有用户信息时不记录审计日志（如 API Key 认证）
+        if user_id is None:
+            return response
 
-    async def after_request(self, request: Request, response: Response, process_time: int):
-        if request.method in self.methods:
-            for path in self.exclude_paths:
-                if re.search(path, request.url.path, re.I) is not None:
-                    return
-            data: dict = await self.get_request_log(request=request, response=response)
-            data["response_time"] = process_time
-
-            data["request_args"] = request.state.request_args
-            data["response_body"] = await self.get_response_body(request, response)
-            await AuditLog.create(**data)
+        # 记录审计日志（后台任务）
+        await BgTasks.add_task(
+            AuditLog.create,
+            user_id=user_id,
+            username=username or "",
+            method=request.method,
+            path=request.url.path,
+            ip=self.get_client_ip(request),
+            args=request_args,
+            response=response_content[:2000]  # 限制长度
+        )
 
         return response
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        start_time: datetime = datetime.now()
-        await self.before_request(request)
-        response = await call_next(request)
-        end_time: datetime = datetime.now()
-        process_time = int((end_time.timestamp() - start_time.timestamp()) * 1000)
-        await self.after_request(request, response, process_time)
-        return response
+    def get_client_ip(self, request: Request) -> str:
+        """获取客户端 IP"""
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip
+        return request.client.host if request.client else "unknown"
+
+
+class LimitRequestMiddleware(BaseHTTPMiddleware):
+    """
+    请求限制中间件
+    用于限制上传文件大小和请求体大小
+    """
+
+    def __init__(self, app, max_upload_size: int = 10 * 1024 * 1024):  # 默认10MB
+        super().__init__(app)
+        self.max_upload_size = max_upload_size
+
+    async def dispatch(self, request: Request, call_next):
+        # 检查 Content-Length
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                size = int(content_length)
+                if size > self.max_upload_size:
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": f"请求体大小超过限制: {self.max_upload_size} bytes"}
+                    )
+            except ValueError:
+                pass
+
+        return await call_next(request)

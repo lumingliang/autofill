@@ -18,10 +18,11 @@ class LLMProxyService:
         query: str,
         tools: List[Dict[str, Any]],
         system_prompt: str = None,
-        tool_choice: str = "auto",
-        context: str = None,
-        preferred_methods: List[str] = None,
-        config: LLMConfig = None
+        config: LLMConfig = None,
+        session_id: str = None,
+        memory_rounds: int = None,
+        tenant_id: int = 0,
+        app_name: str = None
     ) -> Dict[str, Any]:
         """
         处理 LLM 代理请求
@@ -30,30 +31,31 @@ class LLMProxyService:
             query: 用户查询
             tools: 工具/函数定义列表
             system_prompt: 系统提示词
-            tool_choice: 工具选择策略
-            context: 额外上下文
-            preferred_methods: 优先使用方法列表
             config: LLM 配置，如果为 None 则使用默认配置
+            session_id: 会话ID，用于多轮对话记忆
+            memory_rounds: 记忆轮数限制
+            tenant_id: 租户ID
+            app_name: 应用名称
 
         Returns:
             Dict: 包含结构化输出结果和元信息
         """
         # 获取配置
         if config is None:
-            config = await get_default_llm_config()
+            config = await get_default_llm_config(tenant_id=tenant_id, app_name=app_name)
             if config is None:
                 raise ValueError("No LLM configuration found")
 
         # 创建结构化输出服务
         service = StructuredOutputService(config)
 
-        # 生成结构化输出
+        # 生成结构化输出（支持多轮对话记忆）
         result = await service.generate(
             query=query,
             tools=tools,
             system_prompt=system_prompt,
-            context=context,
-            preferred_methods=preferred_methods
+            session_id=session_id,
+            memory_rounds=memory_rounds
         )
 
         if not result.success:

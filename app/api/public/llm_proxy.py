@@ -1,12 +1,8 @@
 """
 LLM 代理公开接口 (API Key 认证)
 """
-from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, Request
 
-from fastapi import APIRouter, Depends, Header, Request
-from fastapi.exceptions import HTTPException
-
-from app.controllers.llm_config import llm_config_controller
 from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
 from app.log import logger
@@ -29,25 +25,14 @@ async def llm_proxy(
     try:
         params = await parse_request_params(request, LLMProxyRequest)
 
-        if not params.get("query"):
-            return Fail(code=400, msg="query 参数不能为空")
-        if not params.get("tools"):
-            return Fail(code=400, msg="tools 参数不能为空")
-
-        config = await llm_config_controller.get_default_config(
-            tenant_id=auth_info.get("tenant_id", 0),
-            app_name=auth_info.get("app_name", None)
-        )
-
-        if not config:
-            return Fail(code=404, msg="未找到 LLM 配置")
-
         result = await llm_proxy_service.process_request(
             query=params["query"],
             tools=params["tools"],
             system_prompt=params.get("system_prompt", ""),
-            tool_choice=params.get("tool_choice"),
-            config=config
+            session_id=params.get("session_id"),
+            memory_rounds=params.get("memory_rounds") if params.get("memory_rounds") else None,
+            tenant_id=auth_info.get("tenant_id", 0),
+            app_name=auth_info.get("app_name", None)
         )
 
         return Success(data=result)
