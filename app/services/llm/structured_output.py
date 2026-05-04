@@ -104,7 +104,11 @@ class StructuredOutputService:
     def __init__(self, config: LLMConfig):
         self.config = config
         self.litellm_params = config.litellm_params or {}
-        self.model_name = self.litellm_params.get("model", "gpt-3.5-turbo")
+        
+        # 使用配置名称作为模型名称（对应 LiteLLM 网关的 model_list 中的 model_name）
+        # 而不是 litellm_params 中的 model（那是实际调用的模型标识）
+        self.model_name = config.name
+        
         self.api_key = self.litellm_params.get("api_key", "")
         self.api_base = self.litellm_params.get("api_base", None)
         self.timeout = self.litellm_params.get("timeout", 60)
@@ -140,31 +144,96 @@ class StructuredOutputService:
             timeout=self.timeout
         )
 
+    def _parse_text_function_call(self, content: str, tools: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        解析文本格式的 function call
+
+        某些模型（如 DeepSeek）可能返回文本格式的 function call，例如：
+        ▶︎call_api
+        {
+          "name": "比亚迪",
+          "city": "重庆",
+          ...
+        }
+
+        Args:
+            content: LLM 返回的文本内容
+            tools: 工具定义列表
+
+        Returns:
+            解析后的参数字典，如果不是 function call 格式则返回 None
+        """
+        if not content or not tools:
+            return None
+
+        import re
+
+        # 获取第一个工具的名称
+        first_tool = tools[0]
+        if "function" in first_tool:
+            tool_name = first_tool.get("function", {}).get("name", "")
+        else:
+            tool_name = first_tool.get("name", "")
+
+        # 匹配 function call 标记和 JSON 内容
+        # 支持格式: ▶︎call_api { ... } 或 ```json\n{...}\n```
+        patterns = [
+            # 匹配 ▶︎call_api {...} 格式
+            rf'▶︎\s*{re.escape(tool_name)}\s*\n?({{.*?}})',
+            rf'▶︎\s*call_\w+\s*\n?({{.*?}})',
+            # 匹配 ```json\n{...}\n``` 格式
+            r'```json\s*\n(.*?)\n```',
+            # 匹配 ```\n{...}\n``` 格式
+            r'```\s*\n(.*?)\n```',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, content, re.DOTALL)
+            if match:
+                json_str = match.group(1).strip()
+                try:
+                    parsed = json.loads(json_str)
+                    # 验证解析结果是否包含工具的参数
+                    if isinstance(parsed, dict):
+                        return parsed
+                except json.JSONDecodeError:
+                    continue
+
+        return None
+
     def _create_dynamic_model(self, tools: List[Dict[str, Any]]) -> Type[BaseModel]:
-        """根据 tools 定义创建动态 Pydantic 模型"""
+        """根据 tools 定义创建动态 Pydantic 模型
+
+        合并所有工具的参数，所有字段都设为可选（Optional），
+        以支持多工具场景下不同工具返回不同参数的情况。
+        """
         if not tools:
             raise ValueError("tools 不能为空")
 
-        tool = tools[0]
-        # 支持两种格式：OpenAI 格式（有 function 字段）和简化格式（直接有 parameters）
-        if "function" in tool:
-            function_def = tool.get("function", {})
-        else:
-            function_def = tool
-        parameters = function_def.get("parameters", {})
-        properties = parameters.get("properties", {})
-        required = parameters.get("required", [])
+        from typing import Optional
 
-        # 构建字段定义
+        # 收集所有工具的参数
+        all_properties = {}
+        for tool in tools:
+            # 支持两种格式：OpenAI 格式（有 function 字段）和简化格式（直接有 parameters）
+            if "function" in tool:
+                function_def = tool.get("function", {})
+            else:
+                function_def = tool
+            parameters = function_def.get("parameters", {})
+            properties = parameters.get("properties", {})
+            all_properties.update(properties)
+
+        # 构建字段定义 - 所有字段都设为 Optional，以支持多工具场景
         fields = {}
-        for field_name, field_schema in properties.items():
+        for field_name, field_schema in all_properties.items():
             field_type = self._json_schema_to_python_type(field_schema)
             field_desc = field_schema.get("description", "")
-            field_default = ... if field_name in required else None
-            fields[field_name] = (field_type, Field(default=field_default, description=field_desc))
+            # 所有字段都设为 Optional，默认值为 None
+            fields[field_name] = (Optional[field_type], Field(default=None, description=field_desc))
 
         # 创建动态模型
-        model_name = function_def.get("name", "DynamicOutput").replace("_", " ").title().replace(" ", "")
+        model_name = "DynamicOutput"
         return create_model(model_name, **fields)
 
     def _json_schema_to_python_type(self, schema: Dict[str, Any]) -> Type:
@@ -315,6 +384,8 @@ class StructuredOutputService:
         """尝试使用指定方法"""
         if method == "with_structured_output":
             return await self._method_with_structured_output(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
+        elif method == "bind_tools_non_stream":
+            return await self._method_bind_tools_non_stream(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
         elif method == "bind_tools_stream":
             return await self._method_bind_tools_stream(query, tools, system_prompt, session_id, memory_rounds, tool_choice)
         elif method == "custom_fc_non_stream":
@@ -384,26 +455,29 @@ class StructuredOutputService:
         memory_rounds: int = None,
         tool_choice: str = "auto"
     ) -> StructuredOutputResult:
-        """方法1: with_structured_output - LangChain 官方 Function Calling"""
+        """方法1: with_structured_output - LangChain 官方结构化输出
+
+        使用 with_structured_output 直接获取结构化数据
+        """
         try:
             llm = self._create_llm()
             DynamicModel = self._create_dynamic_model(tools)
 
+            # 使用 with_structured_output
             structured_llm = llm.with_structured_output(DynamicModel)
 
             # 构建包含历史的messages
             messages = self._build_messages_with_history(query, system_prompt, session_id, memory_rounds)
 
+            # 非流式调用
             result_data = await structured_llm.ainvoke(messages)
 
-            # 保存对话到历史
             result = StructuredOutputResult(
                 success=True,
                 data=result_data.model_dump(),
                 method="with_structured_output"
             )
             self._save_exchange_to_history(session_id, query, result)
-
             return result
 
         except Exception as e:
@@ -411,6 +485,79 @@ class StructuredOutputService:
                 success=False,
                 error=f"{type(e).__name__}: {e}",
                 method="with_structured_output"
+            )
+
+    async def _method_bind_tools_non_stream(
+        self,
+        query: str,
+        tools: List[Dict[str, Any]],
+        system_prompt: str = None,
+        session_id: str = None,
+        memory_rounds: int = None,
+        tool_choice: str = "auto"
+    ) -> StructuredOutputResult:
+        """方法1b: bind_tools + 非流式调用
+
+        对于多工具场景，使用 bind_tools + 非流式调用。
+        只取第一个 tool_call，确保每次只返回一个工具的参数。
+        """
+        try:
+            llm = self._create_llm()
+
+            # 转换 tools 为 LangChain 格式
+            from langchain_core.utils.function_calling import convert_to_openai_tool
+            lc_tools = [convert_to_openai_tool(t) for t in tools]
+
+            # 使用 tool_choice="auto" 让 LLM 自动选择是否调用工具
+            llm_with_tools = llm.bind_tools(lc_tools, tool_choice="auto")
+
+            # 构建包含历史的messages
+            messages = self._build_messages_with_history(query, system_prompt, session_id, memory_rounds)
+
+            # 非流式调用
+            response = await llm_with_tools.ainvoke(messages)
+
+            # 检查是否有 tool calls - 只取第一个
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                # 只取第一个 tool_call，忽略其他的
+                tool_call = response.tool_calls[0]
+                args = tool_call.get("args", {})
+
+                # 直接返回参数，不进行合并验证
+                result = StructuredOutputResult(
+                    success=True,
+                    data=args,
+                    method="bind_tools_non_stream"
+                )
+                self._save_exchange_to_history(session_id, query, result)
+                return result
+            else:
+                # 如果没有 tool calls，检查 content 是否包含文本格式的 function call
+                content = response.content if hasattr(response, 'content') else str(response)
+                
+                # 尝试解析文本格式的 function call (如 ▶︎call_api {...})
+                parsed_args = self._parse_text_function_call(content, tools)
+                if parsed_args is not None:
+                    result = StructuredOutputResult(
+                        success=True,
+                        data=parsed_args,
+                        method="bind_tools_non_stream"
+                    )
+                    self._save_exchange_to_history(session_id, query, result)
+                    return result
+                
+                # 返回 LLM 的原始文本响应
+                return StructuredOutputResult(
+                    success=True,
+                    data={"_raw_response": content},
+                    method="bind_tools_non_stream"
+                )
+
+        except Exception as e:
+            return StructuredOutputResult(
+                success=False,
+                error=f"{type(e).__name__}: {e}",
+                method="bind_tools_non_stream"
             )
 
     async def _method_bind_tools_stream(
@@ -422,43 +569,63 @@ class StructuredOutputService:
         memory_rounds: int = None,
         tool_choice: str = "auto"
     ) -> StructuredOutputResult:
-        """方法2: bind_tools + 流式收集"""
+        """方法2: bind_tools + 流式收集
+
+        只取第一个 tool_call，确保每次只返回一个工具的参数。
+        """
         try:
             llm = self._create_llm()
-            DynamicModel = self._create_dynamic_model(tools)
 
             # 转换 tools 为 LangChain 格式
             from langchain_core.utils.function_calling import convert_to_openai_tool
             lc_tools = [convert_to_openai_tool(t) for t in tools]
 
-            llm_with_tools = llm.bind_tools(lc_tools)
+            # 使用 tool_choice="auto" 让 LLM 自动选择是否调用工具
+            llm_with_tools = llm.bind_tools(lc_tools, tool_choice="auto")
 
             # 构建包含历史的messages
             messages = self._build_messages_with_history(query, system_prompt, session_id, memory_rounds)
 
-            # 流式调用并收集 tool_calls
+            # 流式调用并收集 tool_calls 和文本内容
             tool_calls_data = []
+            text_content = []
             async for chunk in llm_with_tools.astream(messages):
                 if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
                     tool_calls_data.extend(chunk.tool_calls)
+                if hasattr(chunk, 'content') and chunk.content:
+                    text_content.append(chunk.content)
 
             if tool_calls_data:
-                # 解析第一个 tool_call 的参数
+                # 只取第一个 tool_call 的参数，忽略其他的
                 args = tool_calls_data[0].get("args", {})
-                # 验证
-                validated = DynamicModel(**args)
 
+                # 直接返回参数，不进行合并验证
                 result = StructuredOutputResult(
                     success=True,
-                    data=validated.model_dump(),
+                    data=args,
                     method="bind_tools_stream"
                 )
                 self._save_exchange_to_history(session_id, query, result)
                 return result
             else:
+                # 如果没有收到 tool calls，检查文本内容是否包含 function call 标记
+                content = "".join(text_content) if text_content else ""
+
+                # 尝试解析文本格式的 function call (如 ▶︎call_api {...})
+                parsed_args = self._parse_text_function_call(content, tools)
+                if parsed_args is not None:
+                    result = StructuredOutputResult(
+                        success=True,
+                        data=parsed_args,
+                        method="bind_tools_stream"
+                    )
+                    self._save_exchange_to_history(session_id, query, result)
+                    return result
+
+                # 返回 LLM 的原始文本响应
                 return StructuredOutputResult(
-                    success=False,
-                    error="No tool calls received",
+                    success=True,
+                    data={"_raw_response": content},
                     method="bind_tools_stream"
                 )
 
@@ -518,7 +685,7 @@ class StructuredOutputService:
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{base_url}/chat/completions",
+                    f"{base_url}/v1/chat/completions",
                     json=payload,
                     headers=headers,
                     timeout=self.timeout
@@ -544,6 +711,22 @@ class StructuredOutputService:
                 self._save_exchange_to_history(session_id, query, result)
                 return result
             else:
+                # 如果没有 tool_calls，检查 content 是否包含文本格式的 function call
+                content = message.get("content", "")
+                if content:
+                    parsed_args = self._parse_text_function_call(content, tools)
+                    if parsed_args is not None:
+                        validated = DynamicModel(**parsed_args)
+                        result = StructuredOutputResult(
+                            success=True,
+                            data=validated.model_dump(),
+                            method="custom_fc_non_stream",
+                            prompt_tokens=result_data.get("usage", {}).get("prompt_tokens", 0),
+                            completion_tokens=result_data.get("usage", {}).get("completion_tokens", 0)
+                        )
+                        self._save_exchange_to_history(session_id, query, result)
+                        return result
+                
                 return StructuredOutputResult(
                     success=False,
                     error="No tool calls in response",
@@ -611,7 +794,7 @@ class StructuredOutputService:
             async with httpx.AsyncClient() as client:
                 async with client.stream(
                     "POST",
-                    f"{base_url}/chat/completions",
+                    f"{base_url}/v1/chat/completions",
                     json=payload,
                     headers=headers,
                     timeout=self.timeout
@@ -683,6 +866,9 @@ class StructuredOutputService:
             # 构建提示模板
             format_instructions = parser.get_format_instructions()
 
+            # 构建工具描述
+            tools_description = self._build_tools_description(tools)
+
             # 使用LangChain原生历史管理
             history_messages = []
             if session_id:
@@ -697,6 +883,11 @@ class StructuredOutputService:
             history_text = "\n".join(history_messages) + "\n\n" if history_messages else ""
 
             prompt_text = f"""{system_prompt or 'You are a helpful assistant.'}
+
+Available tools:
+{tools_description}
+
+You must respond with a JSON object indicating which tool to use and its parameters.
 
 Please provide your response in the following JSON format:
 {format_instructions}
@@ -771,6 +962,9 @@ Please provide your response in the following JSON format:
             # 构建提示模板
             format_instructions = parser.get_format_instructions()
 
+            # 构建工具描述
+            tools_description = self._build_tools_description(tools)
+
             # 使用LangChain原生历史管理
             history_messages = []
             if session_id:
@@ -785,6 +979,11 @@ Please provide your response in the following JSON format:
             history_text = "\n".join(history_messages) + "\n\n" if history_messages else ""
 
             prompt_text = f"""{system_prompt or 'You are a helpful assistant.'}
+
+Available tools:
+{tools_description}
+
+You must respond with a JSON object indicating which tool to use and its parameters.
 
 Please provide your response in the following JSON format:
 {format_instructions}
@@ -831,6 +1030,23 @@ Please provide your response in the following JSON format:
                     error=f"{type(inner_e).__name__}: {inner_e}",
                     method="json_parser"
                 )
+
+    def _build_tools_description(self, tools: List[Dict[str, Any]]) -> str:
+        """构建工具描述文本"""
+        descriptions = []
+        for tool in tools:
+            if "function" in tool:
+                func = tool["function"]
+                name = func.get("name", "unknown")
+                desc = func.get("description", "")
+                params = func.get("parameters", {})
+                param_desc = ""
+                if "properties" in params:
+                    for prop_name, prop_info in params["properties"].items():
+                        prop_desc = prop_info.get("description", "")
+                        param_desc += f"\n      - {prop_name}: {prop_desc}"
+                descriptions.append(f"  - {name}: {desc}{param_desc}")
+        return "\n".join(descriptions)
 
     async def _record_method_failure(self, method: str, error: str):
         """记录方法失败"""

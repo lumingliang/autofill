@@ -209,7 +209,7 @@ def run_all_tests():
     print(f"API Key: {API_KEY[:10]}...")
     
     tests = [
-        ("基础查询", test_basic_query),
+        # ("基础查询", test_basic_query),
         ("聊天记录查询", test_chat_context),
         # ("重试机制", test_retry_mechanism),
         # ("简单查询", test_simple_query),

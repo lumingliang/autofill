@@ -85,10 +85,14 @@ class APIExecutor:
         # 添加 query 参数
         query_parts = []
         for key in parsed.query_params.keys():
-            if key in params:
+            if key in params and params[key] is not None:
                 query_parts.append(f"{key}={params[key]}")
             else:
-                query_parts.append(f"{key}={parsed.query_params[key]}")
+                # 如果原始值是占位符，跳过该参数
+                original_value = parsed.query_params[key]
+                if isinstance(original_value, str) and original_value.startswith('{') and original_value.endswith('}'):
+                    continue
+                query_parts.append(f"{key}={original_value}")
 
         if query_parts:
             url += "?" + "&".join(query_parts)
@@ -112,11 +116,16 @@ class APIExecutor:
 
         body_data = {}
         for key in parsed.body_params.keys():
-            # 优先使用 params 中的非空值，否则使用原始值
-            if key in params and params[key] not in (None, ""):
+            # 优先使用 params 中的值（包括空字符串），只有 None 时才使用原始值
+            if key in params and params[key] is not None:
                 body_data[key] = params[key]
             else:
-                body_data[key] = parsed.body_params[key]
+                # 如果原始值是占位符（如 {name}），使用空字符串
+                original_value = parsed.body_params[key]
+                if isinstance(original_value, str) and original_value.startswith('{') and original_value.endswith('}'):
+                    body_data[key] = ""
+                else:
+                    body_data[key] = original_value
 
         # 根据 content-type 序列化
         content_type = parsed.content_type or "application/json"

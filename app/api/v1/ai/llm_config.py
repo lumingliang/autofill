@@ -73,7 +73,7 @@ async def get_llm_config(
     """获取 LLM 配置详情"""
     await AuthControl.is_authed(token)
     config = await llm_config_controller.get(id=id)
-    return Success(data=await config.to_dict(include_sensitive=True))
+    return Success(data=await config.to_dict())
 
 
 @llm_config_router.post("/llm_config/create", summary="创建 LLM 配置")

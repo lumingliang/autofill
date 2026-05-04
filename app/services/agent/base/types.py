@@ -32,10 +32,11 @@ class AgentInput:
     curl: str
     system_prompt: str = ""
     expected_result: str = ""
-    max_attempts: int = 5
+    max_attempts: int = 10
     timeout: int = 30
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
+    llm_method: str = "bind_tools_stream"
     context: AgentContext = field(default_factory=AgentContext)
 
 
@@ -60,6 +61,14 @@ class AttemptRecord:
 
 
 @dataclass
+class SelectedData:
+    """选中的数据"""
+    index: int = -1
+    data: Any = None
+    reason: str = ""
+
+
+@dataclass
 class AgentOutput:
     """Agent 输出"""
     success: bool
@@ -69,3 +78,4 @@ class AgentOutput:
     attempts: List[AttemptRecord] = field(default_factory=list)
     total_attempts: int = 0
     execution_time_ms: int = 0
+    selected: SelectedData = field(default_factory=SelectedData)
