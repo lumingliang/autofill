@@ -101,7 +101,7 @@ class OptionItem(BaseModel):
     """选项项"""
     value: str = ""
     label: str = ""
-    base_annotation: str = ""
+    fill_instruction: str = Field(default="", description="选项填写指引/说明")
     corrections: List[Dict] = []
     is_deleted: bool = False
 
