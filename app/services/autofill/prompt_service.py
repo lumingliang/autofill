@@ -30,10 +30,10 @@ def build_fields_instructions(fields: List[FieldSpec]) -> str:
             option_strs = []
             for opt in items:
                 label = opt['label']
-                base = opt.get('base_annotation', '')
+                fill_inst = opt.get('fill_instruction', '')
                 corrections_list = opt.get('corrections', [])
                 corrections_text = "；".join([c['text'] for c in corrections_list])
-                full_desc = f"{label}：{base}"
+                full_desc = f"{label}：{fill_inst}" if fill_inst else label
                 if corrections_text:
                     full_desc += f"；人工补充：{corrections_text}"
                 option_strs.append(f"  - {full_desc}")
@@ -75,10 +75,10 @@ def build_function_schema(field_group: FieldGroupConfig, fields: List[FieldSpec]
             option_descs = []
             for opt in items:
                 label = opt['label']
-                base = opt.get('base_annotation', '')
+                fill_inst = opt.get('fill_instruction', '')
                 corrections_list = opt.get('corrections', [])
                 corrections_text = "；".join([c['text'] for c in corrections_list])
-                full = f"{label}：{base}"
+                full = f"{label}：{fill_inst}" if fill_inst else label
                 if corrections_text:
                     full += f"；人工补充：{corrections_text}"
                 option_descs.append(full)

@@ -84,6 +84,29 @@
           <a-textarea v-model:value="form.prompt_template_base"
             placeholder="请输入Prompt基础模板，使用{{fields_instructions}}和{{query}}作为占位符" :rows="6" />
         </a-form-item>
+        <a-form-item label="输出模板" name="output_templates">
+          <div class="output-templates-editor">
+            <div v-for="(template, key) in form.output_templates" :key="key" class="template-item">
+              <a-card size="small" :title="key" class="template-card">
+                <template #extra>
+                  <a-button type="link" danger size="small" @click="removeOutputTemplate(key)">
+                    <DeleteOutlined />
+                  </a-button>
+                </template>
+                <a-form-item label="模板内容" class="mb-2">
+                  <a-textarea v-model:value="form.output_templates[key].template" placeholder="请输入模板内容" :rows="4" />
+                </a-form-item>
+                <a-form-item label="描述" class="mb-0">
+                  <a-input v-model:value="form.output_templates[key].description" placeholder="请输入模板描述" />
+                </a-form-item>
+              </a-card>
+            </div>
+            <a-button type="dashed" block @click="showAddTemplateModal">
+              <PlusOutlined />
+              添加输出模板
+            </a-button>
+          </div>
+        </a-form-item>
         <a-form-item label="字段组描述" name="description">
           <a-textarea v-model:value="form.description" placeholder="请输入字段组描述" :rows="3" />
         </a-form-item>
@@ -151,6 +174,21 @@
             :show-toolbar="true" />
         </a-card>
 
+        <!-- 输出模板 -->
+        <a-card title="输出模板" class="detail-card">
+          <a-tabs v-if="detailData.output_templates && Object.keys(detailData.output_templates).length > 0">
+            <a-tab-pane v-for="(template, key) in detailData.output_templates" :key="key" :tab="key">
+              <a-typography-paragraph>
+                <pre class="code-block">{{ template.template }}</pre>
+              </a-typography-paragraph>
+              <a-descriptions size="small" :column="1">
+                <a-descriptions-item label="描述">{{ template.description || '-' }}</a-descriptions-item>
+              </a-descriptions>
+            </a-tab-pane>
+          </a-tabs>
+          <a-empty v-else description="暂无输出模板" />
+        </a-card>
+
         <!-- 字段明细 -->
         <a-card title="字段明细" class="detail-card">
           <a-table :dataSource="detailData.field_specs" :columns="fieldSpecColumns" size="small" :pagination="false">
@@ -182,6 +220,21 @@
         </div>
       </div>
     </a-modal>
+
+    <!-- 添加输出模板弹窗 -->
+    <a-modal v-model:open="addTemplateModalVisible" title="添加输出模板" @ok="confirmAddTemplate">
+      <a-form>
+        <a-form-item label="模板名称" required>
+          <a-input v-model:value="newTemplateKey" placeholder="请输入模板名称，如：summary、report等" />
+        </a-form-item>
+        <a-form-item label="模板内容">
+          <a-textarea v-model:value="newTemplateForm.template" placeholder="请输入模板内容" :rows="4" />
+        </a-form-item>
+        <a-form-item label="描述">
+          <a-input v-model:value="newTemplateForm.description" placeholder="请输入模板描述" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -192,7 +245,7 @@ import JsonViewer from '@/components/JsonViewer/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
 import FieldSpecManagement from '@/views/autofill/field_spec/index.vue'
-import { DownloadOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
@@ -239,6 +292,14 @@ const modalForm = reactive({
 // 字段管理弹窗
 const fieldModalVisible = ref(false)
 const currentFieldGroup = ref<any>(null)
+
+// 添加输出模板弹窗
+const addTemplateModalVisible = ref(false)
+const newTemplateKey = ref('')
+const newTemplateForm = reactive({
+  template: '',
+  description: ''
+})
 
 // 详情弹窗
 const detailModalVisible = ref(false)
@@ -425,6 +486,35 @@ const handleManageFields = (record: any) => {
   fieldModalVisible.value = true
 }
 
+// 输出模板相关方法
+const showAddTemplateModal = () => {
+  newTemplateKey.value = ''
+  newTemplateForm.template = ''
+  newTemplateForm.description = ''
+  addTemplateModalVisible.value = true
+}
+
+const confirmAddTemplate = () => {
+  if (!newTemplateKey.value.trim()) {
+    message.error('请输入模板名称')
+    return
+  }
+  if (modalForm.output_templates[newTemplateKey.value]) {
+    message.error('该模板名称已存在')
+    return
+  }
+  modalForm.output_templates[newTemplateKey.value] = {
+    template: newTemplateForm.template,
+    description: newTemplateForm.description
+  }
+  addTemplateModalVisible.value = false
+  message.success('添加成功')
+}
+
+const removeOutputTemplate = (key: string) => {
+  delete modalForm.output_templates[key]
+}
+
 // 查看详情
 const handleViewDetail = async (record: any) => {
   currentDetailId.value = record.id
@@ -562,6 +652,22 @@ onMounted(() => {
       justify-content: flex-end;
       padding-top: 16px;
       border-top: 1px solid #e8e8e8;
+    }
+  }
+
+  .output-templates-editor {
+    .template-item {
+      margin-bottom: 12px;
+
+      .template-card {
+        .mb-2 {
+          margin-bottom: 8px;
+        }
+
+        .mb-0 {
+          margin-bottom: 0;
+        }
+      }
     }
   }
 }

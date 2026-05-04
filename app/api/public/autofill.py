@@ -344,35 +344,37 @@ async def get_field_group_handler(
     auth_info: dict
 ):
     """
-    查询字段组配置处理逻辑
+    查询字段组配置处理逻辑（改造后）
+    - 支持通过 page_name + group_name 查询
     """
     from pydantic import BaseModel
 
     class FieldGroupRequest(BaseModel):
-        page_code: Optional[str] = None
-        group_code: Optional[str] = None
-        group_name: Optional[str] = None
+        page_name: str = Field(..., description="页面名称（必填）")
+        group_name: str = Field(..., description="字段组名称（必填）")
 
     params = await parse_request_params(request, FieldGroupRequest)
 
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
 
-    page_query = Q(tenant_id=tenant_id, app_name=app_name)
-    if params.get("page_code"):
-        page_query &= Q(page_code=params["page_code"])
+    # 使用 page_name 查询页面
+    page = await fill_page_controller.model.filter(
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_name=params.get("page_name")
+    ).first()
 
-    pages = await fill_page_controller.model.filter(page_query).all()
-    page_ids = [p.id for p in pages]
-
-    if not page_ids:
+    if not page:
         return Success(data=[])
 
-    q = Q(page_id__in=page_ids)
-    if params.get("group_code"):
-        q &= Q(group_code=params["group_code"])
-    if params.get("group_name"):
-        q &= Q(group_name__icontains=params["group_name"])
+    # 构建字段组查询条件
+    q = Q(
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_id=page.id,
+        group_name=params.get("group_name")
+    )
 
     field_groups = await field_group_config_controller.model.filter(q).all()
 
@@ -382,6 +384,7 @@ async def get_field_group_handler(
             "group_name": fg.group_name,
             "group_code": fg.group_code,
             "page_id": fg.page_id,
+            "page_name": page.page_name if page else "",
             "prompt_template_base": fg.prompt_template_base,
             "output_templates": fg.output_templates,
             "version": fg.version,
@@ -411,38 +414,65 @@ async def list_field_spec_handler(
     auth_info: dict
 ):
     """
-    查询字段明细列表处理逻辑（多对多关联）
+    查询字段明细列表处理逻辑（改造后）
+    - 支持通过 page_name + group_name + field_name 查询
     """
     from pydantic import BaseModel
     from app.models.autofill import FieldGroupFieldSpec
 
     class FieldSpecListRequest(BaseModel):
-        field_group_id: int
+        page_name: str = Field(..., description="页面名称（必填）")
+        group_name: str = Field(..., description="字段组名称（必填）")
+        field_name: Optional[str] = Field(None, description="字段名（可选，精确匹配）")
 
     params = await parse_request_params(request, FieldSpecListRequest)
 
-    if not params.get("field_group_id"):
-        raise HTTPException(status_code=400, detail="field_group_id is required")
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
 
-    field_group = await field_group_config_controller.model.filter(
-        id=params["field_group_id"]
-    ).first()
-
-    if not field_group:
-        raise HTTPException(status_code=404, detail="Field group not found")
-
+    # 1. 查找页面
     page = await fill_page_controller.model.filter(
-        id=field_group.page_id,
-        tenant_id=auth_info["tenant_id"],
-        app_name=auth_info["app_name"]
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_name=params.get("page_name")
     ).first()
 
     if not page:
-        raise HTTPException(status_code=403, detail="Access denied")
+        return Success(data=[])
 
-    field_specs = await field_spec_controller.get_by_field_group(params["field_group_id"])
+    # 2. 查找字段组
+    field_group = await field_group_config_controller.model.filter(
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_id=page.id,
+        group_name=params.get("group_name")
+    ).first()
 
-    # 获取每个字段关联的字段组
+    if not field_group:
+        return Success(data=[])
+
+    # 3. 通过中间表查询关联的字段ID
+    relations = await FieldGroupFieldSpec.filter(
+        field_group_id=field_group.id,
+        tenant_id=tenant_id,
+        app_name=app_name
+    ).all()
+
+    field_spec_ids = [r.field_spec_id for r in relations]
+
+    if not field_spec_ids:
+        return Success(data=[])
+
+    # 4. 构建字段查询条件
+    q = Q(id__in=field_spec_ids, is_active=True)
+
+    # 如果传入了 field_name，精确匹配
+    if params.get("field_name"):
+        q &= Q(field_name=params["field_name"])
+
+    field_specs = await field_spec_controller.model.filter(q).all()
+
+    # 5. 获取每个字段关联的字段组
     result = []
     for fs in field_specs:
         relations = await FieldGroupFieldSpec.filter(field_spec_id=fs.id).all()
@@ -724,6 +754,230 @@ async def get_submenus_tree(
     可选参数: class_name（分类名称）
     """
     return await get_submenus_tree_handler(request, auth_info)
+
+
+# ==================== 字段组批量创建/更新接口 ====================
+
+async def upsert_field_group_handler(
+    request: Request,
+    auth_info: dict
+):
+    """
+    创建或更新字段组，并批量处理字段列表
+    - 如果字段组不存在，自动创建
+    - 如果页面不存在，返回错误
+    - 遍历字段列表：字段不存在则创建并添加关联，存在则只添加关联关系
+    """
+    from pydantic import BaseModel
+    from app.models.autofill import FieldGroupFieldSpec, generate_field_group_code
+    from app.schemas.fill_page import FieldGroupConfigCreate, OutputTemplateItem, FieldSpecCreate, FieldSpecUpdate, FieldOptions
+
+    class FieldItem(BaseModel):
+        field_name: str
+        field_label: Optional[str] = None
+        field_type: str = "text"
+        fill_instruction: Optional[str] = None
+        options: Optional[Dict] = None
+
+    class UpsertFieldGroupRequest(BaseModel):
+        page_name: str
+        group_name: str
+        group_code: Optional[str] = None
+        output_templates: Optional[Dict] = None
+        prompt_template_base: Optional[str] = None
+        fields: List[FieldItem] = []
+
+    params = await parse_request_params(request, UpsertFieldGroupRequest)
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+
+    # 1. 查找页面
+    page = await fill_page_controller.model.filter(
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_name=params["page_name"]
+    ).first()
+
+    if not page:
+        raise HTTPException(status_code=404, detail=f"Page '{params['page_name']}' not found")
+
+    # 2. 查找或创建字段组
+    field_group = await field_group_config_controller.model.filter(
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_id=page.id,
+        group_name=params["group_name"]
+    ).first()
+
+    if field_group:
+        # 更新字段组
+        update_data = {}
+        if params.get("output_templates") is not None:
+            update_data["output_templates"] = params["output_templates"]
+        if params.get("prompt_template_base") is not None:
+            update_data["prompt_template_base"] = params["prompt_template_base"]
+        if update_data:
+            update_data["version"] = field_group.version + 1
+            await field_group_config_controller.update(id=field_group.id, obj_in=update_data)
+            field_group = await field_group_config_controller.get(id=field_group.id)
+    else:
+        # 创建字段组
+        group_code = params.get("group_code") or generate_field_group_code()
+        output_templates = params.get("output_templates") or {}
+
+        # 转换output_templates格式
+        formatted_templates = {}
+        for key, value in output_templates.items():
+            if isinstance(value, dict):
+                formatted_templates[key] = OutputTemplateItem(**value)
+            else:
+                formatted_templates[key] = OutputTemplateItem(template=value, description="")
+
+        create_data = FieldGroupConfigCreate(
+            group_name=params["group_name"],
+            group_code=group_code,
+            page_id=page.id,
+            page_name=page.page_name,
+            app_name=app_name,
+            tenant_id=tenant_id,
+            output_templates=formatted_templates,
+            prompt_template_base=params.get("prompt_template_base") or ""
+        )
+        field_group = await field_group_config_controller.create_field_group(obj_in=create_data)
+
+    # 3. 批量处理字段列表
+    processed_fields = []
+    fields = params.get("fields", [])
+
+    for field_item in fields:
+        field_name = field_item["field_name"]
+        field_label = field_item.get("field_label") or field_name
+        field_type = field_item.get("field_type", "text")
+        fill_instruction = field_item.get("fill_instruction") or ""
+        options = field_item.get("options", {})
+
+        # 验证field_type
+        if field_type not in ["select", "text"]:
+            field_type = "text"
+
+        # 查找或创建字段
+        field_spec = await field_spec_controller.model.filter(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            field_name=field_name
+        ).first()
+
+        is_new_relation = False
+
+        if field_spec:
+            # 字段已存在，更新信息
+            # 先获取字段当前关联的所有字段组ID
+            existing_relations = await FieldGroupFieldSpec.filter(field_spec_id=field_spec.id).all()
+            existing_group_ids = [r.field_group_id for r in existing_relations]
+            
+            # 确保包含当前字段组ID
+            if field_group.id not in existing_group_ids:
+                existing_group_ids.append(field_group.id)
+            
+            update_data = FieldSpecUpdate(
+                id=field_spec.id,
+                field_label=field_label,
+                field_type=field_type,
+                fill_instruction=fill_instruction,
+                field_group_ids=existing_group_ids
+            )
+
+            # 处理options
+            if options:
+                if isinstance(options, dict):
+                    update_data.options = FieldOptions(**options)
+                else:
+                    update_data.options = options
+
+            field_spec = await field_spec_controller.update_field_spec(
+                id=field_spec.id,
+                obj_in=update_data,
+                tenant_id=tenant_id,
+                app_name=app_name
+            )
+        else:
+            # 字段不存在，创建新字段
+            create_data = FieldSpecCreate(
+                field_name=field_name,
+                field_label=field_label,
+                field_type=field_type,
+                fill_instruction=fill_instruction,
+                field_group_ids=[field_group.id]
+            )
+
+            # 处理options
+            if options:
+                if isinstance(options, dict):
+                    create_data.options = FieldOptions(**options)
+                else:
+                    create_data.options = options
+
+            field_spec = await field_spec_controller.create_field_spec(
+                obj_in=create_data,
+                tenant_id=tenant_id,
+                app_name=app_name
+            )
+            is_new_relation = True
+
+        # 确保字段与当前字段组的关联关系
+        existing_relation = await FieldGroupFieldSpec.filter(
+            field_group_id=field_group.id,
+            field_spec_id=field_spec.id
+        ).first()
+
+        if not existing_relation:
+            await FieldGroupFieldSpec.create(
+                field_group_id=field_group.id,
+                field_spec_id=field_spec.id,
+                tenant_id=tenant_id,
+                app_name=app_name
+            )
+            is_new_relation = True
+
+        # 获取字段关联的所有字段组
+        relations = await FieldGroupFieldSpec.filter(field_spec_id=field_spec.id).all()
+        group_ids = [r.field_group_id for r in relations]
+
+        processed_fields.append({
+            "id": field_spec.id,
+            "field_name": field_spec.field_name,
+            "field_label": field_spec.field_label,
+            "field_type": field_spec.field_type,
+            "field_group_ids": group_ids,
+            "is_new_relation": is_new_relation
+        })
+
+    return Success(data={
+        "id": field_group.id,
+        "group_name": field_group.group_name,
+        "group_code": field_group.group_code,
+        "page_id": field_group.page_id,
+        "page_name": page.page_name,
+        "output_templates": field_group.output_templates,
+        "version": field_group.version,
+        "fields": processed_fields,
+        "field_count": len(processed_fields)
+    })
+
+
+@autofill_public_router.post("/autofill/field_group/upsert", summary="创建或更新字段组（含批量字段）")
+async def upsert_field_group(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    创建或更新字段组，并批量处理字段列表
+    支持字段组不存在时自动创建
+    支持字段不存在时自动创建，存在时更新并确保关联关系
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
+    """
+    return await upsert_field_group_handler(request, auth_info)
 
 
 # ==================== 字段明细管理公共接口 ====================

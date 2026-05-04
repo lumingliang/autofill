@@ -144,7 +144,7 @@
                 <a-space>
                   <a-input v-model:value="item.value" placeholder="选项值" style="width: 150px" />
                   <a-input v-model:value="item.label" placeholder="选项标签" style="width: 150px" />
-                  <a-input v-model:value="item.base_annotation" placeholder="基础说明" style="width: 200px" />
+                  <a-input v-model:value="item.fill_instruction" placeholder="填写说明" style="width: 200px" />
                   <a-button type="link" danger @click="removeOption(index)">
                     <DeleteOutlined />
                   </a-button>
@@ -413,7 +413,7 @@ const addOption = () => {
   modalForm.options.items.push({
     value: '',
     label: '',
-    base_annotation: '',
+    fill_instruction: '',
     corrections: [],
     is_deleted: false,
   })
@@ -470,7 +470,7 @@ const handleSyncSwagger = async () => {
       modalForm.options.items = res.data?.endpoints?.map((ep: any) => ({
         value: ep.operation_id || `${ep.method}_${ep.path.replace(/\//g, '_')}`,
         label: ep.summary || ep.description || `${ep.method.toUpperCase()} ${ep.path}`,
-        base_annotation: `${ep.method.toUpperCase()} ${ep.path}${ep.description ? '\n' + ep.description : ''}`,
+        fill_instruction: `${ep.method.toUpperCase()} ${ep.path}${ep.description ? '\n' + ep.description : ''}`,
         corrections: [],
         is_deleted: false,
       })) || []
