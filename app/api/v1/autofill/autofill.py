@@ -385,16 +385,27 @@ async def list_dropdown(
 async def get_dropdown_tree(
     app_name: str = Query(..., description="应用名称"),
     parent_id: int = Query(0, description="父选项ID"),
+    tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
 
-    tenant_id = current_user.current_tenant_id
-    if tenant_id <= 0 and is_superuser(current_user):
-        # 超级管理员需要指定租户
-        return Fail(code=400, msg="请指定租户ID")
+    effective_tenant_id = tenant_id
+    if effective_tenant_id <= 0:
+        effective_tenant_id = current_user.current_tenant_id
 
-    tree = await dropdown_option_controller.get_tree(tenant_id, app_name, parent_id)
+    if effective_tenant_id <= 0:
+        # 如果没有指定租户，尝试从现有数据中获取
+        first_option = await dropdown_option_controller.model.filter(app_name=app_name).first()
+        if first_option:
+            effective_tenant_id = first_option.tenant_id
+        elif is_superuser(current_user):
+            # 超级管理员可以查看所有租户的数据，默认使用租户1
+            effective_tenant_id = 1
+        else:
+            return Fail(code=400, msg="请指定租户ID")
+
+    tree = await dropdown_option_controller.get_tree(effective_tenant_id, app_name, parent_id)
     return Success(data=tree)
 
 
