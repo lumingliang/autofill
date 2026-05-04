@@ -70,6 +70,7 @@ declare module 'vue' {
     ATree: typeof import('ant-design-vue/es')['Tree']
     ATreeSelect: typeof import('ant-design-vue/es')['TreeSelect']
     ATypographyParagraph: typeof import('ant-design-vue/es')['TypographyParagraph']
+    ATypographyText: typeof import('ant-design-vue/es')['TypographyText']
     AUpload: typeof import('ant-design-vue/es')['Upload']
     CrudTable: typeof import('./src/components/CrudTable/index.vue')['default']
     FilterForm: typeof import('./src/components/FilterForm/index.vue')['default']

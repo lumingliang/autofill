@@ -19,6 +19,12 @@ def generate_field_group_code():
     return f"fg_{random_str}"
 
 
+def generate_page_code():
+    """生成页面唯一编码: page_{16位随机字符串}"""
+    random_str = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(16))
+    return f"page_{random_str}"
+
+
 class AppManagement(BaseModel, TimestampMixin):
     """应用管理表"""
     app_name = fields.CharField(max_length=64, default="", description="应用名称(英文)", index=True)
@@ -90,7 +96,7 @@ class FieldType(str, Enum):
 class FillPage(BaseModel, TimestampMixin):
     """填单页面管理表"""
     page_name = fields.CharField(max_length=64, default="", description="页面名称", index=True)
-    page_code = fields.CharField(max_length=64, default="", description="页面编码", index=True)
+    page_code = fields.CharField(max_length=64, default=generate_page_code, description="页面编码", index=True)
     app_id = fields.BigIntField(default=0, description="关联应用ID", index=True)
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
@@ -99,6 +105,19 @@ class FillPage(BaseModel, TimestampMixin):
 
     class Meta:
         table = "fill_page"
+
+    async def to_dict(self, exclude_fields: list[str] | None = None):
+        """转换为字典，同时返回 app_id 和 app_name"""
+        if exclude_fields is None:
+            exclude_fields = []
+
+        data = await super().to_dict(exclude_fields=exclude_fields)
+
+        # 确保 app_id 和 app_name 都在数据中
+        data["app_id"] = self.app_id
+        data["app_name"] = self.app_name
+
+        return data
 
 
 class FieldGroupConfig(BaseModel, TimestampMixin):
@@ -120,16 +139,27 @@ class FieldGroupConfig(BaseModel, TimestampMixin):
 
 
 class FieldSpec(BaseModel, TimestampMixin):
-    """字段明细表 - 核心表"""
-    field_group_id = fields.BigIntField(default=0, description="关联字段组ID", index=True)
+    """字段明细表 - 核心表（多对多关联字段组，通过中间表显式查询）"""
     field_name = fields.CharField(max_length=64, default="", description="字段英文名（用于JSON输出）")
     field_label = fields.CharField(default="", max_length=128, description="字段显示名称")
     field_type = fields.CharEnumField(FieldType, default=FieldType.TEXT, description="字段类型")
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     fill_instruction = fields.TextField(default="", description="字段填写指引（用于生成LLM描述）")
-    options = fields.JSONField(default=dict, description="select类型选项配置，含source/api_identifier/items/last_sync_at")
+    options = fields.JSONField(default=dict, description="select类型选项配置，含source/api_identifier/items/last_sync_at/swagger_json/appkey")
     corrections = fields.JSONField(default=list, description="text类型全局批注列表[{id, text, created_by, created_at}]")
     is_active = fields.BooleanField(default=True, description="是否启用")
 
     class Meta:
         table = "field_spec"
+
+
+class FieldGroupFieldSpec(BaseModel, TimestampMixin):
+    """字段组与字段关联中间表（多对多关系）"""
+    field_group_id = fields.BigIntField(default=0, description="字段组ID", index=True)
+    field_spec_id = fields.BigIntField(default=0, description="字段明细ID", index=True)
+    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
+
+    class Meta:
+        table = "field_group_field_spec"

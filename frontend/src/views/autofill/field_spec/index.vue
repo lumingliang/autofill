@@ -48,6 +48,14 @@
             {{ record.field_type === 'select' ? '下拉选择' : '文本输入' }}
           </a-tag>
         </template>
+        <template v-if="column.key === 'field_groups'">
+          <a-space v-if="record.field_groups && record.field_groups.length > 0" wrap>
+            <a-tag v-for="group in record.field_groups" :key="group.id" color="blue">
+              {{ group.group_name }}
+            </a-tag>
+          </a-space>
+          <span v-else>-</span>
+        </template>
         <template v-if="column.key === 'is_active'">
           <a-tag :color="record.is_active ? 'green' : 'red'">
             {{ record.is_active ? '启用' : '禁用' }}
@@ -71,8 +79,8 @@
 
       <!-- 弹窗表单 -->
       <template #modal-form="{ form }">
-        <a-form-item label="所属字段组" name="field_group_id">
-          <a-select v-model:value="form.field_group_id" placeholder="请选择字段组" :disabled="!!props.fieldGroupId"
+        <a-form-item label="关联字段组" name="field_group_ids">
+          <a-select v-model:value="form.field_group_ids" placeholder="请选择关联字段组（可多选）" mode="multiple"
             :options="fieldGroupOptions" />
         </a-form-item>
         <a-form-item label="字段名" name="field_name">
@@ -103,6 +111,33 @@
           <a-form-item v-if="form.options.source === 'api'" label="API标识" name="options.api_identifier">
             <a-input v-model:value="form.options.api_identifier" placeholder="请输入API标识" />
           </a-form-item>
+
+          <!-- API类型Swagger配置 -->
+          <template v-if="form.options.source === 'api'">
+            <a-form-item label="AppKey" name="options.appkey">
+              <a-input-password v-model:value="form.options.appkey" placeholder="请输入API调用鉴权密钥（调用该接口时会使用此密钥进行鉴权）" />
+            </a-form-item>
+            <a-form-item label="Swagger JSON" name="options.swagger_json">
+              <a-textarea v-model:value="form.options.swagger_json" placeholder="请粘贴 OpenAI Swagger JSON 文档，用于自动同步API端点"
+                :rows="8" />
+            </a-form-item>
+            <a-form-item>
+              <a-button type="primary" :loading="syncLoading" @click="handleSyncSwagger">
+                <SyncOutlined v-if="!syncLoading" />
+                同步Swagger文档
+              </a-button>
+              <a-typography-text type="secondary" style="margin-left: 8px">
+                点击同步将解析Swagger文档并自动生成选项列表
+              </a-typography-text>
+            </a-form-item>
+            <a-form-item v-if="form.options.last_sync_at" label="最后同步时间">
+              <a-tag color="blue">{{ formatDateTime(form.options.last_sync_at) }}</a-tag>
+              <a-typography-text type="secondary" style="margin-left: 8px">
+                共同步 {{ form.options.sync_endpoints_count || 0 }} 个端点
+              </a-typography-text>
+            </a-form-item>
+          </template>
+
           <template v-if="form.options.source === 'static'">
             <a-form-item label="选项列表">
               <div v-for="(item, index) in form.options.items" :key="index" class="option-item">
@@ -155,9 +190,9 @@ import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
 interface Props {
   fieldGroupId?: number
@@ -199,9 +234,10 @@ const pagination = reactive({
 const modalTitle = ref('')
 const modalLoading = ref(false)
 const modalAction = ref<'add' | 'edit'>('add')
+const syncLoading = ref(false)
 const modalForm = reactive({
   id: undefined as number | undefined,
-  field_group_id: props.fieldGroupId,
+  field_group_ids: [] as number[],
   field_name: '',
   field_label: '',
   field_type: 'text',
@@ -209,6 +245,10 @@ const modalForm = reactive({
   options: {
     source: 'static',
     api_identifier: '',
+    swagger_json: '',
+    appkey: '',
+    last_sync_at: '',
+    sync_endpoints_count: 0,
     items: [] as any[],
   },
   corrections: [] as any[],
@@ -228,6 +268,7 @@ const columns = computed(() => [
   { title: '字段名', dataIndex: 'field_name', key: 'field_name' },
   { title: '字段标签', dataIndex: 'field_label', key: 'field_label' },
   { title: '字段类型', key: 'field_type', width: 120 },
+  { title: '关联字段组', key: 'field_groups', width: 200 },
   { title: '状态', key: 'is_active', width: 100 },
   { title: '创建时间', key: 'created_at', width: 180 },
   { title: '操作', key: 'action', width: 150, fixed: 'right' },
@@ -236,8 +277,8 @@ const columns = computed(() => [
 const filterItemCount = computed(() => 4)
 
 const modalRules = {
-  field_group_id: [
-    { required: true, message: '请选择所属字段组', trigger: 'change' },
+  field_group_ids: [
+    { required: true, message: '请至少选择一个关联字段组', trigger: 'change', type: 'array' },
   ],
   field_name: [
     { required: true, message: '请输入字段名', trigger: 'blur' },
@@ -256,13 +297,17 @@ const modalRules = {
 const fetchData = async () => {
   loading.value = true
   try {
+    // 优先使用props中的fieldGroupId
+    const fieldGroupId = props.fieldGroupId || queryParams.field_group_id
     const params: any = {
       page: pagination.current,
       page_size: pagination.pageSize,
-      ...queryParams,
+      field_name: queryParams.field_name,
+      field_label: queryParams.field_label,
+      field_type: queryParams.field_type,
     }
-    if (props.fieldGroupId) {
-      params.field_group_id = props.fieldGroupId
+    if (fieldGroupId) {
+      params.field_group_id = fieldGroupId
     }
     const res: any = await api.getFieldSpecList(params)
     if (res.code === 200) {
@@ -313,7 +358,7 @@ const handleTableChange = (pag: any) => {
 
 const resetModalForm = () => {
   modalForm.id = undefined
-  modalForm.field_group_id = props.fieldGroupId || queryParams.field_group_id
+  modalForm.field_group_ids = props.fieldGroupId ? [props.fieldGroupId] : []
   modalForm.field_name = ''
   modalForm.field_label = ''
   modalForm.field_type = 'text'
@@ -321,6 +366,10 @@ const resetModalForm = () => {
   modalForm.options = {
     source: 'static',
     api_identifier: '',
+    swagger_json: '',
+    appkey: '',
+    last_sync_at: '',
+    sync_endpoints_count: 0,
     items: [],
   }
   modalForm.corrections = []
@@ -338,7 +387,7 @@ const handleEdit = (record: any) => {
   modalAction.value = 'edit'
   modalTitle.value = '编辑字段'
   modalForm.id = record.id
-  modalForm.field_group_id = record.field_group_id
+  modalForm.field_group_ids = record.field_group_ids || []
   modalForm.field_name = record.field_name
   modalForm.field_label = record.field_label
   modalForm.field_type = record.field_type
@@ -346,6 +395,10 @@ const handleEdit = (record: any) => {
   modalForm.options = {
     source: record.options?.source || 'static',
     api_identifier: record.options?.api_identifier || '',
+    swagger_json: record.options?.swagger_json || '',
+    appkey: record.options?.appkey || '',
+    last_sync_at: record.options?.last_sync_at || '',
+    sync_endpoints_count: record.options?.sync_endpoints_count || 0,
     items: record.options?.items || [],
   }
   modalForm.is_active = record.is_active
@@ -381,6 +434,56 @@ const addCorrection = () => {
 
 const removeCorrection = (index: number) => {
   modalForm.corrections.splice(index, 1)
+}
+
+const handleSyncSwagger = async () => {
+  // 验证字段ID是否存在（编辑模式）
+  if (!modalForm.id) {
+    message.error('请先保存字段后再同步Swagger文档')
+    return
+  }
+
+  // 验证Swagger JSON是否填写
+  if (!modalForm.options.swagger_json || !modalForm.options.swagger_json.trim()) {
+    message.error('请填写Swagger JSON文档')
+    return
+  }
+
+  // 验证JSON格式
+  try {
+    JSON.parse(modalForm.options.swagger_json)
+  } catch (e) {
+    message.error('Swagger JSON格式不正确，请检查')
+    return
+  }
+
+  syncLoading.value = true
+  try {
+    const res: any = await api.syncSwagger({
+      field_spec_id: modalForm.id,
+      swagger_json: modalForm.options.swagger_json,
+      appkey: modalForm.options.appkey || '',
+    })
+    if (res.code === 200) {
+      message.success(res.data?.message || '同步成功')
+      // 更新本地数据
+      modalForm.options.items = res.data?.endpoints?.map((ep: any) => ({
+        value: ep.operation_id || `${ep.method}_${ep.path.replace(/\//g, '_')}`,
+        label: ep.summary || ep.description || `${ep.method.toUpperCase()} ${ep.path}`,
+        base_annotation: `${ep.method.toUpperCase()} ${ep.path}${ep.description ? '\n' + ep.description : ''}`,
+        corrections: [],
+        is_deleted: false,
+      })) || []
+      modalForm.options.last_sync_at = new Date().toISOString()
+      modalForm.options.sync_endpoints_count = res.data?.synced_count || 0
+    } else {
+      message.error(res.msg || '同步失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '同步失败')
+  } finally {
+    syncLoading.value = false
+  }
 }
 
 const handleSave = async () => {
@@ -427,9 +530,12 @@ const handleDelete = async (record: any) => {
 
 watch(() => props.fieldGroupId, (newVal) => {
   queryParams.field_group_id = newVal
-  modalForm.field_group_id = newVal
-  fetchData()
-})
+  modalForm.field_group_ids = newVal ? [newVal] : []
+  // 使用 nextTick 确保查询参数更新后再获取数据
+  nextTick(() => {
+    fetchData()
+  })
+}, { immediate: true })
 
 onMounted(() => {
   fetchFieldGroups()

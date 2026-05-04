@@ -134,7 +134,7 @@ async def get_app_select(
         q &= Q(tenant_id=tenant_query["tenant_id"])
 
     apps = await app_management_controller.model.filter(q).all()
-    data = [{"label": app.app_name, "value": app.app_name} for app in apps]
+    data = [{"label": app.app_name, "value": app.id} for app in apps]
     return Success(data=data)
 
 

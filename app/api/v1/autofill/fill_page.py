@@ -10,6 +10,7 @@ from app.controllers.autofill import (
     field_spec_controller,
     fill_page_controller,
 )
+from app.models.autofill import FieldGroupFieldSpec
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.models.admin import User
 from app.schemas.base import Fail, Success, SuccessExtra
@@ -20,6 +21,7 @@ from app.schemas.fill_page import (
     FieldSpecUpdate,
     FillPageCreate,
     FillPageUpdate,
+    SwaggerSyncRequest,
 )
 from app.services.autofill.prompt_service import (
     assemble_prompt,
@@ -83,20 +85,22 @@ async def create_page(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    # 确定租户ID
-    if is_superuser(current_user):
-        target_tenant_id = page_in.tenant_id if page_in.tenant_id > 0 else 0
-    else:
-        target_tenant_id = current_user.current_tenant_id
-        if target_tenant_id <= 0:
-            return Fail(code=400, msg="您当前未选择租户，无法创建页面")
-
     # 验证应用是否存在
     app = await app_management_controller.get(id=page_in.app_id)
     if not app:
         return Fail(code=400, msg="应用不存在")
 
-    # 使用确定的租户ID
+    # 确定租户ID：优先从应用继承，如果是超级用户可覆盖
+    if is_superuser(current_user):
+        # 超级用户：如果请求指定了租户ID则使用，否则从应用继承
+        target_tenant_id = page_in.tenant_id if page_in.tenant_id > 0 else app.tenant_id
+    else:
+        # 普通用户：必须使用应用绑定的租户ID
+        target_tenant_id = app.tenant_id
+        if current_user.current_tenant_id > 0 and app.tenant_id != current_user.current_tenant_id:
+            return Fail(code=403, msg="无权在该应用下创建页面")
+
+    # 使用确定的租户ID和应用名称
     page_in.tenant_id = target_tenant_id
     page_in.app_name = app.app_name
 
@@ -233,20 +237,22 @@ async def create_field_group(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    # 确定租户ID
-    if is_superuser(current_user):
-        target_tenant_id = group_in.tenant_id if group_in.tenant_id > 0 else 0
-    else:
-        target_tenant_id = current_user.current_tenant_id
-        if target_tenant_id <= 0:
-            return Fail(code=400, msg="您当前未选择租户，无法创建字段组")
-
     # 验证页面是否存在
     page = await fill_page_controller.get(id=group_in.page_id)
     if not page:
         return Fail(code=400, msg="页面不存在")
 
-    # 使用确定的租户ID和页面信息
+    # 确定租户ID：必须从页面继承（页面已从应用继承）
+    if is_superuser(current_user):
+        # 超级用户：如果请求指定了租户ID则使用，否则从页面继承
+        target_tenant_id = group_in.tenant_id if group_in.tenant_id > 0 else page.tenant_id
+    else:
+        # 普通用户：必须使用页面绑定的租户ID
+        target_tenant_id = page.tenant_id
+        if current_user.current_tenant_id > 0 and page.tenant_id != current_user.current_tenant_id:
+            return Fail(code=403, msg="无权在该页面下创建字段组")
+
+    # 使用确定的租户ID和页面信息（自动继承页面的app_name和tenant_id）
     group_in.tenant_id = target_tenant_id
     group_in.page_name = page.page_name
     group_in.app_name = page.app_name
@@ -340,25 +346,54 @@ async def list_field_spec(
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
-    q = Q()
+
+    # 多租户筛选
+    tenant_query = build_tenant_query(current_user, tenant_id)
+
+    # 如果指定了字段组ID，通过中间表查询关联的字段ID
+    if field_group_id > 0:
+        # 构建中间表查询条件
+        relation_q = Q(field_group_id=field_group_id)
+        if tenant_query["tenant_id"] > 0:
+            relation_q &= Q(tenant_id=tenant_query["tenant_id"])
+        relations = await FieldGroupFieldSpec.filter(relation_q).all()
+        field_spec_ids = [r.field_spec_id for r in relations]
+        if not field_spec_ids:
+            return SuccessExtra(data=[], total=0, page=page, page_size=page_size)
+        q = Q(id__in=field_spec_ids)
+    else:
+        q = Q()
+
     if field_name:
         q &= Q(field_name__contains=field_name)
     if field_label:
         q &= Q(field_label__contains=field_label)
     if field_type:
         q &= Q(field_type=field_type)
-    if field_group_id > 0:
-        q &= Q(field_group_id=field_group_id)
 
-    # 多租户筛选
-    tenant_query = build_tenant_query(current_user, tenant_id)
     if tenant_query["tenant_id"] > 0:
         q &= Q(tenant_id=tenant_query["tenant_id"])
 
     total, specs = await field_spec_controller.list(
         page=page, page_size=page_size, search=q, order=["-updated_at"]
     )
-    data = [await obj.to_dict() for obj in specs]
+
+    # 获取字段关联的字段组信息
+    data = []
+    for spec in specs:
+        spec_dict = await spec.to_dict()
+        # 通过中间表查询关联的字段组
+        relations = await FieldGroupFieldSpec.filter(field_spec_id=spec.id).all()
+        group_ids = [r.field_group_id for r in relations]
+        spec_dict['field_group_ids'] = group_ids
+        # 获取字段组基本信息
+        groups = await field_group_config_controller.model.filter(id__in=group_ids).all()
+        spec_dict['field_groups'] = [
+            {"id": g.id, "group_name": g.group_name, "group_code": g.group_code}
+            for g in groups
+        ]
+        data.append(spec_dict)
+
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
 
 
@@ -369,7 +404,21 @@ async def get_field_spec(
 ):
     await AuthControl.is_authed(token)
     spec = await field_spec_controller.get(id=id)
-    return Success(data=await spec.to_dict())
+    spec_dict = await spec.to_dict()
+
+    # 通过中间表查询关联的字段组
+    relations = await FieldGroupFieldSpec.filter(field_spec_id=spec.id).all()
+    group_ids = [r.field_group_id for r in relations]
+    spec_dict['field_group_ids'] = group_ids
+
+    # 获取字段组基本信息
+    groups = await field_group_config_controller.model.filter(id__in=group_ids).all()
+    spec_dict['field_groups'] = [
+        {"id": g.id, "group_name": g.group_name, "group_code": g.group_code}
+        for g in groups
+    ]
+
+    return Success(data=spec_dict)
 
 
 @field_spec_router.post("/field_spec/create", summary="创建字段明细")
@@ -379,22 +428,53 @@ async def create_field_spec(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    # 验证字段组是否存在
-    group = await field_group_config_controller.get(id=spec_in.field_group_id)
-    if not group:
-        return Fail(code=400, msg="字段组不存在")
+    # 验证关联的字段组是否存在且有权限
+    if not spec_in.field_group_ids:
+        return Fail(code=400, msg="必须至少选择一个字段组")
 
-    # 权限检查
-    if not is_superuser(current_user):
-        if group.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的字段组")
+    first_group = None
+    for group_id in spec_in.field_group_ids:
+        group = await field_group_config_controller.get(id=group_id)
+        if not group:
+            return Fail(code=400, msg=f"字段组(ID:{group_id})不存在")
+        if not is_superuser(current_user):
+            if group.tenant_id != current_user.current_tenant_id:
+                return Fail(code=403, msg=f"无权操作字段组(ID:{group_id})")
+        if not first_group:
+            first_group = group
 
-    # 使用字段组的租户ID
-    spec_data = spec_in.model_dump()
-    spec_data['tenant_id'] = group.tenant_id
+    # 从第一个字段组继承租户ID和应用名称
+    # 字段组已从页面继承，页面已从应用继承
+    if is_superuser(current_user):
+        # 超级用户：如果请求指定了租户ID则使用，否则从字段组继承
+        target_tenant_id = spec_in.tenant_id if spec_in.tenant_id > 0 else first_group.tenant_id
+        target_app_name = spec_in.app_name if spec_in.app_name else first_group.app_name
+    else:
+        # 普通用户：必须使用字段组绑定的租户ID和应用名称
+        target_tenant_id = first_group.tenant_id
+        target_app_name = first_group.app_name
+        if current_user.current_tenant_id > 0 and first_group.tenant_id != current_user.current_tenant_id:
+            return Fail(code=403, msg="无权在该字段组下创建字段")
 
-    spec = await field_spec_controller.create(obj_in=spec_data)
-    return Success(data=await spec.to_dict())
+    # 创建字段
+    spec = await field_spec_controller.create_field_spec(
+        obj_in=spec_in,
+        tenant_id=target_tenant_id,
+        app_name=target_app_name
+    )
+
+    # 返回完整数据
+    spec_dict = await spec.to_dict()
+    relations = await FieldGroupFieldSpec.filter(field_spec_id=spec.id).all()
+    group_ids = [r.field_group_id for r in relations]
+    spec_dict['field_group_ids'] = group_ids
+    groups = await field_group_config_controller.model.filter(id__in=group_ids).all()
+    spec_dict['field_groups'] = [
+        {"id": g.id, "group_name": g.group_name, "group_code": g.group_code}
+        for g in groups
+    ]
+
+    return Success(data=spec_dict)
 
 
 @field_spec_router.post("/field_spec/update", summary="更新字段明细")
@@ -405,18 +485,40 @@ async def update_field_spec(
     current_user = await AuthControl.is_authed(token)
     spec = await field_spec_controller.get(id=spec_in.id)
 
-    # 获取字段组进行权限检查
-    group = await field_group_config_controller.get(id=spec.field_group_id)
-    if not group:
-        return Fail(code=400, msg="字段组不存在")
-
-    # 权限检查
+    # 权限检查 - 检查字段本身的租户权限
     if not is_superuser(current_user):
-        if group.tenant_id != current_user.current_tenant_id:
+        if spec.tenant_id != current_user.current_tenant_id:
             return Fail(code=403, msg="无权操作其他租户的字段")
 
-    updated = await field_spec_controller.update_field_spec(id=spec_in.id, obj_in=spec_in)
-    return Success(data=await updated.to_dict())
+    # 如果更新了关联字段组，验证权限
+    if spec_in.field_group_ids:
+        for group_id in spec_in.field_group_ids:
+            group = await field_group_config_controller.get(id=group_id)
+            if not group:
+                return Fail(code=400, msg=f"字段组(ID:{group_id})不存在")
+            if not is_superuser(current_user):
+                if group.tenant_id != current_user.current_tenant_id:
+                    return Fail(code=403, msg=f"无权操作字段组(ID:{group_id})")
+
+    updated = await field_spec_controller.update_field_spec(
+        id=spec_in.id,
+        obj_in=spec_in,
+        tenant_id=spec.tenant_id,
+        app_name=spec.app_name
+    )
+
+    # 返回完整数据
+    spec_dict = await updated.to_dict()
+    relations = await FieldGroupFieldSpec.filter(field_spec_id=updated.id).all()
+    group_ids = [r.field_group_id for r in relations]
+    spec_dict['field_group_ids'] = group_ids
+    groups = await field_group_config_controller.model.filter(id__in=group_ids).all()
+    spec_dict['field_groups'] = [
+        {"id": g.id, "group_name": g.group_name, "group_code": g.group_code}
+        for g in groups
+    ]
+
+    return Success(data=spec_dict)
 
 
 @field_spec_router.delete("/field_spec/delete", summary="删除字段明细")
@@ -427,17 +529,12 @@ async def delete_field_spec(
     current_user = await AuthControl.is_authed(token)
     spec = await field_spec_controller.get(id=id)
 
-    # 获取字段组进行权限检查
-    group = await field_group_config_controller.get(id=spec.field_group_id)
-    if not group:
-        return Fail(code=400, msg="字段组不存在")
-
-    # 权限检查
+    # 权限检查 - 检查字段本身的租户权限
     if not is_superuser(current_user):
-        if group.tenant_id != current_user.current_tenant_id:
+        if spec.tenant_id != current_user.current_tenant_id:
             return Fail(code=403, msg="无权操作其他租户的字段")
 
-    await field_spec_controller.remove(id=id)
+    await field_spec_controller.delete_field_spec(id=id)
     return Success(msg="删除成功")
 
 
@@ -811,3 +908,89 @@ def _build_page_markdown(page, field_groups) -> str:
             lines.append("")
 
     return "\n".join(lines)
+
+
+# ==================== Swagger 同步接口 ====================
+
+@field_spec_router.post("/field_spec/sync_swagger", summary="同步 Swagger 文档并解析为选项")
+async def sync_swagger_document(
+    sync_in: SwaggerSyncRequest,
+    token: str = Header(..., description="token验证"),
+):
+    """
+    同步 OpenAI Swagger JSON 文档，解析 API 端点并生成选项列表
+    """
+    from app.services.agent_v2.openapi_parser import OpenAPIParser
+    from datetime import datetime
+
+    current_user = await AuthControl.is_authed(token)
+
+    # 获取字段明细
+    spec = await field_spec_controller.get(id=sync_in.field_spec_id)
+    if not spec:
+        return Fail(code=404, msg="字段明细不存在")
+
+    # 获取字段组进行权限检查
+    group = await field_group_config_controller.get(id=spec.field_group_id)
+    if not group:
+        return Fail(code=400, msg="字段组不存在")
+
+    # 权限检查
+    if not is_superuser(current_user):
+        if group.tenant_id != current_user.current_tenant_id:
+            return Fail(code=403, msg="无权操作其他租户的字段")
+
+    # 验证字段类型必须是 select
+    if spec.field_type != "select":
+        return Fail(code=400, msg="只有下拉选择类型的字段才支持 Swagger 同步")
+
+    try:
+        # 解析 Swagger JSON
+        parser = OpenAPIParser(sync_in.swagger_json)
+        endpoints = parser.get_endpoints()
+
+        if not endpoints:
+            return Fail(code=400, msg="未能从 Swagger 文档中解析出任何 API 端点")
+
+        # 将端点转换为选项列表
+        option_items = []
+        for endpoint in endpoints:
+            # 使用 operation_id 或生成一个标识
+            value = endpoint.operation_id or f"{endpoint.method}_{endpoint.path.replace('/', '_')}"
+            # 使用 summary 或 description 作为标签
+            label = endpoint.summary or endpoint.description or f"{endpoint.method.upper()} {endpoint.path}"
+            # 构建详细说明
+            base_annotation = f"{endpoint.method.upper()} {endpoint.path}"
+            if endpoint.description:
+                base_annotation += f"\n{endpoint.description}"
+
+            option_items.append({
+                "value": value,
+                "label": label,
+                "base_annotation": base_annotation,
+                "corrections": [],
+                "is_deleted": False,
+            })
+
+        # 更新字段的 options
+        current_options = spec.options or {}
+        current_options["source"] = "api"
+        current_options["items"] = option_items
+        current_options["swagger_json"] = sync_in.swagger_json
+        current_options["appkey"] = sync_in.appkey
+        current_options["last_sync_at"] = datetime.now().isoformat()
+        current_options["sync_endpoints_count"] = len(endpoints)
+
+        # 保存更新
+        spec.options = current_options
+        await spec.save()
+
+        return Success(data={
+            "success": True,
+            "message": f"成功同步 {len(endpoints)} 个 API 端点",
+            "synced_count": len(endpoints),
+            "endpoints": [ep.to_dict() for ep in endpoints],
+        })
+
+    except Exception as e:
+        return Fail(code=500, msg=f"同步失败: {str(e)}")

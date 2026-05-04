@@ -5,7 +5,7 @@ from tortoise.expressions import Q
 
 from app.core.crud import CRUDBase
 from app.models.autofill import (AppManagement, DropdownOption, FieldGroupConfig,
-                                 FieldSpec, FillDataRecord, FillPage, SummaryTemplate)
+                                 FieldGroupFieldSpec, FieldSpec, FillDataRecord, FillPage, SummaryTemplate)
 from app.schemas.autofill import (AppCreate, AppUpdate, DropdownOptionCreate,
                                   DropdownOptionUpdate, FillDataRecordCreate,
                                   FillDataRecordUpdate, SummaryTemplateCreate,
@@ -224,6 +224,11 @@ class FillPageController(CRUDBase[FillPage, FillPageCreate, FillPageUpdate]):
 
     async def create_page(self, obj_in: FillPageCreate) -> FillPage:
         """创建页面，检查同一应用下页面编码唯一性"""
+        # 如果 page_code 为空，则自动生成
+        if not obj_in.page_code:
+            from app.models.autofill import generate_page_code
+            obj_in.page_code = generate_page_code()
+
         existing = await self.model.filter(
             app_id=obj_in.app_id,
             page_code=obj_in.page_code
@@ -251,7 +256,12 @@ class FieldGroupConfigController(CRUDBase[FieldGroupConfig, FieldGroupConfigCrea
         super().__init__(model=FieldGroupConfig)
 
     async def create_field_group(self, obj_in: FieldGroupConfigCreate) -> FieldGroupConfig:
-        """创建字段组，检查同一页面下字段组名称唯一性"""
+        """创建字段组，检查同一页面下字段组名称唯一性，自动生成编码"""
+        # 如果 group_code 为空，则自动生成
+        if not obj_in.group_code:
+            from app.models.autofill import generate_field_group_code
+            obj_in.group_code = generate_field_group_code()
+
         existing = await self.model.filter(
             page_id=obj_in.page_id,
             group_name=obj_in.group_name
@@ -274,12 +284,13 @@ class FieldGroupConfigController(CRUDBase[FieldGroupConfig, FieldGroupConfigCrea
                 raise HTTPException(status_code=400, detail="该页面下已存在同名字段组")
 
         # 如果更新了关键配置，增加版本号
+        update_data = obj_in.model_dump(exclude_unset=True)
         if (obj_in.prompt_template_base is not None or
             obj_in.output_templates is not None or
             obj_in.group_name is not None):
-            obj_in.version = field_group.version + 1
+            update_data['version'] = field_group.version + 1
 
-        return await self.update(id=id, obj_in=obj_in)
+        return await self.update(id=id, obj_in=update_data)
 
     async def get_by_code(self, code: str) -> Optional[FieldGroupConfig]:
         """通过唯一编码获取字段组配置"""
@@ -287,49 +298,106 @@ class FieldGroupConfigController(CRUDBase[FieldGroupConfig, FieldGroupConfigCrea
 
 
 class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate]):
-    """字段明细控制器"""
+    """字段明细控制器（多对多关联字段组）"""
     def __init__(self):
         super().__init__(model=FieldSpec)
 
-    async def create_field_spec(self, obj_in: FieldSpecCreate) -> FieldSpec:
-        """创建字段明细，检查同一字段组下字段名唯一性"""
+    async def create_field_spec(self, obj_in: FieldSpecCreate, tenant_id: int = 0, app_name: str = "") -> FieldSpec:
+        """创建字段明细，检查同一租户+应用下字段名唯一性"""
         existing = await self.model.filter(
-            field_group_id=obj_in.field_group_id,
+            tenant_id=tenant_id,
+            app_name=app_name,
             field_name=obj_in.field_name
         ).first()
         if existing:
-            raise HTTPException(status_code=400, detail="该字段组下已存在同名字段")
-        return await self.create(obj_in)
+            raise HTTPException(status_code=400, detail="该应用下已存在同名字段")
 
-    async def update_field_spec(self, id: int, obj_in: FieldSpecUpdate) -> FieldSpec:
-        """更新字段明细，检查字段名唯一性"""
+        # 创建字段（不包含关联关系）
+        spec_data = obj_in.model_dump(exclude={'field_group_ids'})
+        spec_data['tenant_id'] = tenant_id
+        spec_data['app_name'] = app_name
+        field_spec = await self.create(spec_data)
+
+        # 创建关联关系
+        if obj_in.field_group_ids:
+            for group_id in obj_in.field_group_ids:
+                await FieldGroupFieldSpec.create(
+                    field_group_id=group_id,
+                    field_spec_id=field_spec.id,
+                    tenant_id=tenant_id,
+                    app_name=app_name
+                )
+
+        return field_spec
+
+    async def update_field_spec(self, id: int, obj_in: FieldSpecUpdate, tenant_id: int = 0, app_name: str = "") -> FieldSpec:
+        """更新字段明细，检查字段名唯一性，更新关联关系"""
         field_spec = await self.get(id=id)
 
-        # 确定字段组ID
-        field_group_id = obj_in.field_group_id or field_spec.field_group_id
-
-        # 检查字段名唯一性
+        # 检查字段名唯一性（在同一租户+应用下）
         if obj_in.field_name and obj_in.field_name != field_spec.field_name:
             existing = await self.model.filter(
-                field_group_id=field_group_id,
+                tenant_id=field_spec.tenant_id,
+                app_name=field_spec.app_name,
                 field_name=obj_in.field_name
             ).exclude(id=id).first()
             if existing:
-                raise HTTPException(status_code=400, detail="该字段组下已存在同名字段")
+                raise HTTPException(status_code=400, detail="该应用下已存在同名字段")
 
-        return await self.update(id=id, obj_in=obj_in)
+        # 更新字段基本信息（不包含关联关系）
+        update_data = obj_in.model_dump(exclude={'field_group_ids'}, exclude_unset=True)
+        field_spec = await self.update(id=id, obj_in=update_data)
+
+        # 更新关联关系
+        if obj_in.field_group_ids is not None:
+            # 删除旧关联
+            await FieldGroupFieldSpec.filter(field_spec_id=id).delete()
+            # 创建新关联
+            for group_id in obj_in.field_group_ids:
+                await FieldGroupFieldSpec.create(
+                    field_group_id=group_id,
+                    field_spec_id=id,
+                    tenant_id=field_spec.tenant_id,
+                    app_name=field_spec.app_name
+                )
+
+        return field_spec
 
     async def get_by_field_group(self, field_group_id: int, active_only: bool = True) -> List[FieldSpec]:
-        """获取字段组下的所有字段明细
-        
+        """获取字段组下的所有字段明细（通过中间表）
+
         Args:
             field_group_id: 字段组ID
             active_only: 是否只查询启用的字段，默认为True
         """
+        # 通过中间表查询关联的字段ID
+        relations = await FieldGroupFieldSpec.filter(field_group_id=field_group_id).all()
+        field_spec_ids = [r.field_spec_id for r in relations]
+
+        if not field_spec_ids:
+            return []
+
         if active_only:
-            return await self.model.filter(field_group_id=field_group_id, is_active=True).all()
+            return await self.model.filter(id__in=field_spec_ids, is_active=True).all()
         else:
-            return await self.model.filter(field_group_id=field_group_id).all()
+            return await self.model.filter(id__in=field_spec_ids).all()
+
+    async def get_field_groups(self, field_spec_id: int) -> List[FieldGroupConfig]:
+        """获取字段关联的所有字段组"""
+        relations = await FieldGroupFieldSpec.filter(field_spec_id=field_spec_id).all()
+        group_ids = [r.field_group_id for r in relations]
+
+        if not group_ids:
+            return []
+
+        return await FieldGroupConfig.filter(id__in=group_ids).all()
+
+    async def delete_field_spec(self, id: int) -> None:
+        """删除字段及其关联关系"""
+        # 删除中间表关联
+        await FieldGroupFieldSpec.filter(field_spec_id=id).delete()
+        # 删除字段
+        await self.remove(id=id)
 
 
 # 实例化控制器
