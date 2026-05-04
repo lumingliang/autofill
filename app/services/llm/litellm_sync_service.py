@@ -17,8 +17,16 @@ class LiteLLMSyncService:
     """LiteLLM 配置同步服务"""
 
     def __init__(self):
-        self.config_path = os.path.join(settings.BASE_DIR, "litellm", "litellm_config.yaml")
+        # LiteLLM 网关实际使用的配置文件是 config.yaml
+        self.config_path = os.path.join(settings.BASE_DIR, "litellm", "config.yaml")
         self.litellm_config = settings.LITELLM_CONFIG
+
+    def _is_masked_api_key(self, api_key: str) -> bool:
+        """检查 api_key 是否为脱敏格式"""
+        if not api_key:
+            return False
+        # 脱敏格式示例: ms-9****f738, sk-abc****xyz, ••••••••••••
+        return '****' in api_key or '••••' in api_key or api_key.count('•') > 3
 
     async def sync_all_configs(self) -> bool:
         """
@@ -28,6 +36,20 @@ class LiteLLMSyncService:
             bool: 是否同步成功
         """
         try:
+            # 读取现有的配置文件（用于保留正确的 API key）
+            existing_configs = {}
+            if os.path.exists(self.config_path):
+                try:
+                    with open(self.config_path, 'r', encoding='utf-8') as f:
+                        existing_data = yaml.safe_load(f)
+                        if existing_data and 'model_list' in existing_data:
+                            for item in existing_data['model_list']:
+                                model_name = item.get('model_name')
+                                if model_name:
+                                    existing_configs[model_name] = item
+                except Exception as e:
+                    logger.warning(f"Failed to read existing config: {e}")
+
             # 获取所有活跃的模型配置
             configs = await LLMConfig.filter(is_active=True).all()
 
@@ -38,12 +60,32 @@ class LiteLLMSyncService:
                 if not litellm_params:
                     continue
 
+                # 获取 API key
+                api_key = litellm_params.get("api_key", "")
+
+                # 如果 API key 被脱敏，尝试从现有配置中恢复
+                if self._is_masked_api_key(api_key):
+                    existing_config = existing_configs.get(config.name, {})
+                    existing_params = existing_config.get('litellm_params', {})
+                    existing_api_key = existing_params.get('api_key', '')
+                    if existing_api_key and not self._is_masked_api_key(existing_api_key):
+                        api_key = existing_api_key
+                        logger.info(f"Restored API key for model {config.name} from existing config")
+                    else:
+                        logger.warning(f"API key for model {config.name} is masked and no valid key found in existing config")
+
+                # 处理模型名称：如果是 OpenAI 提供商且模型名称没有 openai/ 前缀，自动添加
+                model_name = litellm_params.get("model", "")
+                if config.model_provider == "openai" and model_name and not model_name.startswith("openai/"):
+                    model_name = f"openai/{model_name}"
+                    logger.info(f"Auto-added 'openai/' prefix for model {config.name}: {model_name}")
+
                 # 构建模型配置项
                 model_item = {
                     "model_name": config.name,
                     "litellm_params": {
-                        "model": litellm_params.get("model", ""),
-                        "api_key": litellm_params.get("api_key", ""),
+                        "model": model_name,
+                        "api_key": api_key,
                         "timeout": litellm_params.get("timeout", 60)
                     }
                 }

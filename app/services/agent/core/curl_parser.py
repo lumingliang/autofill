@@ -219,34 +219,40 @@ class CurlParser:
         body_params: Dict[str, Any]
     ) -> List[ParamSchema]:
         """构建参数 Schema
-        
+
         包含所有参数，根据值推断参数类型
-        有值的参数作为示例，空值参数需要 Agent 填充
+        有值的参数作为示例，空值或占位符参数需要 Agent 填充
         """
         schemas = []
 
+        def is_placeholder(value: Any) -> bool:
+            """检查值是否是占位符，如 {name}, {city} 等"""
+            if not isinstance(value, str):
+                return False
+            return bool(re.match(r'^\{[^}]+\}$', value.strip()))
+
         # Query 参数
         for key, value in query_params.items():
-            is_empty = value in (None, "", [])
+            needs_fill = value in (None, "", []) or is_placeholder(value)
             schemas.append(ParamSchema(
                 name=key,
-                param_type=cls._get_type_name(value) if value else "string",
-                description=f"URL 查询参数: {key}" + (" (需要填充)" if is_empty else f"，示例: {value}"),
-                required=is_empty,  # 空值参数需要填充
-                example=value
+                param_type=cls._get_type_name(value) if value and not is_placeholder(value) else "string",
+                description=f"URL 查询参数: {key}" + (" (需要填充)" if needs_fill else f"，示例: {value}"),
+                required=needs_fill,  # 空值或占位符参数需要填充
+                example=value if not needs_fill else ""
             ))
 
         # Body 参数
         for key, value in body_params.items():
             if key == "_raw":
                 continue
-            is_empty = value in (None, "", [])
+            needs_fill = value in (None, "", []) or is_placeholder(value)
             schemas.append(ParamSchema(
                 name=key,
-                param_type=cls._get_type_name(value) if value else "string",
-                description=f"请求体参数: {key}" + (" (需要填充)" if is_empty else f"，示例: {value}"),
-                required=is_empty,  # 空值参数需要填充
-                example=value
+                param_type=cls._get_type_name(value) if value and not needs_fill else "string",
+                description=f"请求体参数: {key}" + (" (需要填充)" if needs_fill else f"，示例: {value}"),
+                required=needs_fill,  # 空值或占位符参数需要填充
+                example=value if not needs_fill else ""
             ))
 
         return schemas

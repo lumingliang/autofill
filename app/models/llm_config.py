@@ -91,7 +91,7 @@ class LLMConfig(BaseModel, TimestampMixin):
             }
         }
 
-    async def to_dict(self, include_sensitive: bool = False) -> dict:
+    async def to_dict(self) -> dict:
         """转换为字典"""
         data = {
             "id": self.id,
@@ -108,11 +108,5 @@ class LLMConfig(BaseModel, TimestampMixin):
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
         }
-
-        # 默认隐藏敏感信息
-        if not include_sensitive and "api_key" in data.get("litellm_params", {}):
-            api_key = data["litellm_params"]["api_key"]
-            if api_key and len(api_key) > 8:
-                data["litellm_params"]["api_key"] = api_key[:4] + "****" + api_key[-4:]
 
         return data

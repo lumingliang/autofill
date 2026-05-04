@@ -21,10 +21,18 @@ class AgentRunRequest(BaseModel):
     curl: str = Field(..., description="API 调用的 curl 命令（无需占位符）")
     system_prompt: str = Field("", description="系统提示词，指导如何提取参数")
     expected_result: str = Field("", description="期望结果描述，用于验证")
-    max_attempts: int = Field(5, description="最大尝试次数")
+    max_attempts: int = Field(10, description="最大尝试次数")
     timeout: int = Field(30, description="每次请求的超时时间(秒)")
     llm_model: str = Field("gpt-4o-mini", description="使用的 LLM 模型")
     llm_temperature: float = Field(0.0, description="温度参数")
+    llm_method: str = Field("bind_tools_stream", description="LLM 调用方法(推荐): bind_tools_stream, bind_tools_non_stream, with_structured_output, custom_fc_non_stream, custom_fc_stream")
+
+
+class SelectedDataResponse(BaseModel):
+    """选中的数据响应"""
+    index: int = Field(-1, description="选中数据的索引（从0开始）")
+    data: Optional[Any] = Field(None, description="选中的完整数据对象")
+    reason: str = Field("", description="选择这条数据的原因")
 
 
 class AgentRunResponse(BaseModel):
@@ -35,6 +43,7 @@ class AgentRunResponse(BaseModel):
     error: Optional[str] = Field(None, description="错误信息")
     total_attempts: int = Field(0, description="尝试次数")
     execution_time_ms: int = Field(0, description="执行时间(毫秒)")
+    selected: Optional[SelectedDataResponse] = Field(None, description="选中的数据信息")
 
 
 @agents_router.post("/v1/agent/run", summary="Agent 通用执行接口")
@@ -59,7 +68,7 @@ async def agent_run(
     - curl: 完整的 curl 命令
     - system_prompt: 系统提示词（可选）
     - expected_result: 期望结果描述（可选）
-    - max_attempts: 最大尝试次数（可选，默认5）
+    - max_attempts: 最大尝试次数（可选，默认10）
     - timeout: 超时时间（可选，默认30秒）
     - llm_model: 模型名称（可选，默认gpt-4o-mini）
     - llm_temperature: 温度参数（可选，默认0）
@@ -96,6 +105,7 @@ async def agent_run(
             timeout=request.timeout,
             llm_model=request.llm_model,
             llm_temperature=request.llm_temperature,
+            llm_method=request.llm_method,
             context=context
         )
 
@@ -105,13 +115,23 @@ async def agent_run(
 
         logger.info(f"[Agent API] 执行完成: success={result.success}, attempts={result.total_attempts}")
 
+        # 构建选中的数据响应
+        selected_response = None
+        if result.selected and (result.selected.index >= 0 or result.selected.data):
+            selected_response = SelectedDataResponse(
+                index=result.selected.index,
+                data=result.selected.data,
+                reason=result.selected.reason
+            )
+
         return AgentRunResponse(
             success=result.success,
             status=result.status.value,
             data=result.data,
             error=result.error,
             total_attempts=result.total_attempts,
-            execution_time_ms=result.execution_time_ms
+            execution_time_ms=result.execution_time_ms,
+            selected=selected_response
         )
 
     except Exception as e:

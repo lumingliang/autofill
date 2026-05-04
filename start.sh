@@ -417,6 +417,8 @@ show_help() {
     echo "  restart, r      重启前后端服务"
     echo "  status, s       查看服务状态"
     echo "  logs [服务]     查看日志 (backend|frontend)"
+    echo "  fe [操作]       前端服务操作 (up|down|restart)"
+    echo "  be [操作]       后端服务操作 (up|down|restart)"
     echo "  help, h         显示帮助信息"
     echo ""
     echo "示例:"
@@ -424,6 +426,12 @@ show_help() {
     echo "  ./start.sh restart         # 重启所有服务"
     echo "  ./start.sh status          # 查看服务状态"
     echo "  ./start.sh logs backend    # 查看后端日志"
+    echo "  ./start.sh fe up           # 单独启动前端"
+    echo "  ./start.sh fe down         # 单独停止前端"
+    echo "  ./start.sh fe restart      # 单独重启前端"
+    echo "  ./start.sh be up           # 单独启动后端"
+    echo "  ./start.sh be down         # 单独停止后端"
+    echo "  ./start.sh be restart      # 单独重启后端"
 }
 
 # 主函数
@@ -443,6 +451,44 @@ main() {
             ;;
         logs)
             show_logs "$2"
+            ;;
+        fe|frontend)
+            case "${2:-}" in
+                up|start)
+                    start_frontend
+                    ;;
+                down|stop)
+                    stop_frontend
+                    ;;
+                restart|r)
+                    stop_frontend
+                    sleep 2
+                    start_frontend
+                    ;;
+                *)
+                    echo "用法: ./start.sh fe [up|down|restart]"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        be|backend)
+            case "${2:-}" in
+                up|start)
+                    start_backend
+                    ;;
+                down|stop)
+                    stop_backend
+                    ;;
+                restart|r)
+                    stop_backend
+                    sleep 2
+                    start_backend
+                    ;;
+                *)
+                    echo "用法: ./start.sh be [up|down|restart]"
+                    exit 1
+                    ;;
+            esac
             ;;
         help|h|--help|-h)
             show_help

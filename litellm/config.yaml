@@ -1,34 +1,8 @@
-# LiteLLM 配置文件
-# 使用项目现有的 MySQL 和 Redis
-
-# 数据库配置 - 使用项目现有的 MySQL
-database_url: "mysql://root:root123456@host.docker.internal:3306/autofill"
-
-# Redis 配置 - 使用项目现有的 Redis
-redis_host: "host.docker.internal"
-redis_port: 6379
-redis_password: "redis123456"
-
-# 服务器配置
-server:
-  host: "0.0.0.0"
-  port: 4000
-
-# 日志配置
-log_level: "INFO"
-
-# 通用回调设置
 general_settings:
-  # 启用请求日志
-  log_requests: true
-  # 启用响应日志
-  log_responses: true
-  # 数据库连接池大小
-  database_connection_pool_size: 10
-  # 启用健康检查
-  health_check: true
-
-# 模型配置（初始为空，通过后端服务动态添加）
+  master_key: sk-litellm-master-key
+  port: 4000
+  host: 0.0.0.0
+  store_model_in_db: false
 model_list:
 - model_name: C4AI-Command-R-Plus
   litellm_params:
@@ -36,25 +10,25 @@ model_list:
     api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
     timeout: 60
     api_base: https://api-inference.modelscope.cn/v1/
-
-
-# 默认模型参数
-litellm_settings:
-  # 默认超时时间
-  timeout: 60
-  # 默认重试次数
-  num_retries: 2
-  # 是否验证 SSL
-  verify_ssl: true
-
-# 缓存配置（使用 Redis）
-cache: true
-cache_params:
-  type: "redis"
-  host: "host.docker.internal"
-  port: 6379
-  password: "redis123456"
-
-# 速率限制配置（可选）
-# router_settings:
-#   routing_strategy: "simple-shuffle"
+- model_name: Qwen/QwQ-32B
+  litellm_params:
+    model: openai/Qwen/QwQ-32B
+    api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
+    timeout: 300
+    api_base: https://api-inference.modelscope.cn/v1/
+  model_info:
+    mode: chat
+    max_tokens: 8192
+    supports_vision: false
+    supports_function_calling: true
+- model_name: DeepSeek-R1-0528
+  litellm_params:
+    model: openai/deepseek-ai/DeepSeek-R1-0528
+    api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
+    timeout: 60
+    api_base: https://api-inference.modelscope.cn/v1/
+  model_info:
+    mode: chat
+    max_tokens: 8192
+    supports_vision: false
+    supports_function_calling: true

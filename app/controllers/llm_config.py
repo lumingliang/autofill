@@ -44,6 +44,13 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
 
         return config
 
+    def _is_masked_api_key(self, api_key: str) -> bool:
+        """检查 api_key 是否为脱敏格式"""
+        if not api_key:
+            return False
+        # 脱敏格式示例: ms-9****f738, sk-abc****xyz, ••••••••••••
+        return '****' in api_key or '••••' in api_key or api_key.count('•') > 3
+
     async def update_config(self, id: int, obj_in: LLMConfigUpdate) -> LLMConfig:
         """更新 LLM 配置"""
         config = await self.get(id=id)
@@ -63,8 +70,21 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
             tenant_id = obj_in.tenant_id or config.tenant_id or 0
             await self.model.filter(tenant_id=tenant_id).exclude(id=id).update(is_default=False)
 
+        # 准备更新数据
+        update_data = obj_in.model_dump(exclude_unset=True, exclude={"id"})
+
+        # 检查 litellm_params 中的 api_key 是否被脱敏
+        litellm_params = update_data.get("litellm_params", {})
+        if litellm_params and "api_key" in litellm_params:
+            new_api_key = litellm_params["api_key"]
+            if self._is_masked_api_key(new_api_key):
+                # 如果 api_key 被脱敏，保留原来的值
+                old_litellm_params = config.litellm_params or {}
+                litellm_params["api_key"] = old_litellm_params.get("api_key", "")
+                update_data["litellm_params"] = litellm_params
+
         # 更新配置
-        updated = await self.update(id=id, obj_in=obj_in)
+        updated = await self.update(id=id, obj_in=update_data)
 
         # 同步到 LiteLLM 网关
         await self._sync_to_litellm(updated, action="update")
@@ -191,9 +211,11 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
         from datetime import datetime
 
         litellm_params = config.litellm_params or {}
-        model = litellm_params.get("model", "")
         api_key = litellm_params.get("api_key", "")
         api_base = litellm_params.get("api_base", None)
+
+        # 使用配置名称作为模型名称（对应 LiteLLM 网关的 model_list 中的 model_name）
+        model = config.name
 
         if not model or not api_key:
             raise HTTPException(status_code=400, detail="模型配置缺少 model 或 api_key")
