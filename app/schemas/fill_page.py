@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class FillPageCreate(BaseModel):
     page_name: str = Field(..., max_length=64)
-    page_code: str = Field(..., max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    page_code: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]*$", description="页面编码，不传则后端自动生成")
     app_id: int = Field(0, description="关联应用ID")
     app_name: str = Field("", max_length=64)
     tenant_id: int = Field(0, description="租户ID")
@@ -51,7 +51,7 @@ class OutputTemplateItem(BaseModel):
 
 class FieldGroupConfigCreate(BaseModel):
     group_name: str = Field(..., max_length=64)
-    group_code: str = Field(..., max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    group_code: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]*$", description="字段组编码，不传则后端自动生成")
     page_id: int = Field(0, description="关联页面ID")
     app_name: str = Field("", max_length=64)
     page_name: str = Field("", max_length=64)
@@ -112,41 +112,50 @@ class FieldOptions(BaseModel):
     api_identifier: str = Field("", description="API标识")
     last_sync_at: str = Field("", description="最后同步时间")
     items: List[OptionItem] = []
+    swagger_json: str = Field("", description="OpenAI Swagger JSON 文档")
+    appkey: str = Field("", description="API 调用鉴权密钥")
 
 
 class FieldSpecCreate(BaseModel):
-    field_group_id: int = Field(0, description="关联字段组ID")
     field_name: str = Field(..., max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
     field_label: str = Field("", max_length=128)
     field_type: str = Field(default="text")
+    tenant_id: int = Field(0, description="租户ID")
+    app_name: str = Field("", max_length=64, description="应用名称")
     fill_instruction: str = Field("", description="字段填写指引")
     options: FieldOptions = Field(default_factory=FieldOptions)
     corrections: List[Dict] = []
     is_active: bool = Field(True, description="是否启用")
+    field_group_ids: List[int] = Field(default_factory=list, description="关联字段组ID列表")
 
 
 class FieldSpecUpdate(BaseModel):
     id: int
-    field_group_id: int = Field(0, description="关联字段组ID")
     field_name: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
     field_label: str = Field("", max_length=128)
     field_type: str = Field("", description="字段类型")
+    tenant_id: int = Field(0, description="租户ID")
+    app_name: str = Field("", max_length=64, description="应用名称")
     fill_instruction: str = Field("", description="字段填写指引")
     options: FieldOptions = Field(default_factory=FieldOptions)
     corrections: List[Dict] = []
     is_active: bool = Field(True, description="是否启用")
+    field_group_ids: List[int] = Field(default_factory=list, description="关联字段组ID列表")
 
 
 class FieldSpecOut(BaseModel):
     id: int
-    field_group_id: int = 0
     field_name: str = ""
     field_label: str = ""
     field_type: str = ""
+    tenant_id: int = 0
+    app_name: str = ""
     fill_instruction: str = ""
     options: FieldOptions = Field(default_factory=FieldOptions)
     corrections: List[Dict] = []
     is_active: bool = True
+    field_group_ids: List[int] = []
+    field_groups: List[Dict] = []
     created_at: str = ""
     updated_at: str = ""
 
@@ -171,3 +180,20 @@ class FieldSpecQueryRequest(BaseModel):
     field_group_id: int = Field(0, description="字段组ID")
     field_name: str = Field("", description="字段名称")
     field_type: str = Field("", description="字段类型")
+
+
+# ==================== Swagger 同步接口 Schemas ====================
+
+class SwaggerSyncRequest(BaseModel):
+    """Swagger 同步请求"""
+    field_spec_id: int = Field(..., description="字段明细ID")
+    swagger_json: str = Field(..., description="OpenAI Swagger JSON 文档")
+    appkey: str = Field("", description="API 调用鉴权密钥")
+
+
+class SwaggerSyncResponse(BaseModel):
+    """Swagger 同步响应"""
+    success: bool = Field(False, description="是否同步成功")
+    message: str = Field("", description="同步结果消息")
+    synced_count: int = Field(0, description="同步的选项数量")
+    endpoints: List[Dict] = Field(default_factory=list, description="解析的API端点列表")

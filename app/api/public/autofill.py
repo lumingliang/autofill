@@ -411,9 +411,10 @@ async def list_field_spec_handler(
     auth_info: dict
 ):
     """
-    查询字段明细列表处理逻辑
+    查询字段明细列表处理逻辑（多对多关联）
     """
     from pydantic import BaseModel
+    from app.models.autofill import FieldGroupFieldSpec
 
     class FieldSpecListRequest(BaseModel):
         field_group_id: int
@@ -441,10 +442,13 @@ async def list_field_spec_handler(
 
     field_specs = await field_spec_controller.get_by_field_group(params["field_group_id"])
 
-    return Success(data=[
-        {
+    # 获取每个字段关联的字段组
+    result = []
+    for fs in field_specs:
+        relations = await FieldGroupFieldSpec.filter(field_spec_id=fs.id).all()
+        group_ids = [r.field_group_id for r in relations]
+        result.append({
             "id": fs.id,
-            "field_group_id": fs.field_group_id,
             "field_name": fs.field_name,
             "field_label": fs.field_label,
             "field_type": fs.field_type,
@@ -452,9 +456,10 @@ async def list_field_spec_handler(
             "options": fs.options,
             "corrections": fs.corrections,
             "is_active": fs.is_active,
-        }
-        for fs in field_specs
-    ])
+            "field_group_ids": group_ids,
+        })
+
+    return Success(data=result)
 
 
 @autofill_public_router.get("/autofill/field_spec/list", summary="查询字段明细列表")
@@ -578,3 +583,224 @@ async def llm_fill(
     支持参数传递方式: JSON Body
     """
     return await llm_fill_handler(request, auth_info)
+
+
+# ==================== 下拉选项层级接口 ====================
+
+async def list_first_level_menus_handler(
+    request: Request,
+    auth_info: dict
+):
+    """
+    A1. 获取所有一级菜单
+    根据 tenant_id + app_name + class_name 查询所有 parent_id=0 的选项
+    """
+    from pydantic import BaseModel
+
+    class FirstLevelMenusRequest(BaseModel):
+        class_name: str = Field("", description="分类名称")
+
+    params = await parse_request_params(request, FirstLevelMenusRequest)
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+
+    q = Q(tenant_id=tenant_id, app_name=app_name, parent_id=0)
+    if params.get("class_name"):
+        q &= Q(class_name=params["class_name"])
+
+    options = await dropdown_option_controller.model.filter(q).all()
+
+    return Success(data=[
+        {
+            "id": o.id,
+            "option_value": o.option_value,
+            "summary": o.summary,
+            "class_name": o.class_name,
+        }
+        for o in options
+    ])
+
+
+@autofill_public_router.get("/autofill/dropdown/first_level", summary="A1. 获取所有一级菜单")
+@autofill_public_router.post("/autofill/dropdown/first_level", summary="A1. 获取所有一级菜单")
+async def list_first_level_menus(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    获取所有一级菜单（parent_id=0 的选项）
+    支持 GET 和 POST 方法
+    支持参数传递方式: Query / Form-Data / JSON Body
+    可选参数: class_name（分类名称）
+    """
+    return await list_first_level_menus_handler(request, auth_info)
+
+
+async def get_submenus_tree_handler(
+    request: Request,
+    auth_info: dict
+):
+    """
+    A2. 根据一级菜单名称+应用名称+分类获取二三级菜单（树形结构）
+    """
+    from pydantic import BaseModel
+
+    class SubmenusTreeRequest(BaseModel):
+        first_level_value: str = Field(..., description="一级菜单选项值")
+        class_name: str = Field("", description="分类名称")
+
+    params = await parse_request_params(request, SubmenusTreeRequest)
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+    first_level_value = params.get("first_level_value")
+    class_name = params.get("class_name", "")
+
+    if not first_level_value:
+        raise HTTPException(status_code=400, detail="first_level_value is required")
+
+    # 查找一级菜单
+    q = Q(
+        tenant_id=tenant_id,
+        app_name=app_name,
+        parent_id=0,
+        option_value=first_level_value
+    )
+    if class_name:
+        q &= Q(class_name=class_name)
+
+    first_level = await dropdown_option_controller.model.filter(q).first()
+
+    if not first_level:
+        raise HTTPException(status_code=404, detail="First level menu not found")
+
+    # 递归获取树形结构
+    async def build_tree(parent_id: int) -> list:
+        children = await dropdown_option_controller.model.filter(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            parent_id=parent_id
+        ).all()
+
+        result = []
+        for child in children:
+            child_dict = {
+                "id": child.id,
+                "option_value": child.option_value,
+                "summary": child.summary,
+            }
+            # 递归获取子级
+            sub_children = await build_tree(child.id)
+            if sub_children:
+                child_dict["children"] = sub_children
+            result.append(child_dict)
+        return result
+
+    tree_data = await build_tree(first_level.id)
+
+    return Success(data={
+        "first_level": {
+            "id": first_level.id,
+            "option_value": first_level.option_value,
+            "summary": first_level.summary,
+            "class_name": first_level.class_name,
+        },
+        "children": tree_data
+    })
+
+
+@autofill_public_router.get("/autofill/dropdown/submenus_tree", summary="A2. 获取二三级菜单树形结构")
+@autofill_public_router.post("/autofill/dropdown/submenus_tree", summary="A2. 获取二三级菜单树形结构")
+async def get_submenus_tree(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    根据一级菜单名称+应用名称+分类获取二三级菜单（树形结构）
+    支持 GET 和 POST 方法
+    支持参数传递方式: Query / Form-Data / JSON Body
+    必需参数: first_level_value（一级菜单选项值）
+    可选参数: class_name（分类名称）
+    """
+    return await get_submenus_tree_handler(request, auth_info)
+
+
+# ==================== 字段明细管理公共接口 ====================
+
+async def create_field_spec_public_handler(
+    request: Request,
+    auth_info: dict
+):
+    """
+    公共接口：创建字段明细
+    """
+    from pydantic import BaseModel, Field
+
+    class FieldSpecCreateRequest(BaseModel):
+        field_group_id: int = Field(..., description="字段组ID")
+        field_name: str = Field(..., description="字段名（英文）")
+        field_label: str = Field(..., description="字段显示名称")
+        field_type: str = Field(default="select", description="字段类型: select/text")
+        fill_instruction: str = Field(default="", description="字段填写指引")
+        options: Dict = Field(default_factory=dict, description="选项配置")
+
+    params = await parse_request_params(request, FieldSpecCreateRequest)
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+
+    # 验证字段组是否存在
+    field_group = await field_group_config_controller.model.filter(
+        id=params["field_group_id"],
+        tenant_id=tenant_id,
+        app_name=app_name
+    ).first()
+
+    if not field_group:
+        raise HTTPException(status_code=404, detail="Field group not found")
+
+    # 检查同一字段组下字段名是否已存在
+    existing = await field_spec_controller.model.filter(
+        field_group_id=params["field_group_id"],
+        field_name=params["field_name"]
+    ).first()
+
+    if existing:
+        raise HTTPException(status_code=400, detail="Field name already exists in this group")
+
+    # 创建字段
+    field_data = {
+        "field_group_id": params["field_group_id"],
+        "field_name": params["field_name"],
+        "field_label": params["field_label"],
+        "field_type": params.get("field_type", "select"),
+        "fill_instruction": params.get("fill_instruction", ""),
+        "options": params.get("options", {}),
+        "corrections": [],
+        "is_active": True,
+        "tenant_id": tenant_id,
+    }
+
+    spec = await field_spec_controller.create(obj_in=field_data)
+
+    return Success(data={
+        "id": spec.id,
+        "field_name": spec.field_name,
+        "field_label": spec.field_label,
+        "field_type": spec.field_type,
+    })
+
+
+@autofill_public_router.post("/autofill/field_spec/create", summary="公共接口：创建字段明细")
+async def create_field_spec_public(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    公共接口：创建字段明细
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
+    必需参数: field_group_id, field_name, field_label
+    """
+    return await create_field_spec_public_handler(request, auth_info)

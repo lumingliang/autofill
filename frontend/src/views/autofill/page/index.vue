@@ -70,16 +70,9 @@
                 <a-form-item label="页面名称" name="page_name">
                     <a-input v-model:value="form.page_name" placeholder="请输入页面名称" />
                 </a-form-item>
-                <a-form-item label="页面编码" name="page_code">
-                    <a-input v-model:value="form.page_code" placeholder="请输入页面编码（英文、数字、下划线）"
-                        :disabled="modalAction === 'edit'" />
-                </a-form-item>
                 <a-form-item label="所属应用" name="app_id">
                     <a-select v-model:value="form.app_id" placeholder="请选择应用" :options="appOptions"
-                        :disabled="modalAction === 'edit'" @change="handleAppChange" />
-                </a-form-item>
-                <a-form-item v-if="userStore.isSuperUser" label="租户" name="tenant_id">
-                    <a-select v-model:value="form.tenant_id" placeholder="请选择租户" :options="tenantOptions" />
+                        :disabled="modalAction === 'edit'" />
                 </a-form-item>
                 <a-form-item label="页面描述" name="description">
                     <a-textarea v-model:value="form.description" placeholder="请输入页面描述" :rows="3" />
@@ -232,15 +225,8 @@ const modalRules = {
     page_name: [
         { required: true, message: '请输入页面名称', trigger: 'blur' },
     ],
-    page_code: [
-        { required: true, message: '请输入页面编码', trigger: 'blur' },
-        { pattern: /^[a-zA-Z0-9_]+$/, message: '页面编码只能包含英文、数字、下划线', trigger: 'blur' },
-    ],
     app_id: [
-        { required: true, message: '请选择应用', trigger: 'change', type: 'number' },
-    ],
-    tenant_id: [
-        { required: true, message: '请选择租户', trigger: 'change', type: 'number' },
+        { required: true, message: '请选择应用', trigger: 'change' },
     ],
 }
 

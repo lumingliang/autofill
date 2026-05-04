@@ -76,9 +76,6 @@
         <a-form-item label="字段组名称" name="group_name">
           <a-input v-model:value="form.group_name" placeholder="请输入字段组名称" />
         </a-form-item>
-        <a-form-item v-if="modalAction === 'add'" label="字段组编码" name="group_code">
-          <a-input v-model:value="form.group_code" placeholder="请输入字段组编码（英文、数字、下划线）" />
-        </a-form-item>
         <a-form-item label="所属页面" name="page_id">
           <a-select v-model:value="form.page_id" placeholder="请选择页面" :options="pageOptions"
             :disabled="modalAction === 'edit'" @change="handlePageChange" />
@@ -287,12 +284,8 @@ const modalRules = {
   group_name: [
     { required: true, message: '请输入字段组名称', trigger: 'blur' },
   ],
-  group_code: [
-    { required: true, message: '请输入字段组编码', trigger: 'blur' },
-    { pattern: /^[a-zA-Z0-9_]+$/, message: '编码只能包含英文、数字、下划线', trigger: 'blur' },
-  ],
   page_id: [
-    { required: true, message: '请选择页面', trigger: 'change', type: 'number' },
+    { required: true, message: '请选择页面', trigger: 'change' },
   ],
 }
 
