@@ -9,6 +9,9 @@ sys.path.insert(0, '/Users/lu/code/code/py/autofill')
 
 from tortoise import Tortoise
 
+from app.models.autofill import AppManagement
+from app.models.llm_config import LLMConfig
+
 # 数据库配置
 DB_CONFIG = {
     "connections": {
@@ -42,10 +45,6 @@ async def setup_llm_config():
     await Tortoise.init(config=DB_CONFIG)
 
     api_key = "af_1fzDujUFl7SLg9L3CWMSV5upBT4GU1bR"
-
-    # 导入模型
-    from app.models.autofill import AppManagement
-    from app.models.llm_config import LLMConfig
 
     # 查找应用
     app = await AppManagement.filter(api_key=api_key, is_active=True).first()

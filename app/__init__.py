@@ -16,7 +16,6 @@ from app.core.init_app import (
 )
 from app.core.redis import redis_client
 from app.log import setup_logger
-from app.settings.config import settings
 
 try:
     from app.settings.config import settings
@@ -35,7 +34,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: Redis connection failed: {e}")
 
-    await init_data()
+    await init_data(app)
 
     # 初始化 Kafka 消费者
     await init_kafka_consumers()

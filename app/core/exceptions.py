@@ -17,6 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from tortoise.exceptions import DoesNotExist, IntegrityError, OperationalError
 
 from app.log import logger, get_request_id
+from app.settings.config import settings
 
 
 class SettingNotFound(Exception):
@@ -251,9 +252,8 @@ async def GlobalExceptionHandle(req: Request, exc: Exception) -> JSONResponse:
     这是最后的兜底处理器，确保任何异常都不会暴露敏感信息给客户端
     """
     _log_exception(req, exc, level="error")
-    
+
     # 生产环境不返回详细的异常信息
-    from app.settings.config import settings
     if settings.DEBUG:
         msg = f"服务器内部错误: {str(exc)}"
     else:

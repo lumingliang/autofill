@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Header, Query, Request
 from tortoise.expressions import Q
 
 from app.controllers.api import api_controller
@@ -97,6 +97,6 @@ async def delete_api(
 
 
 @router.post("/refresh", summary="刷新API列表")
-async def refresh_api():
-    await api_controller.refresh_api()
+async def refresh_api(request: Request):
+    await api_controller.refresh_api(request.app)
     return Success(msg="OK")

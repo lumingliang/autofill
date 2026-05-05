@@ -2,7 +2,7 @@ from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
 from app.core.crud import CRUDBase
-from app.models.admin import Dept, DeptClosure
+from app.models.admin import Dept, DeptClosure, Tenant
 from app.schemas.depts import DeptCreate, DeptUpdate
 from app.settings.config import settings
 
@@ -31,7 +31,6 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
         # 如果需要包含租户信息，预加载租户数据
         tenant_map = {}
         if include_tenant:
-            from app.models.admin import Tenant
             tenant_ids = [dept.tenant_id for dept in all_depts if dept.tenant_id]
             if tenant_ids:
                 tenants = await Tenant.filter(id__in=tenant_ids)

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.routing import APIRoute
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -409,7 +409,6 @@ class LimitRequestMiddleware(BaseHTTPMiddleware):
             try:
                 size = int(content_length)
                 if size > self.max_upload_size:
-                    from fastapi.responses import JSONResponse
                     return JSONResponse(
                         status_code=413,
                         content={"detail": f"请求体大小超过限制: {self.max_upload_size} bytes"}

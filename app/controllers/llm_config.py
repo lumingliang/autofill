@@ -1,6 +1,9 @@
 """
 LLM 配置管理 Controller
 """
+import logging
+import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -10,6 +13,7 @@ from tortoise.expressions import Q
 from app.core.crud import CRUDBase
 from app.models.llm_config import LLMConfig
 from app.schemas.llm_config import LLMConfigCreate, LLMConfigUpdate
+from app.services.llm.litellm_sync_service import litellm_sync_service
 from app.settings.config import settings
 
 
@@ -176,7 +180,6 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
         structured_methods = capabilities.get("structured_output_methods", {})
 
         if method in structured_methods:
-            from datetime import datetime
             structured_methods[method]["supported"] = supported
             structured_methods[method]["failed_count"] = failed_count
             structured_methods[method]["last_error"] = last_error
@@ -188,9 +191,6 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
 
     async def _sync_to_litellm(self, config: LLMConfig, action: str = "create"):
         """同步配置到 LiteLLM 网关"""
-        # 延迟导入避免循环导入
-        from app.services.llm.litellm_sync_service import litellm_sync_service
-
         try:
             if action in ["create", "update"]:
                 # 添加或更新配置
@@ -201,15 +201,11 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
 
         except Exception as e:
             # 记录错误但不影响主流程
-            import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to sync config to LiteLLM: {e}")
 
     async def test_config(self, config: LLMConfig) -> Dict[str, Any]:
         """测试配置连通性"""
-        import time
-        from datetime import datetime
-
         litellm_params = config.litellm_params or {}
         api_key = litellm_params.get("api_key", "")
         api_base = litellm_params.get("api_base", None)

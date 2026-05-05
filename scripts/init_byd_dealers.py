@@ -12,6 +12,7 @@ from tortoise import Tortoise
 from app.models.byd_dealer import BYDDealer
 from app.models.autofill import AppManagement
 from app.services.dealer.byd_dealer_service import BYDDealerService
+from app.settings.config import settings
 
 
 # 比亚迪经销商数据模板
@@ -150,8 +151,6 @@ def generate_100_dealers() -> List[Dict[str, Any]]:
 
 async def init_database():
     """初始化数据库连接"""
-    from app.settings.config import settings
-
     await Tortoise.init(
         config=settings.TORTOISE_ORM
     )

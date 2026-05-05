@@ -5,6 +5,7 @@ DataQueryAgent - 通用数据查询 Agent
 """
 import json
 import time
+import traceback
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
@@ -316,7 +317,6 @@ class DataQueryAgent:
 
             except Exception as e:
                 logger.error(f"[DataQueryAgent] 迭代异常: {e}")
-                import traceback
                 traceback.print_exc()
                 execution_time = int((time.time() - start_time) * 1000)
                 return QueryResult(

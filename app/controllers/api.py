@@ -32,9 +32,7 @@ class ApiController(CRUDBase[Api, ApiCreate, ApiUpdate]):
             return False
         return True
 
-    async def refresh_api(self):
-        from app import app
-
+    async def refresh_api(self, app):
         # 删除废弃API数据
         all_api_list = []
         for route in app.routes:

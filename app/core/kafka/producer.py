@@ -3,6 +3,7 @@ Kafka 生产者组件
 基于 confluent-kafka-python (librdkafka)
 """
 import json
+import uuid
 from typing import Any, Dict, Optional, Callable
 
 from confluent_kafka import Producer, KafkaError
@@ -73,7 +74,6 @@ class KafkaProducer:
 
         try:
             # 生成消息 ID 用于回调跟踪
-            import uuid
             message_id = str(uuid.uuid4())
 
             # 序列化消息

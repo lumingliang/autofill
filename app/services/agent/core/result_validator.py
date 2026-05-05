@@ -1,6 +1,7 @@
 """
 结果验证器
 """
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.log import logger
@@ -126,7 +127,6 @@ API 结果:
         if "function_call" in result:
             function_call = result["function_call"]
             if "arguments" in function_call:
-                import json
                 args = json.loads(function_call["arguments"])
                 return args.get("is_valid", True), args.get("reason", "")
 

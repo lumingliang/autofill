@@ -13,8 +13,10 @@ sys.path.insert(0, '/Users/lu/code/code/py/autofill')
 from app.models.autofill import FillDataRecord
 from app.models.enums import AIFillDataStatus
 from app.core.kafka import KafkaConfig
-from confluent_kafka.admin import AdminClient
+from app.settings.config import settings
+from confluent_kafka.admin import AdminClient, TopicPartition
 from confluent_kafka import Consumer, KafkaException
+from tortoise import Tortoise
 
 
 async def check_database_records():
@@ -177,13 +179,6 @@ async def main():
 
 
 if __name__ == '__main__':
-    # 导入需要的模块
-    from confluent_kafka import TopicPartition
-
-    # 初始化 Tortoise ORM
-    from tortoise import Tortoise
-    from app.settings.config import settings
-
     async def init_orm():
         await Tortoise.init(config=settings.TORTOISE_ORM)
 
