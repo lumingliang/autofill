@@ -5,7 +5,7 @@
 import json
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
 from tortoise.expressions import Q
 
@@ -18,10 +18,9 @@ from app.controllers.autofill import (dropdown_option_controller,
 from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
 from app.log import logger
-from app.schemas.base import Fail, Success
+from app.schemas.base import Success
 from app.schemas.autofill import *
 from app.services.autofill.ai_fill_service import get_ai_fill_service
-from app.settings.config import settings
 
 autofill_public_router = APIRouter()
 
@@ -396,7 +395,8 @@ async def get_field_group_handler(
 ):
     """
     查询字段组配置处理逻辑（改造后）
-    - 支持通过 page_name + group_name 查询
+    - 支持通过 page_name + group_names 查询多个字段组
+    - 支持通过 field_names 筛选指定字段
     - 返回组装后的Prompt、Function Calling Schema、字段明细等完整信息
     """
     from pydantic import BaseModel
@@ -405,7 +405,8 @@ async def get_field_group_handler(
 
     class FieldGroupRequest(BaseModel):
         page_name: str = Field(..., description="页面名称（必填）")
-        group_name: str = Field(..., description="字段组名称（必填）")
+        group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选，不传则查询所有）")
+        field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
 
     params = await parse_request_params(request, FieldGroupRequest)
 
@@ -426,11 +427,18 @@ async def get_field_group_handler(
     q = Q(
         tenant_id=tenant_id,
         app_name=app_name,
-        page_id=page.id,
-        group_name=params.get("group_name")
+        page_id=page.id
     )
+    
+    # 如果传了 group_names，则按名称筛选
+    group_names = params.get("group_names", [])
+    if group_names:
+        q &= Q(group_name__in=group_names)
 
     field_groups = await field_group_config_controller.model.filter(q).all()
+
+    # 获取字段名称筛选条件
+    field_names_filter = set(params.get("field_names", []))
 
     # 构建完整返回数据
     result = []
@@ -445,10 +453,17 @@ async def get_field_group_handler(
 
         field_specs = []
         if field_spec_ids:
-            field_specs = await field_spec_controller.model.filter(
-                id__in=field_spec_ids,
-                is_active=True
-            ).all()
+            # 构建字段查询条件
+            field_q = Q(id__in=field_spec_ids, is_active=True)
+            # 如果传了 field_names，则按名称筛选
+            if field_names_filter:
+                field_q &= Q(field_name__in=list(field_names_filter))
+            
+            field_specs = await field_spec_controller.model.filter(field_q).all()
+
+        # 如果没有匹配的字段且传了 field_names 筛选，则跳过该字段组
+        if field_names_filter and not field_specs:
+            continue
 
         # 构建字段指令
         fields_instructions = build_fields_instructions(field_specs)
@@ -521,15 +536,16 @@ async def list_field_spec_handler(
 ):
     """
     查询字段明细列表处理逻辑（改造后）
-    - 支持通过 page_name + group_name + field_name 查询
+    - 支持通过 page_name + group_names 查询多个字段组
+    - 支持通过 field_names 筛选指定字段
     """
     from pydantic import BaseModel
     from app.models.autofill import FieldGroupFieldSpec
 
     class FieldSpecListRequest(BaseModel):
         page_name: str = Field(..., description="页面名称（必填）")
-        group_name: str = Field(..., description="字段组名称（必填）")
-        field_name: Optional[str] = Field(None, description="字段名（可选，精确匹配）")
+        group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选，不传则查询所有）")
+        field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
 
     params = await parse_request_params(request, FieldSpecListRequest)
 
@@ -546,25 +562,31 @@ async def list_field_spec_handler(
     if not page:
         return Success(data=[])
 
-    # 2. 查找字段组
-    field_group = await field_group_config_controller.model.filter(
+    # 2. 查找字段组（支持多个）
+    group_q = Q(
         tenant_id=tenant_id,
         app_name=app_name,
-        page_id=page.id,
-        group_name=params.get("group_name")
-    ).first()
+        page_id=page.id
+    )
+    
+    group_names = params.get("group_names", [])
+    if group_names:
+        group_q &= Q(group_name__in=group_names)
+    
+    field_groups = await field_group_config_controller.model.filter(group_q).all()
 
-    if not field_group:
+    if not field_groups:
         return Success(data=[])
 
-    # 3. 通过中间表查询关联的字段ID
+    # 3. 收集所有字段组关联的字段ID
+    field_group_ids = [fg.id for fg in field_groups]
     relations = await FieldGroupFieldSpec.filter(
-        field_group_id=field_group.id,
+        field_group_id__in=field_group_ids,
         tenant_id=tenant_id,
         app_name=app_name
     ).all()
 
-    field_spec_ids = [r.field_spec_id for r in relations]
+    field_spec_ids = list(set([r.field_spec_id for r in relations]))
 
     if not field_spec_ids:
         return Success(data=[])
@@ -572,9 +594,10 @@ async def list_field_spec_handler(
     # 4. 构建字段查询条件
     q = Q(id__in=field_spec_ids, is_active=True)
 
-    # 如果传入了 field_name，精确匹配
-    if params.get("field_name"):
-        q &= Q(field_name=params["field_name"])
+    # 如果传入了 field_names，按名称筛选
+    field_names = params.get("field_names", [])
+    if field_names:
+        q &= Q(field_name__in=field_names)
 
     field_specs = await field_spec_controller.model.filter(q).all()
 
@@ -610,6 +633,299 @@ async def list_field_spec(
     支持参数传递方式: Query / Form-Data / JSON Body
     """
     return await list_field_spec_handler(request, auth_info)
+
+
+# ==================== 合并查询接口 ====================
+
+async def get_field_groups_schema_handler(
+    request: Request,
+    auth_info: dict
+):
+    """
+    合并查询接口：查询多个字段组的完整Schema信息
+    - 支持通过 page_name + group_names 查询多个字段组
+    - 支持通过 field_names 筛选指定字段
+    - 返回组装后的Prompt、Function Calling Schema等完整信息
+    
+    使用场景：
+    1. 传了 group_names，未传 field_names -> 返回这些字段组下所有字段的完整信息
+    2. 传了 group_names + field_names -> 仅返回指定字段的完整信息（字段必须在指定字段组中）
+    3. 未传 group_names，传了 field_names -> 返回包含这些字段的所有字段组的完整信息
+    """
+    from pydantic import BaseModel
+    from app.services.autofill.prompt_service import build_function_schema, build_fields_instructions, assemble_prompt
+    from app.models.autofill import FieldGroupFieldSpec
+
+    class FieldGroupsSchemaRequest(BaseModel):
+        page_name: str = Field(..., description="页面名称（必填）")
+        group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选）")
+        field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选）")
+
+    params = await parse_request_params(request, FieldGroupsSchemaRequest)
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+
+    # 1. 查找页面
+    page = await fill_page_controller.model.filter(
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_name=params.get("page_name")
+    ).first()
+
+    if not page:
+        return Success(data={"field_groups": [], "fields": [], "combined_schema": None})
+
+    field_names_filter = set(params.get("field_names", []))
+    group_names_filter = set(params.get("group_names", []))
+
+    # 2. 确定要查询的字段组
+    if group_names_filter:
+        # 如果传了 group_names，查询指定字段组
+        field_groups = await field_group_config_controller.model.filter(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            page_id=page.id,
+            group_name__in=list(group_names_filter)
+        ).all()
+    else:
+        # 如果没传 group_names，但有 field_names，需要找出包含这些字段的字段组
+        if field_names_filter:
+            # 先找出这些字段
+            field_specs = await field_spec_controller.model.filter(
+                tenant_id=tenant_id,
+                app_name=app_name,
+                field_name__in=list(field_names_filter),
+                is_active=True
+            ).all()
+            field_spec_ids = [fs.id for fs in field_specs]
+            
+            # 找出包含这些字段的字段组ID
+            relations = await FieldGroupFieldSpec.filter(
+                field_spec_id__in=field_spec_ids,
+                tenant_id=tenant_id,
+                app_name=app_name
+            ).all()
+            field_group_ids = list(set([r.field_group_id for r in relations]))
+            
+            # 查询这些字段组
+            field_groups = await field_group_config_controller.model.filter(
+                id__in=field_group_ids,
+                tenant_id=tenant_id,
+                app_name=app_name,
+                page_id=page.id
+            ).all()
+        else:
+            # 什么都没传，返回空
+            return Success(data={"field_groups": [], "fields": [], "combined_schema": None})
+
+    if not field_groups:
+        return Success(data={"field_groups": [], "fields": [], "combined_schema": None})
+
+    # 3. 构建返回数据
+    result_groups = []
+    all_field_specs = []
+    all_field_ids = set()
+
+    for fg in field_groups:
+        # 获取字段组关联的字段
+        relations = await FieldGroupFieldSpec.filter(
+            field_group_id=fg.id,
+            tenant_id=tenant_id,
+            app_name=app_name
+        ).all()
+        field_spec_ids = [r.field_spec_id for r in relations]
+
+        # 构建字段查询条件
+        field_q = Q(id__in=field_spec_ids, is_active=True)
+        if field_names_filter:
+            field_q &= Q(field_name__in=list(field_names_filter))
+
+        field_specs = await field_spec_controller.model.filter(field_q).all()
+
+        # 如果传了 field_names 筛选但没有匹配字段，跳过该字段组
+        if field_names_filter and not field_specs:
+            continue
+
+        # 收集所有字段（去重）
+        for fs in field_specs:
+            if fs.id not in all_field_ids:
+                all_field_ids.add(fs.id)
+                all_field_specs.append(fs)
+
+        # 构建字段指令
+        fields_instructions = build_fields_instructions(field_specs)
+
+        # 构建Function Calling Schema
+        function_schema = build_function_schema(fg, field_specs)
+
+        # 组装示例Prompt
+        example_query = "[用户对话内容将在这里插入]"
+        assembled_prompt = assemble_prompt(fg, field_specs, example_query)
+
+        result_groups.append({
+            "id": fg.id,
+            "group_name": fg.group_name,
+            "group_code": fg.group_code,
+            "page_id": fg.page_id,
+            "page_name": page.page_name,
+            "prompt_template_base": fg.prompt_template_base,
+            "output_templates": fg.output_templates or {},
+            "version": fg.version,
+            "is_active": fg.is_active,
+            "description": fg.description,
+            "field_specs": [
+                {
+                    "id": fs.id,
+                    "field_name": fs.field_name,
+                    "field_label": fs.field_label,
+                    "field_type": fs.field_type,
+                    "fill_instruction": fs.fill_instruction,
+                    "options": fs.options,
+                    "corrections": fs.corrections,
+                    "is_active": fs.is_active,
+                }
+                for fs in field_specs
+            ],
+            "prompt_info": {
+                "template_base": fg.prompt_template_base,
+                "fields_instructions": fields_instructions,
+                "assembled_prompt": assembled_prompt,
+            },
+            "function_calling": {
+                "schema": function_schema,
+                "json_schema": json.dumps(function_schema, ensure_ascii=False, indent=2),
+            },
+        })
+
+    # 4. 构建合并后的Schema（所有字段的汇总）
+    combined_schema = None
+    if all_field_specs:
+        # 使用第一个字段组的模板作为基础
+        base_fg = field_groups[0] if field_groups else None
+        if base_fg:
+            combined_instructions = build_fields_instructions(all_field_specs)
+            
+            # 构建符合 OpenAI 规范的 Function Schema
+            combined_function_schema = {
+                "type": "function",
+                "function": {
+                    "name": "fill_form",
+                    "description": "从对话中提取表单数据",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            }
+            
+            # 合并所有字段的参数
+            for fs in all_field_specs:
+                param_info = _build_field_param(fs)
+                combined_function_schema["function"]["parameters"]["properties"][fs.field_name] = param_info
+                # 默认所有字段都是 required
+                combined_function_schema["function"]["parameters"]["required"].append(fs.field_name)
+
+            combined_prompt = assemble_prompt(base_fg, all_field_specs, "[用户对话内容将在这里插入]")
+            
+            # 如果 template_base 为空，使用默认模板
+            template_base = base_fg.prompt_template_base or """你是一个智能填单助手。请根据以下对话内容，提取指定字段的信息。
+
+需要提取的字段：
+{{fields_instructions}}
+
+对话内容：
+{{query}}
+
+请严格按照字段要求提取信息，并以JSON格式返回结果。"""
+            
+            combined_schema = {
+                "prompt_info": {
+                    "template_base": template_base,
+                    "fields_instructions": combined_instructions,
+                    "assembled_prompt": combined_prompt,
+                },
+                "function_calling": {
+                    "schema": combined_function_schema,
+                    "json_schema": json.dumps(combined_function_schema, ensure_ascii=False, indent=2),
+                },
+            }
+
+    return Success(data={
+        "field_groups": result_groups,
+        "fields_summary": {
+            "total_fields": len(all_field_specs),
+            "field_names": [fs.field_name for fs in all_field_specs],
+        },
+        "combined_schema": combined_schema,
+    })
+
+
+def _build_field_param(field_spec):
+    """构建单个字段的参数定义（符合 OpenAI Function Calling 规范）"""
+    # 构建描述：优先使用 fill_instruction，其次是 field_label
+    description = field_spec.fill_instruction or field_spec.field_label or field_spec.field_name
+    
+    param = {
+        "type": "string",
+        "description": description,
+    }
+    
+    # 如果有选项，添加 enum（使用 label 便于 LLM 理解）
+    if field_spec.options and field_spec.options.get("items"):
+        items = field_spec.options.get("items", [])
+        # 过滤已删除的选项，使用 label 作为 enum 值
+        valid_items = [item for item in items if not item.get("is_deleted", False)]
+        if valid_items:
+            # 使用 label 作为 enum 值（LLM 更容易理解）
+            param["enum"] = [item.get("label") for item in valid_items if item.get("label")]
+            
+            # 在 description 中追加选项说明
+            option_descs = []
+            for item in valid_items[:10]:  # 最多显示前10个选项，避免 description 过长
+                label = item.get("label", "")
+                fill_inst = item.get("fill_instruction", "")
+                if fill_inst:
+                    option_descs.append(f"{label}: {fill_inst}")
+                else:
+                    option_descs.append(label)
+            
+            if option_descs:
+                param["description"] = f"{description}。可选值：{', '.join(option_descs)}"
+                if len(valid_items) > 10:
+                    param["description"] += f" 等共{len(valid_items)}个选项"
+    
+    return param
+
+
+@autofill_public_router.get("/autofill/field_groups/schema", summary="查询多个字段组的完整Schema")
+@autofill_public_router.post("/autofill/field_groups/schema", summary="查询多个字段组的完整Schema")
+async def get_field_groups_schema(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    查询多个字段组的完整Schema信息（合并接口）
+    支持 GET 和 POST 方法
+    支持参数传递方式: Query / Form-Data / JSON Body
+    
+    请求参数:
+        - page_name: 页面名称（必填）
+        - group_names: 字段组名称列表（可选）
+        - field_names: 字段名称列表（可选）
+    
+    使用场景:
+        1. 只传 group_names: 返回这些字段组下所有字段的完整信息
+        2. 传 group_names + field_names: 仅返回指定字段的完整信息
+        3. 只传 field_names: 返回包含这些字段的所有字段组信息
+    
+    返回:
+        - field_groups: 字段组列表（每个包含Prompt、Function Schema等）
+        - fields_summary: 字段汇总信息
+        - combined_schema: 合并后的Schema（所有字段汇总）
+    """
+    return await get_field_groups_schema_handler(request, auth_info)
 
 
 # ==================== LLM 填单接口 ====================
