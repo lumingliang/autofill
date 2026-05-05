@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 class FillPageCreate(BaseModel):
     page_name: str = Field(..., max_length=64)
     page_code: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]*$", description="页面编码，不传则后端自动生成")
-    app_id: int = Field(0, description="关联应用ID")
-    app_name: str = Field("", max_length=64)
+    app_name: str = Field(..., max_length=64, description="关联应用名称")
+    app_id: int = Field(0, description="关联应用ID，后端自动填充")
     tenant_id: int = Field(0, description="租户ID")
     description: str = Field("", description="页面描述")
     is_active: bool = Field(True, description="是否启用")
@@ -19,8 +19,8 @@ class FillPageUpdate(BaseModel):
     id: int
     page_name: str = Field("", max_length=64)
     page_code: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
-    app_id: int = Field(0, description="关联应用ID")
-    app_name: str = Field("", max_length=64)
+    app_name: str = Field("", max_length=64, description="关联应用名称")
+    app_id: int = Field(0, description="关联应用ID，后端自动填充")
     description: str = Field("", description="页面描述")
     is_active: bool = Field(True, description="是否启用")
 
@@ -117,7 +117,7 @@ class FieldOptions(BaseModel):
 
 
 class FieldSpecCreate(BaseModel):
-    field_name: str = Field(..., max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    field_name: str = Field(..., max_length=64)
     field_label: str = Field("", max_length=128)
     field_type: str = Field(default="text")
     tenant_id: int = Field(0, description="租户ID")
@@ -131,7 +131,7 @@ class FieldSpecCreate(BaseModel):
 
 class FieldSpecUpdate(BaseModel):
     id: int
-    field_name: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    field_name: str = Field("", max_length=64)
     field_label: str = Field("", max_length=128)
     field_type: str = Field("", description="字段类型")
     tenant_id: int = Field(0, description="租户ID")

@@ -173,6 +173,7 @@ class SummaryTemplateDetailRequest(BaseModel):
 class DropdownOptionListRequest(BaseModel):
     class_name: str = Field("", description="分类名称")
     parent_id: int = Field(0, description="父选项ID")
+    tree: bool = Field(False, description="是否返回树形结构，true时递归返回所有子级")
 
 
 class DropdownOptionDetailRequest(BaseModel):

@@ -13,7 +13,7 @@
 
 参数：
     --api-key: API Key（必需）
-    --base-url: API 基础地址，默认 http://localhost:8000
+    --base-url: API 基础地址，默认 http://localhost:9999
     --field-group-id: 字段组ID（必需）
     --class-name: 分类名称（可选）
     --first-level-field-name: 一级字段名称，默认 "first_level_menu"
@@ -31,7 +31,7 @@ import httpx
 class DropdownToFieldSyncer:
     """下拉选项同步到字段的同步器"""
 
-    def __init__(self, api_key: str, base_url: str = "http://localhost:8000"):
+    def __init__(self, api_key: str, base_url: str = "http://localhost:9999"):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.headers = {
@@ -370,8 +370,8 @@ async def main():
     )
     parser.add_argument(
         "--base-url",
-        default="http://localhost:8000",
-        help="API 基础地址 (默认: http://localhost:8000)",
+        default="http://localhost:9999",
+        help="API 基础地址 (默认: http://localhost:9999)",
     )
     parser.add_argument(
         "--field-group-id",

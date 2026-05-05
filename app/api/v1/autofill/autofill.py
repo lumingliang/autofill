@@ -134,7 +134,7 @@ async def get_app_select(
         q &= Q(tenant_id=tenant_query["tenant_id"])
 
     apps = await app_management_controller.model.filter(q).all()
-    data = [{"label": app.app_name, "value": app.id} for app in apps]
+    data = [{"label": app.app_name, "value": app.app_name} for app in apps]
     return Success(data=data)
 
 
@@ -384,6 +384,7 @@ async def list_dropdown(
 @dropdown_router.get("/dropdown/tree", summary="下拉选项树形结构")
 async def get_dropdown_tree(
     app_name: str = Query(..., description="应用名称"),
+    class_name: str = Query("", description="分类名称"),
     parent_id: int = Query(0, description="父选项ID"),
     tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
@@ -405,8 +406,43 @@ async def get_dropdown_tree(
         else:
             return Fail(code=400, msg="请指定租户ID")
 
-    tree = await dropdown_option_controller.get_tree(effective_tenant_id, app_name, parent_id)
+    tree = await dropdown_option_controller.get_tree(effective_tenant_id, app_name, parent_id, class_name)
     return Success(data=tree)
+
+
+@dropdown_router.get("/dropdown/classes", summary="获取应用下的分类列表")
+async def get_dropdown_classes(
+    app_name: str = Query(..., description="应用名称"),
+    tenant_id: int = Query(0, description="租户ID"),
+    token: str = Header(..., description="token验证"),
+):
+    """
+    获取指定应用下的所有分类列表
+    """
+    current_user = await AuthControl.is_authed(token)
+
+    effective_tenant_id = tenant_id
+    if effective_tenant_id <= 0:
+        effective_tenant_id = current_user.current_tenant_id
+
+    if effective_tenant_id <= 0:
+        # 如果没有指定租户，尝试从现有数据中获取
+        first_option = await dropdown_option_controller.model.filter(app_name=app_name).first()
+        if first_option:
+            effective_tenant_id = first_option.tenant_id
+        elif is_superuser(current_user):
+            effective_tenant_id = 1
+        else:
+            return Fail(code=400, msg="请指定租户ID")
+
+    # 查询该应用下的所有分类
+    options = await dropdown_option_controller.model.filter(
+        tenant_id=effective_tenant_id,
+        app_name=app_name
+    ).distinct().values("class_name")
+
+    class_names = [opt["class_name"] for opt in options if opt["class_name"]]
+    return Success(data=class_names)
 
 
 @dropdown_router.get("/dropdown/get", summary="下拉选项详情")
@@ -435,7 +471,18 @@ async def create_dropdown(
     # 确定租户ID
     target_tenant_id = 0
     if is_superuser(current_user):
-        target_tenant_id = option_in.tenant_id
+        # 超级管理员如果没有指定租户ID，则从应用中自动获取
+        if option_in.tenant_id and option_in.tenant_id > 0:
+            target_tenant_id = option_in.tenant_id
+        elif option_in.app_name:
+            # 从应用管理中获取租户ID
+            app = await app_management_controller.model.filter(app_name=option_in.app_name).first()
+            if app:
+                target_tenant_id = app.tenant_id
+            else:
+                return Fail(code=400, msg=f"应用 '{option_in.app_name}' 不存在")
+        else:
+            return Fail(code=400, msg="请指定租户ID或应用名称")
     else:
         target_tenant_id = current_user.current_tenant_id
         if target_tenant_id <= 0:
@@ -503,8 +550,18 @@ async def import_dropdown_from_csv(
     # 确定租户ID
     target_tenant_id = tenant_id
     if is_superuser(current_user):
-        if target_tenant_id <= 0:
-            return Fail(code=400, msg="请指定租户ID")
+        # 超级管理员如果没有指定租户ID，则从应用中自动获取
+        if target_tenant_id and target_tenant_id > 0:
+            target_tenant_id = target_tenant_id
+        elif app_name:
+            # 从应用管理中获取租户ID
+            app = await app_management_controller.model.filter(app_name=app_name).first()
+            if app:
+                target_tenant_id = app.tenant_id
+            else:
+                return Fail(code=400, msg=f"应用 '{app_name}' 不存在")
+        else:
+            return Fail(code=400, msg="请指定租户ID或应用名称")
     else:
         target_tenant_id = current_user.current_tenant_id
         if target_tenant_id <= 0:

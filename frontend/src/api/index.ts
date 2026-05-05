@@ -114,6 +114,7 @@ export default {
   // autofill - 下拉选项管理
   getDropdownList: (params: any = {}) => request.get('/autofill/dropdown/list', { params }),
   getDropdownTree: (params: any = {}) => request.get('/autofill/dropdown/tree', { params }),
+  getDropdownClasses: (params: any = {}) => request.get('/autofill/dropdown/classes', { params }),
   getDropdownById: (params: any = {}) => request.get('/autofill/dropdown/get', { params }),
   createDropdown: (data: any = {}) => request.post('/autofill/dropdown/create', data),
   updateDropdown: (data: any = {}) => request.post('/autofill/dropdown/update', data),

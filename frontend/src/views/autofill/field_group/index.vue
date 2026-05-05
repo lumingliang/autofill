@@ -281,7 +281,6 @@ const modalForm = reactive({
   group_code: '',
   page_id: undefined as number | undefined,
   page_name: '',
-  app_name: '',
   prompt_template_base: '',
   output_templates: {} as Record<string, any>,
   description: '',
@@ -447,7 +446,6 @@ const handleAdd = () => {
   modalForm.group_code = ''
   modalForm.page_id = undefined
   modalForm.page_name = ''
-  modalForm.app_name = ''
   modalForm.prompt_template_base = `你是一个智能填单助手。请根据以下对话内容，提取指定字段的信息。
 
 需要提取的字段：
@@ -472,7 +470,6 @@ const handleEdit = (record: any) => {
   modalForm.group_code = record.group_code
   modalForm.page_id = record.page_id
   modalForm.page_name = record.page_name
-  modalForm.app_name = record.app_name
   modalForm.prompt_template_base = record.prompt_template_base
   modalForm.output_templates = record.output_templates || {}
   modalForm.description = record.description
