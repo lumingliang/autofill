@@ -473,7 +473,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .dropdown-page {
-  padding: 16px;
 
   .ellipsis-text {
     display: inline-block;

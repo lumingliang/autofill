@@ -2,10 +2,11 @@
 // 提供统一的筛选表单、表格样式
 
 .crud-page {
+  padding: 4px;
 
   // 筛选表单样式
   .crud-filter-form {
-    margin-bottom: 16px;
+    margin-bottom: 8px;
 
     // 筛选行 - 确保响应式换行正常工作
     .filter-row {
@@ -15,7 +16,7 @@
 
     // 筛选项 - 使用 Ant Design Vue 默认布局，仅固定标签宽度
     .filter-item {
-      margin-bottom: 16px;
+      margin-bottom: 8px;
 
       // 固定标签宽度，确保所有表单项对齐
       .ant-form-item-label {
@@ -23,18 +24,18 @@
       }
 
       // 确保输入组件占满剩余空间
-      .ant-input,
-      .ant-picker,
-      .ant-select {
-        width: 100%;
-      }
+      // .ant-input,
+      // .ant-picker,
+      // .ant-select {
+      //   width: 100%;
+      // }
     }
 
     // 操作按钮容器 - 与表单项保持相同布局
     .filter-actions {
       display: flex;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 0;
       padding-top: 0;
       height: 32px;
 
@@ -118,5 +119,5 @@
 .filter-item-col {
   padding-right: 8px;
   padding-left: 8px;
-  margin-bottom: 16px;
+  // margin-bottom: 4px;
 }

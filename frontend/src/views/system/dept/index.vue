@@ -205,9 +205,3 @@ onMounted(() => {
   loadTenants()
 })
 </script>
-
-<style scoped lang="less">
-.dept-page {
-  padding: 16px;
-}
-</style>

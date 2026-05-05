@@ -233,7 +233,6 @@ onMounted(loadData)
 
 <style scoped lang="less">
 .api-page {
-  padding: 16px;
 
   .ml-2 {
     margin-left: 8px;

@@ -251,9 +251,3 @@ onMounted(() => {
   loadTenants()
 })
 </script>
-
-<style scoped lang="less">
-.auditlog-page {
-  padding: 16px;
-}
-</style>

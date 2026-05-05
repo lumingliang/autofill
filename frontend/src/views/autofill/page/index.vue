@@ -436,7 +436,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .page-management {
-    padding: 16px;
 
     .detail-loading {
         display: flex;
