@@ -77,6 +77,12 @@
                 <a-form-item label="页面描述" name="description">
                     <a-textarea v-model:value="form.description" placeholder="请输入页面描述" :rows="3" />
                 </a-form-item>
+                <a-form-item label="Dify Agent URL" name="dify_agent_url">
+                    <a-input v-model:value="form.dify_agent_url" placeholder="请输入Dify Agent URL，如：https://dify.example.com/v1/chat-messages" />
+                </a-form-item>
+                <a-form-item label="Dify API Key" name="dify_api_key">
+                    <a-input-password v-model:value="form.dify_api_key" placeholder="请输入Dify API Key" />
+                </a-form-item>
                 <a-form-item label="状态" name="is_active">
                     <a-switch v-model:checked="form.is_active" />
                 </a-form-item>
@@ -102,6 +108,12 @@
                         </a-descriptions-item>
                         <a-descriptions-item label="描述" :span="2">{{ detailData.basic_info?.description || '-'
                             }}</a-descriptions-item>
+                        <a-descriptions-item label="Dify Agent URL" :span="2">{{ detailData.basic_info?.dify_agent_url || '-'
+                            }}</a-descriptions-item>
+                        <a-descriptions-item label="Dify API Key" :span="2">
+                            <span v-if="detailData.basic_info?.dify_api_key">********</span>
+                            <span v-else>-</span>
+                        </a-descriptions-item>
                     </a-descriptions>
                 </a-card>
 
@@ -180,6 +192,8 @@ const modalForm = reactive({
     app_name: '',
     tenant_id: undefined as number | undefined,
     description: '',
+    dify_agent_url: '',
+    dify_api_key: '',
     is_active: true,
 })
 
@@ -308,6 +322,8 @@ const handleAdd = () => {
     modalForm.app_name = ''
     modalForm.tenant_id = userStore.isSuperUser ? undefined : userStore.userInfo?.current_tenant_id
     modalForm.description = ''
+    modalForm.dify_agent_url = ''
+    modalForm.dify_api_key = ''
     modalForm.is_active = true
     crudTableRef.value?.openAddModal()
 }
@@ -321,6 +337,8 @@ const handleEdit = (record: any) => {
     modalForm.app_name = record.app_name
     modalForm.tenant_id = record.tenant_id
     modalForm.description = record.description
+    modalForm.dify_agent_url = record.dify_agent_url || ''
+    modalForm.dify_api_key = record.dify_api_key || ''
     modalForm.is_active = record.is_active
     crudTableRef.value?.openEditModal(record)
 }

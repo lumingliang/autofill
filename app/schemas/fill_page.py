@@ -12,6 +12,8 @@ class FillPageCreate(BaseModel):
     app_id: int = Field(0, description="关联应用ID，后端自动填充")
     tenant_id: int = Field(0, description="租户ID")
     description: str = Field("", description="页面描述")
+    dify_agent_url: str = Field("", max_length=512, description="Dify Agent URL")
+    dify_api_key: str = Field("", max_length=128, description="Dify API Key")
     is_active: bool = Field(True, description="是否启用")
 
 
@@ -22,6 +24,8 @@ class FillPageUpdate(BaseModel):
     app_name: str = Field("", max_length=64, description="关联应用名称")
     app_id: int = Field(0, description="关联应用ID，后端自动填充")
     description: str = Field("", description="页面描述")
+    dify_agent_url: str = Field("", max_length=512, description="Dify Agent URL")
+    dify_api_key: str = Field("", max_length=128, description="Dify API Key")
     is_active: bool = Field(True, description="是否启用")
 
 
@@ -33,6 +37,8 @@ class FillPageOut(BaseModel):
     app_name: str = ""
     tenant_id: int = 0
     description: str = ""
+    dify_agent_url: str = ""
+    dify_api_key: str = ""
     is_active: bool = True
     created_at: str = ""
     updated_at: str = ""
