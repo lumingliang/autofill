@@ -194,7 +194,6 @@ async def get_field_group_detail(
             "page_id": group.page_id,
             "page_name": group.page_name,
             "description": group.description,
-            "version": group.version,
             "is_active": group.is_active,
             "created_at": str(group.created_at) if group.created_at else None,
             "updated_at": str(group.updated_at) if group.updated_at else None,
@@ -247,7 +246,6 @@ def _build_field_group_markdown(group, fields) -> str:
     lines.append(f"**编码**: `{group.group_code}`")
     lines.append(f"**应用**: {group.app_name}")
     lines.append(f"**页面**: {group.page_name}")
-    lines.append(f"**版本**: v{group.version}")
     lines.append(f"**状态**: {'启用' if group.is_active else '禁用'}")
     lines.append("")
 

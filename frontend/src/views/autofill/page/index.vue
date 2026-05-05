@@ -122,9 +122,6 @@
                     <a-table :dataSource="detailData.field_groups" :columns="fieldGroupColumns" size="small"
                         :pagination="false">
                         <template #bodyCell="{ column, record }">
-                            <template v-if="column.key === 'version'">
-                                v{{ record.version }}
-                            </template>
                             <template v-if="column.key === 'is_active'">
                                 <a-tag :color="record.is_active ? 'green' : 'red'">
                                     {{ record.is_active ? '启用' : '禁用' }}
@@ -211,7 +208,6 @@ const currentDetailId = ref<number | null>(null)
 const fieldGroupColumns = [
     { title: '字段组名称', dataIndex: 'group_name', key: 'group_name' },
     { title: '编码', dataIndex: 'group_code', key: 'group_code' },
-    { title: '版本', key: 'version', width: 80 },
     { title: '字段数', dataIndex: 'field_count', key: 'field_count', width: 80 },
     { title: '状态', key: 'is_active', width: 80 },
     { title: '操作', key: 'action', width: 100 },
