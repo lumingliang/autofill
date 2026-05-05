@@ -422,7 +422,6 @@ class TemplateFieldSync:
         if failed > 0:
             print("\n失败的任务:")
             for r in self.sync_results:
-                if not r.success:
                     print(f"  - {r.message}")
 
         print("=" * 60)

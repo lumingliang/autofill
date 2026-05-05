@@ -23,12 +23,13 @@ async def test_field_groups_schema():
             json={"page_name": "用户信息页", "group_names": ["default"]}
         )
         data = resp.json().get("data", {})
+        fields = data.get('fields', [])
         print(f"字段组数量: {len(data.get('field_groups', []))}")
-        print(f"字段总数: {data.get('fields_summary', {}).get('total_fields', 0)}")
-        print(f"字段列表: {data.get('fields_summary', {}).get('field_names', [])[:5]} ...")
+        print(f"字段总数: {len(fields)}")
+        print(f"字段列表: {[f.get('field_name') for f in fields][:5]} ...")
         print(f"合并Schema是否存在: {data.get('combined_schema') is not None}")
         print()
-        
+
         print("=" * 60)
         print("测试 2: 传 group_names + field_names，只查询指定字段")
         print("=" * 60)
@@ -36,17 +37,18 @@ async def test_field_groups_schema():
             f"{BASE_URL}/api/autofill/field_groups/schema",
             headers=headers,
             json={
-                "page_name": "用户信息页", 
+                "page_name": "用户信息页",
                 "group_names": ["default"],
                 "field_names": ["一级事件类型", "智能网联-二三级"]
             }
         )
         data = resp.json().get("data", {})
+        fields = data.get('fields', [])
         print(f"字段组数量: {len(data.get('field_groups', []))}")
-        print(f"字段总数: {data.get('fields_summary', {}).get('total_fields', 0)}")
-        print(f"字段列表: {data.get('fields_summary', {}).get('field_names', [])}")
+        print(f"字段总数: {len(fields)}")
+        print(f"字段列表: {[f.get('field_name') for f in fields]}")
         print()
-        
+
         print("=" * 60)
         print("测试 3: 只传 field_names，查询包含这些字段的字段组")
         print("=" * 60)
@@ -54,14 +56,15 @@ async def test_field_groups_schema():
             f"{BASE_URL}/api/autofill/field_groups/schema",
             headers=headers,
             json={
-                "page_name": "用户信息页", 
+                "page_name": "用户信息页",
                 "field_names": ["一级事件类型"]
             }
         )
         data = resp.json().get("data", {})
+        fields = data.get('fields', [])
         print(f"字段组数量: {len(data.get('field_groups', []))}")
-        print(f"字段总数: {data.get('fields_summary', {}).get('total_fields', 0)}")
-        print(f"字段列表: {data.get('fields_summary', {}).get('field_names', [])}")
+        print(f"字段总数: {len(fields)}")
+        print(f"字段列表: {[f.get('field_name') for f in fields]}")
         print()
         
         print("=" * 60)
@@ -78,10 +81,17 @@ async def test_field_groups_schema():
         )
         data = resp.json().get("data", {})
         combined = data.get('combined_schema', {})
-        func_schema = combined.get('function_calling', {}).get('schema', {})
-        print(f"Function Name: {func_schema.get('name')}")
-        print(f"Properties 数量: {len(func_schema.get('parameters', {}).get('properties', {}))}")
-        print(f"Properties: {list(func_schema.get('parameters', {}).get('properties', {}).keys())}")
+        func_calling = combined.get('function_calling', {})
+        schema = func_calling.get('schema', {})
+        # 新的 Schema 结构: type + function
+        func_def = schema.get('function', {})
+        params = func_def.get('parameters', {})
+        print(f"Schema Type: {schema.get('type')}")
+        print(f"Function Name: {func_def.get('name')}")
+        print(f"Function Description: {func_def.get('description')}")
+        print(f"Properties 数量: {len(params.get('properties', {}))}")
+        print(f"Properties: {list(params.get('properties', {}).keys())}")
+        print(f"Required: {params.get('required', [])}")
         print()
 
 
