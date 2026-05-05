@@ -102,31 +102,8 @@ frontendback/apps/*/.nitro/
 *.flv
 *.mkv
 
-# Trae IDE 配置
-.trae/
-
-# 测试相关
-tests/
-
-# 脚本目录
-scripts/
-
-# 文档目录
-docs/
-
-# LiteLLM 配置
-litellm/
 
 # 锁文件
 uv.lock
 
-# 配置文件示例
-config.toml.example
 
-# Docker 相关
-Dockerfile
-docker-compose.yml
-
-# 启动脚本
-start.sh
-run.py
