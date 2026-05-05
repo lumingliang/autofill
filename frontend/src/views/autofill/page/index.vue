@@ -70,8 +70,8 @@
                 <a-form-item label="页面名称" name="page_name">
                     <a-input v-model:value="form.page_name" placeholder="请输入页面名称" />
                 </a-form-item>
-                <a-form-item label="所属应用" name="app_id">
-                    <a-select v-model:value="form.app_id" placeholder="请选择应用" :options="appOptions"
+                <a-form-item label="所属应用" name="app_name">
+                    <a-select v-model:value="form.app_name" placeholder="请选择应用" :options="appOptions"
                         :disabled="modalAction === 'edit'" />
                 </a-form-item>
                 <a-form-item label="页面描述" name="description">
@@ -177,7 +177,6 @@ const modalForm = reactive({
     id: undefined as number | undefined,
     page_name: '',
     page_code: '',
-    app_id: undefined as number | undefined,
     app_name: '',
     tenant_id: undefined as number | undefined,
     description: '',
@@ -278,12 +277,7 @@ const fetchTenantOptions = async () => {
     }
 }
 
-const handleAppChange = (value: number) => {
-    const app = appOptions.value.find((a: any) => a.value === value)
-    if (app) {
-        modalForm.app_name = app.label
-    }
-}
+
 
 const handleSearch = () => {
     pagination.current = 1
@@ -311,7 +305,6 @@ const handleAdd = () => {
     modalForm.id = undefined
     modalForm.page_name = ''
     modalForm.page_code = ''
-    modalForm.app_id = undefined
     modalForm.app_name = ''
     modalForm.tenant_id = userStore.isSuperUser ? undefined : userStore.userInfo?.current_tenant_id
     modalForm.description = ''
@@ -325,7 +318,6 @@ const handleEdit = (record: any) => {
     modalForm.id = record.id
     modalForm.page_name = record.page_name
     modalForm.page_code = record.page_code
-    modalForm.app_id = record.app_id
     modalForm.app_name = record.app_name
     modalForm.tenant_id = record.tenant_id
     modalForm.description = record.description

@@ -85,10 +85,7 @@
           <a-input v-model:value="form.option_value" placeholder="请输入选项值" />
         </a-form-item>
         <a-form-item label="应用名称" name="app_name">
-          <a-select v-model:value="form.app_name" placeholder="请选择应用" :options="appOptions" />
-        </a-form-item>
-        <a-form-item v-if="userStore.isSuperUser" label="租户" name="tenant_id">
-          <a-select v-model:value="form.tenant_id" placeholder="请选择租户" :options="tenantOptions" />
+          <a-select v-model:value="form.app_name" placeholder="请选择应用" :options="appOptions" @change="(val) => handleAppChange(val, form)" />
         </a-form-item>
         <a-form-item label="分类" name="class_name">
           <a-input v-model:value="form.class_name" placeholder="请输入分类名称" />
@@ -106,10 +103,13 @@
     </CrudTable>
 
     <!-- 树形结构弹窗 -->
-    <a-modal v-model:open="treeModalVisible" title="下拉选项树形结构" width="600px" :footer="null">
+    <a-modal v-model:open="treeModalVisible" title="下拉选项树形结构" width="700px" :footer="null">
       <a-form :model="treeQuery" layout="inline" style="margin-bottom: 16px">
         <a-form-item label="应用名称">
-          <a-select v-model:value="treeQuery.app_name" placeholder="请选择应用" :options="appOptions" style="width: 200px" />
+          <a-select v-model:value="treeQuery.app_name" placeholder="请选择应用" :options="appOptions" style="width: 180px" @change="handleTreeAppChange" />
+        </a-form-item>
+        <a-form-item label="分类">
+          <a-select v-model:value="treeQuery.class_name" placeholder="请选择分类" :options="classOptions" style="width: 180px" allow-clear />
         </a-form-item>
         <a-form-item>
           <a-button type="primary" @click="fetchTreeData">查询</a-button>
@@ -130,10 +130,6 @@
       <a-form :model="importForm" :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
         <a-form-item label="应用名称" required>
           <a-select v-model:value="importForm.app_name" placeholder="请选择应用" :options="appOptions" style="width: 100%" />
-        </a-form-item>
-        <a-form-item v-if="userStore.isSuperUser" label="租户" required>
-          <a-select v-model:value="importForm.tenant_id" placeholder="请选择租户" :options="tenantOptions"
-            style="width: 100%" />
         </a-form-item>
         <a-form-item label="CSV文件" required>
           <a-upload v-model:file-list="fileList" :before-upload="beforeUpload" accept=".csv">
@@ -204,9 +200,11 @@ const appOptions = ref<any[]>([])
 // 树形结构相关
 const treeModalVisible = ref(false)
 const treeQuery = reactive({
-  app_name: '',
+  app_name: undefined as string | undefined,
+  class_name: '',
 })
 const treeData = ref<any[]>([])
+const classOptions = ref<any[]>([])
 
 // CSV导入相关
 const importModalVisible = ref(false)
@@ -238,7 +236,6 @@ const filterItemCount = computed(() => {
 const modalRules = {
   option_value: [{ required: true, message: '请输入选项值', trigger: 'blur' }],
   app_name: [{ required: true, message: '请选择应用', trigger: 'change' }],
-  tenant_id: [{ required: true, message: '请选择租户', trigger: 'change', type: 'number' }],
   class_name: [{ required: true, message: '请输入分类名称', trigger: 'blur' }],
 }
 
@@ -319,13 +316,18 @@ const handleAdd = () => {
     id: undefined,
     option_value: '',
     app_name: '',
-    tenant_id: userStore.isSuperUser ? undefined : userStore.userInfo?.current_tenant_id,
+    tenant_id: undefined,
     class_name: '',
     parent_id: 0,
     summary: '',
     description: '',
   })
   crudTableRef.value?.openAddModal()
+}
+
+const handleAppChange = (appName: string, form: any) => {
+  // 应用改变时，租户会自动从应用继承，不需要手动设置
+  form.tenant_id = undefined
 }
 
 const handleEdit = (record: any) => {
@@ -339,7 +341,7 @@ const handleSave = async (form: Record<string, any>, action: 'add' | 'edit') => 
   modalLoading.value = true
   try {
     const apiCall = action === 'add' ? api.createDropdown : api.updateDropdown
-    const res: any = await apiCall({ ...form })
+    const res: any = await apiCall(form)
     if (res.code === 200) {
       message.success(action === 'add' ? '创建成功' : '更新成功')
       crudTableRef.value?.closeModal()
@@ -368,9 +370,29 @@ const handleDelete = async (record: any) => {
 
 // 树形结构
 const showTreeModal = () => {
-  treeQuery.app_name = ''
+  treeQuery.app_name = undefined
+  treeQuery.class_name = ''
   treeData.value = []
+  classOptions.value = []
   treeModalVisible.value = true
+}
+
+const handleTreeAppChange = async (appName: string) => {
+  treeQuery.class_name = ''
+  classOptions.value = []
+  treeQuery.app_name = appName
+  if (!appName) return
+  try {
+    const res: any = await api.getDropdownClasses({ app_name: appName })
+    if (res.code === 200) {
+      classOptions.value = (res.data || []).map((name: string) => ({
+        label: name,
+        value: name
+      }))
+    }
+  } catch (error) {
+    console.error('获取分类列表失败', error)
+  }
 }
 
 const fetchTreeData = async () => {
@@ -379,7 +401,11 @@ const fetchTreeData = async () => {
     return
   }
   try {
-    const res: any = await api.getDropdownTree({ app_name: treeQuery.app_name })
+    const params: any = { app_name: treeQuery.app_name }
+    if (treeQuery.class_name) {
+      params.class_name = treeQuery.class_name
+    }
+    const res: any = await api.getDropdownTree(params)
     if (res.code === 200) {
       treeData.value = res.data || []
     }
@@ -391,7 +417,6 @@ const fetchTreeData = async () => {
 // CSV导入
 const showImportModal = () => {
   importForm.app_name = ''
-  importForm.tenant_id = userStore.isSuperUser ? undefined : userStore.userInfo?.current_tenant_id
   fileList.value = []
   importModalVisible.value = true
 }
@@ -406,10 +431,6 @@ const handleImport = async () => {
     message.error('请选择应用名称')
     return
   }
-  if (userStore.isSuperUser && !importForm.tenant_id) {
-    message.error('请选择租户')
-    return
-  }
   if (fileList.value.length === 0) {
     message.error('请选择CSV文件')
     return
@@ -417,14 +438,7 @@ const handleImport = async () => {
 
   importLoading.value = true
   try {
-    const formData = new FormData()
-    formData.append('file', fileList.value[0])
-    formData.append('app_name', importForm.app_name)
-    if (importForm.tenant_id) {
-      formData.append('tenant_id', String(importForm.tenant_id))
-    }
-
-    const res: any = await api.importDropdownFromCsv(fileList.value[0], importForm.app_name, importForm.tenant_id)
+    const res: any = await api.importDropdownFromCsv(fileList.value[0], importForm.app_name)
     if (res.code === 200) {
       message.success(`导入成功，共导入 ${res.data?.count || 0} 条记录`)
       importModalVisible.value = false

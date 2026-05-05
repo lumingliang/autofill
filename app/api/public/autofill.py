@@ -111,26 +111,60 @@ async def list_dropdown_options_handler(
 ):
     """
     查询下拉选项列表处理逻辑
+    支持扁平列表和树形结构两种返回格式
     """
     params = await parse_request_params(request, DropdownOptionListRequest)
-    
-    q = Q(tenant_id=auth_info["tenant_id"], app_name=auth_info["app_name"])
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+
+    q = Q(tenant_id=tenant_id, app_name=app_name)
     if params.get("class_name"):
         q &= Q(class_name=params["class_name"])
 
     parent_id = params.get("parent_id", 0)
     q &= Q(parent_id=parent_id)
 
-    options = await dropdown_option_controller.model.filter(q).all()
-    return Success(data=[
-        {
-            "id": o.id,
-            "option_value": o.option_value,
-            "summary": o.summary,
-            "has_children": await dropdown_option_controller.model.filter(parent_id=o.id).exists()
-        }
-        for o in options
-    ])
+    # 检查是否需要返回树形结构
+    is_tree = params.get("tree", False)
+
+    if is_tree:
+        # 树形结构：递归返回所有子级
+        async def build_tree(parent_id: int) -> list:
+            children = await dropdown_option_controller.model.filter(
+                tenant_id=tenant_id,
+                app_name=app_name,
+                parent_id=parent_id
+            ).all()
+
+            result = []
+            for child in children:
+                child_dict = {
+                    "id": child.id,
+                    "option_value": child.option_value,
+                    "summary": child.summary,
+                }
+                # 递归获取子级
+                sub_children = await build_tree(child.id)
+                if sub_children:
+                    child_dict["children"] = sub_children
+                result.append(child_dict)
+            return result
+
+        tree_data = await build_tree(parent_id)
+        return Success(data=tree_data)
+    else:
+        # 扁平结构：只返回直接子项
+        options = await dropdown_option_controller.model.filter(q).all()
+        return Success(data=[
+            {
+                "id": o.id,
+                "option_value": o.option_value,
+                "summary": o.summary,
+                "has_children": await dropdown_option_controller.model.filter(parent_id=o.id).exists()
+            }
+            for o in options
+        ])
 
 
 @autofill_public_router.get("/autofill/dropdown_options/list", summary="查询下拉选项列表")
@@ -143,6 +177,22 @@ async def list_dropdown_options(
     Dify调用: 根据 app_name + class_name + parent_id 查询下拉选项列表
     支持 GET 和 POST 方法
     支持参数传递方式: Query / Form-Data / JSON Body
+
+    参数说明:
+        - class_name: 分类名称（可选）
+        - parent_id: 父选项ID，0表示顶级（默认0）
+        - tree: 是否返回树形结构（默认false）
+            - false: 返回扁平列表，带has_children标记
+            - true: 返回树形结构，递归包含所有子级
+
+    示例:
+        # 扁平结构（默认）
+        GET /autofill/dropdown_options/list?class_name=400电话&parent_id=0
+        # 返回: [{id, option_value, summary, has_children}, ...]
+
+        # 树形结构
+        GET /autofill/dropdown_options/list?class_name=400电话&parent_id=0&tree=true
+        # 返回: [{id, option_value, summary, children: [...]}, ...]
     """
     return await list_dropdown_options_handler(request, auth_info)
 

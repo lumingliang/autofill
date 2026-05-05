@@ -86,9 +86,9 @@ async def create_page(
     current_user = await AuthControl.is_authed(token)
 
     # 验证应用是否存在
-    app = await app_management_controller.get(id=page_in.app_id)
+    app = await app_management_controller.model.filter(app_name=page_in.app_name).first()
     if not app:
-        return Fail(code=400, msg="应用不存在")
+        return Fail(code=400, msg=f"应用 '{page_in.app_name}' 不存在")
 
     # 确定租户ID：优先从应用继承，如果是超级用户可覆盖
     if is_superuser(current_user):
@@ -100,9 +100,10 @@ async def create_page(
         if current_user.current_tenant_id > 0 and app.tenant_id != current_user.current_tenant_id:
             return Fail(code=403, msg="无权在该应用下创建页面")
 
-    # 使用确定的租户ID和应用名称
+    # 使用确定的租户ID和应用ID
     page_in.tenant_id = target_tenant_id
-    page_in.app_name = app.app_name
+    # 设置 app_id 用于数据库关联
+    page_in.app_id = app.id
 
     page = await fill_page_controller.create_page(obj_in=page_in)
     return Success(data=await page.to_dict())
@@ -121,12 +122,13 @@ async def update_page(
         if page.tenant_id != current_user.current_tenant_id:
             return Fail(code=403, msg="无权操作其他租户的页面")
 
-    # 如果修改了应用ID，验证新应用是否存在
-    if page_in.app_id > 0 and page_in.app_id != page.app_id:
-        app = await app_management_controller.get(id=page_in.app_id)
+    # 如果修改了应用名称，验证新应用是否存在
+    if page_in.app_name and page_in.app_name != page.app_name:
+        app = await app_management_controller.model.filter(app_name=page_in.app_name).first()
         if not app:
-            return Fail(code=400, msg="应用不存在")
-        page_in.app_name = app.app_name
+            return Fail(code=400, msg=f"应用 '{page_in.app_name}' 不存在")
+        # 设置 app_id 用于数据库关联
+        page_in.app_id = app.id
 
     updated = await fill_page_controller.update_page(id=page_in.id, obj_in=page_in)
     return Success(data=await updated.to_dict())
