@@ -353,7 +353,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .record-page {
-  padding: 16px;
 
   .json-viewer {
     background: #f6f8fa;

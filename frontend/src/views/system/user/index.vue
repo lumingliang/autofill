@@ -3,13 +3,13 @@
     <!-- 部门列表：仅普通用户显示，默认收起 -->
     <a-layout-sider v-if="!userStore.isSuperUser" theme="light" :collapsed-width="0" :width="240" collapsible
       default-collapsed style="background: #fff; border-right: 1px solid #f0f0f0">
-      <div style="padding: 16px">
+      <div>
         <h3 style="margin-bottom: 12px">部门列表</h3>
         <a-tree :tree-data="deptTreeData" :field-names="{ key: 'id', title: 'name' }" block-node
           @click="handleDeptClick" />
       </div>
     </a-layout-sider>
-    <a-layout-content style="padding: 16px">
+    <a-layout-content>
       <a-card>
         <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
           <a-row :gutter="16" class="filter-row">

@@ -278,9 +278,3 @@ onMounted(() => {
     fetchTenantOptions()
 })
 </script>
-
-<style scoped lang="less">
-.app-page {
-    padding: 16px;
-}
-</style>

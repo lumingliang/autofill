@@ -545,7 +545,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .field-spec-management {
-  padding: 16px;
 
   .option-item,
   .correction-item {

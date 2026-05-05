@@ -391,7 +391,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .template-page {
-  padding: 16px;
 
   .ellipsis-text {
     display: inline-block;

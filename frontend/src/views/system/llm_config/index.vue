@@ -561,17 +561,6 @@ onMounted(loadData)
 
 <style scoped lang="less">
 .llm-config-page {
-  padding: 16px;
-}
-
-.test-result,
-.gateway-status,
-.methods-status {
-  padding: 16px;
-}
-
-.test-error {
-  padding: 16px;
 }
 
 .methods-actions {

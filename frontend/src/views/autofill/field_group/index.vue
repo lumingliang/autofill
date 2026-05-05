@@ -599,7 +599,6 @@ onMounted(() => {
 
 <style scoped lang="less">
 .field-group-management {
-  padding: 16px;
 
   .ellipsis-text {
     display: inline-block;

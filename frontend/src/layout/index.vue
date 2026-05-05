@@ -2,7 +2,7 @@
   <a-layout class="h-full">
     <a-layout-sider v-model:collapsed="appStore.collapsed" :trigger="null" collapsible theme="light"
       class="layout-sider">
-      <div class="logo-container">
+      <div class="logo-container" @click="goHome">
         <img src="/logo.svg" class="logo-img" />
         <span v-show="!appStore.collapsed" class="logo-title">AI 平台</span>
       </div>
@@ -35,7 +35,7 @@
 <script setup lang="ts">
 import { useAppStore, usePermissionStore } from '@/store'
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import LayoutHeader from './components/LayoutHeader.vue'
 import LayoutMenu from './components/LayoutMenu.vue'
 import LayoutTags from './components/LayoutTags.vue'
@@ -43,6 +43,12 @@ import LayoutTags from './components/LayoutTags.vue'
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 const route = useRoute()
+const router = useRouter()
+
+// 跳转到主页
+function goHome() {
+  router.push('/')
+}
 
 const keepAliveNames = computed(() => {
   const names: string[] = []
@@ -69,6 +75,12 @@ const keepAliveNames = computed(() => {
     justify-content: center;
     padding: 0 16px;
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    cursor: pointer;
+    transition: background-color 0.3s;
+
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.03);
+    }
 
     .logo-img {
       width: 32px;

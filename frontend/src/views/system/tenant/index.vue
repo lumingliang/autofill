@@ -213,9 +213,3 @@ async function handleDelete(record: any) {
 
 onMounted(loadData)
 </script>
-
-<style scoped lang="less">
-.tenant-page {
-  padding: 16px;
-}
-</style>
