@@ -86,7 +86,7 @@
         </a-form-item>
         <a-form-item label="输出模板" name="output_templates">
           <div class="output-templates-editor">
-            <div v-for="(template, key) in form.output_templates" :key="key" class="template-item">
+            <div v-for="key in Object.keys(form.output_templates)" :key="key" class="template-item">
               <a-card size="small" :title="key" class="template-card">
                 <template #extra>
                   <a-button type="link" danger size="small" @click="removeOutputTemplate(key)">
@@ -328,7 +328,6 @@ const columns = computed(() => [
   { title: '字段组名称', dataIndex: 'group_name', key: 'group_name' },
   { title: '页面名称', dataIndex: 'page_name', key: 'page_name' },
   { title: '应用名称', dataIndex: 'app_name', key: 'app_name' },
-  { title: '版本', dataIndex: 'version', key: 'version', width: 80 },
   { title: '状态', key: 'is_active', width: 100 },
   { title: '创建时间', key: 'created_at', width: 180 },
   { title: '操作', key: 'action', width: 220, fixed: 'right' },

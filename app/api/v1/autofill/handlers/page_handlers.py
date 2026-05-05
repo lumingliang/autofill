@@ -7,8 +7,10 @@ from tortoise.expressions import Q
 from app.controllers.autofill import (
     app_management_controller,
     field_group_config_controller,
+    field_spec_controller,
     fill_page_controller,
 )
+from app.models.autofill import FieldGroupFieldSpec
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import FillPageCreate, FillPageUpdate
@@ -165,12 +167,18 @@ async def get_page_detail(
     }
 
     for group in field_groups:
+        # 获取字段数（通过中间表查询）
+        field_count = await FieldGroupFieldSpec.filter(
+            field_group_id=group.id
+        ).count()
+
         result["field_groups"].append({
             "id": group.id,
             "group_name": group.group_name,
             "group_code": group.group_code,
             "description": group.description,
-            "version": group.version,
+            "is_active": group.is_active,
+            "field_count": field_count,
             "updated_at": str(group.updated_at) if group.updated_at else None,
         })
 
@@ -229,7 +237,6 @@ def _build_page_markdown(page, field_groups) -> str:
         lines.append(f"### {i}. {group.group_name}")
         lines.append("")
         lines.append(f"- **编码**: `{group.group_code}`")
-        lines.append(f"- **版本**: v{group.version}")
         lines.append(f"- **状态**: {'启用' if group.is_active else '禁用'}")
 
         if group.description:
