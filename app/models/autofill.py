@@ -101,6 +101,8 @@ class FillPage(BaseModel, TimestampMixin):
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
     description = fields.TextField(default="", description="页面描述")
+    dify_agent_url = fields.CharField(max_length=512, default="", description="Dify Agent URL")
+    dify_api_key = fields.CharField(max_length=128, default="", description="Dify API Key")
     is_active = fields.BooleanField(default=True, description="是否启用")
 
     class Meta:

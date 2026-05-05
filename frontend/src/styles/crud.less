@@ -7,19 +7,19 @@
   .crud-filter-form {
     margin-bottom: 16px;
 
-    // 筛选项 - 使用 Ant Design Vue 默认布局
+    // 筛选行 - 确保响应式换行正常工作
+    .filter-row {
+      display: flex;
+      flex-wrap: wrap;
+    }
+
+    // 筛选项 - 使用 Ant Design Vue 默认布局，仅固定标签宽度
     .filter-item {
       margin-bottom: 16px;
 
-      // 统一标签样式
+      // 固定标签宽度，确保所有表单项对齐
       .ant-form-item-label {
         width: 80px;
-
-        >label {
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
       }
 
       // 确保输入组件占满剩余空间
