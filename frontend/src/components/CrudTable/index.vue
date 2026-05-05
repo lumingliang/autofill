@@ -235,18 +235,9 @@ const tableScroll = computed(() => {
   return props.scroll || { x: 'max-content' }
 })
 
-// 操作按钮列的栅格配置
+// 操作按钮列的栅格配置 - 与表单项使用相同的栅格配置，保持对齐
 const actionColProps = computed(() => {
-  const isSingleLine = props.filterItemCount <= 2
-  if (isSingleLine) {
-    return {
-      xs: 24,
-      sm: 12,
-      md: 'auto',
-      lg: 'auto',
-      xl: 'auto'
-    }
-  }
+  // 按钮区域作为一个普通格子，使用与其他筛选项相同的栅格配置
   return {
     xs: 24,
     sm: 12,

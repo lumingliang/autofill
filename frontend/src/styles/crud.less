@@ -7,43 +7,38 @@
   .crud-filter-form {
     margin-bottom: 16px;
 
-    // 筛选项 - 使用flex布局实现label右对齐
+    // 筛选项 - 使用 Ant Design Vue 默认布局
     .filter-item {
-      display: flex;
-      align-items: center;
       margin-bottom: 16px;
 
+      // 统一标签样式
       .ant-form-item-label {
-        flex-shrink: 0;
-        min-width: 70px;
-        text-align: right;
-        padding-right: 8px;
-        margin-right: 0;
-        line-height: 32px;
+        width: 80px;
+
+        >label {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
       }
 
-      .ant-form-item-control {
-        flex: 1;
-        min-width: 0;
-      }
-
-      // 确保输入框占满剩余空间
+      // 确保输入组件占满剩余空间
       .ant-input,
+      .ant-picker,
       .ant-select {
         width: 100%;
       }
     }
 
-    // 操作按钮容器 - 智能布局
-    // 当表单项较少时，按钮紧跟表单项
-    // 当表单项较多时，按钮右对齐
+    // 操作按钮容器 - 与表单项保持相同布局
     .filter-actions {
       display: flex;
       align-items: center;
       margin-bottom: 16px;
       padding-top: 0;
+      height: 32px;
 
-      // 默认左对齐（紧跟表单项）
+      // 默认左对齐
       justify-content: flex-start;
 
       // 多行模式下右对齐
@@ -78,108 +73,50 @@
       bottom: 0;
       width: 4px;
       cursor: col-resize;
+      background-color: transparent;
       z-index: 1;
 
-      &:hover,
-      &.active {
+      &:hover {
         background-color: #1890ff;
       }
     }
-  }
-}
 
-// 智能筛选表单布局
-// 根据表单项数量自动调整按钮位置
-.smart-filter-form {
-  .filter-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
+    // 表格行样式
+    .ant-table-row {
+      cursor: pointer;
 
-  // 表单项容器
-  .filter-item-col {
-    margin-bottom: 0;
-  }
-
-  // 操作按钮容器
-  .filter-actions-col {
-    display: flex;
-
-    // 单行模式：按钮紧跟表单项（左对齐，宽度自适应）
-    &.single-line {
-      justify-content: flex-start;
-      flex: 0 0 auto !important; // 宽度自适应内容，覆盖ant-col
-      max-width: none !important;
-      width: auto !important;
-      padding-left: 8px; // 与前面表单项保持一点间距
-
-      .filter-actions {
-        justify-content: flex-start;
-        width: auto; // 宽度自适应
-        min-width: auto;
+      &:hover {
+        background-color: #f5f5f5;
       }
     }
 
-    // 多行模式：按钮右对齐，且与表单项保持相同宽度
-    &.multi-line {
-      justify-content: flex-end;
+    // 选中行样式
+    .ant-table-row-selected {
+      background-color: #e6f7ff;
 
-      .filter-actions {
-        justify-content: flex-end;
-        width: 100%;
+      &:hover {
+        background-color: #e6f7ff;
       }
     }
+  }
 
-    .filter-actions {
-      display: flex;
-      align-items: center;
-      margin-bottom: 16px;
-    }
+  // 分页样式
+  .crud-pagination {
+    margin-top: 16px;
+    text-align: right;
   }
 }
 
-// 多行筛选表单统一宽度样式
-// 确保所有表单项（包括按钮区域）宽度一致
-.smart-filter-form.multi-row-form {
-  .filter-row {
-
-    // 确保所有列宽度一致
-    >[class*="ant-col"] {
-      // 使用统一的宽度比例
-    }
-  }
-
-  // 多行模式下，按钮区域与表单项宽度一致
-  .filter-actions-col.multi-line {
-
-    // 确保宽度与表单项列一致
-    .filter-actions {
-      width: 100%;
-    }
-  }
+// 筛选表单栅格布局
+.filter-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-right: -8px;
+  margin-left: -8px;
 }
 
-// 响应式布局工具类
-// 基于24栅格系统，提供常见的列宽配置
-.crud-filter-row {
-
-  // 默认每行1列（移动端）
-  .filter-col {
-    width: 100%;
-  }
-
-  // 平板：每行2列
-  @media (min-width: 576px) {
-    .filter-col {
-      width: 50%;
-    }
-  }
-
-  // 小桌面：每行3列
-  @media (min-width: 768px) {
-    .filter-col {
-      width: 33.333%;
-    }
-  }
+.filter-item-col {
+  padding-right: 8px;
+  padding-left: 8px;
+  margin-bottom: 16px;
 }
