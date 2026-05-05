@@ -1,3 +1,4 @@
+import jwt
 from fastapi import APIRouter, Body, Header, Query
 from tortoise.expressions import Q
 
@@ -7,9 +8,10 @@ from app.controllers.user import user_controller
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.core.relation import RelationQuery
 from app.log import logger
-from app.models.admin import Role, Tenant, User, UserRole, UserTenant
+from app.models.admin import DeptClosure, Role, Tenant, User, UserRole, UserTenant
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.users import *
+from app.settings import settings
 router = APIRouter()
 
 
@@ -32,7 +34,6 @@ async def list_user(
         q &= Q(email__contains=email)
     if dept_id > 0:
         if dept_recursive:
-            from app.models.admin import DeptClosure
             descendant_ids = await DeptClosure.filter(ancestor=dept_id).values_list("descendant", flat=True)
             if descendant_ids:
                 q &= Q(dept_id__in=descendant_ids)
@@ -117,8 +118,6 @@ async def create_user(
         target_tenant_id = user_in.tenant_id
     else:
         # 普通用户从JWT获取租户ID
-        import jwt
-        from app.settings import settings
         decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
         target_tenant_id = decode_data.get("current_tenant_id", 0)
         if target_tenant_id <= 0:

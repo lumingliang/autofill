@@ -3,6 +3,7 @@ Agent 统一公开接口 (API Key 认证)
 
 提供通用的 Agent 服务，支持通过自然语言执行各种操作。
 """
+import traceback
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
@@ -136,7 +137,6 @@ async def agent_run(
 
     except Exception as e:
         logger.error(f"[Agent API] 执行失败: {e}")
-        import traceback
         traceback.print_exc()
         return AgentRunResponse(
             success=False,

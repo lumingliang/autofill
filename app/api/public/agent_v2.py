@@ -3,6 +3,7 @@ DataQueryAgent V2 公开接口 (API Key 认证)
 
 基于 OpenAPI 规范的通用数据查询 Agent，支持自动工具生成和多轮交互决策。
 """
+import traceback
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
@@ -151,7 +152,6 @@ async def data_query_v2(
 
     except Exception as e:
         logger.error(f"[AgentV2 API] 查询失败: {e}")
-        import traceback
         traceback.print_exc()
         return DataQueryResponse(
             success=False,
@@ -211,7 +211,6 @@ async def get_available_tools(
 
     except Exception as e:
         logger.error(f"[AgentV2 API] 获取工具列表失败: {e}")
-        import traceback
         traceback.print_exc()
         return AvailableToolsResponse(
             tools=[],

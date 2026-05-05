@@ -5,7 +5,8 @@ from tortoise.expressions import Q
 
 from app.core.crud import CRUDBase
 from app.models.autofill import (AppManagement, DropdownOption, FieldGroupConfig,
-                                 FieldGroupFieldSpec, FieldSpec, FillDataRecord, FillPage, SummaryTemplate)
+                                 FieldGroupFieldSpec, FieldSpec, FillDataRecord, FillPage,
+                                 generate_field_group_code, generate_page_code, SummaryTemplate)
 from app.schemas.autofill import (AppCreate, AppUpdate, DropdownOptionCreate,
                                   DropdownOptionUpdate, FillDataRecordCreate,
                                   FillDataRecordUpdate, SummaryTemplateCreate,
@@ -230,7 +231,6 @@ class FillPageController(CRUDBase[FillPage, FillPageCreate, FillPageUpdate]):
         """创建页面，检查同一应用下页面编码唯一性"""
         # 如果 page_code 为空，则自动生成
         if not obj_in.page_code:
-            from app.models.autofill import generate_page_code
             obj_in.page_code = generate_page_code()
 
         existing = await self.model.filter(
@@ -263,7 +263,6 @@ class FieldGroupConfigController(CRUDBase[FieldGroupConfig, FieldGroupConfigCrea
         """创建字段组，检查同一页面下字段组名称唯一性，自动生成编码"""
         # 如果 group_code 为空，则自动生成
         if not obj_in.group_code:
-            from app.models.autofill import generate_field_group_code
             obj_in.group_code = generate_field_group_code()
 
         existing = await self.model.filter(

@@ -3,8 +3,10 @@
 实现6种结构化输出方法，支持多轮对话记忆（使用LangChain原生组件）
 """
 import json
+import re
+import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import httpx
 from langchain_core.output_parsers import PydanticOutputParser, JsonOutputParser
@@ -14,6 +16,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import BaseTool
 from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, create_model
 
@@ -166,8 +169,6 @@ class StructuredOutputService:
         if not content or not tools:
             return None
 
-        import re
-
         # 获取第一个工具的名称
         first_tool = tools[0]
         if "function" in first_tool:
@@ -210,8 +211,6 @@ class StructuredOutputService:
         if not tools:
             raise ValueError("tools 不能为空")
 
-        from typing import Optional
-
         # 收集所有工具的参数
         all_properties = {}
         for tool in tools:
@@ -243,7 +242,6 @@ class StructuredOutputService:
         if json_type == "string":
             enum = schema.get("enum")
             if enum:
-                from typing import Literal
                 return Literal[tuple(enum)]
             return str
         elif json_type == "integer":
@@ -255,7 +253,6 @@ class StructuredOutputService:
         elif json_type == "array":
             items = schema.get("items", {})
             item_type = self._json_schema_to_python_type(items)
-            from typing import List
             return List[item_type]
         elif json_type == "object":
             return Dict[str, Any]
@@ -302,7 +299,6 @@ class StructuredOutputService:
         Returns:
             StructuredOutputResult: 结构化输出结果
         """
-        import time
         start_time = time.time()
 
         # 如果指定了方法，直接使用
@@ -505,7 +501,6 @@ class StructuredOutputService:
             llm = self._create_llm()
 
             # 转换 tools 为 LangChain 格式
-            from langchain_core.utils.function_calling import convert_to_openai_tool
             lc_tools = [convert_to_openai_tool(t) for t in tools]
 
             # 使用 tool_choice="auto" 让 LLM 自动选择是否调用工具
@@ -577,7 +572,6 @@ class StructuredOutputService:
             llm = self._create_llm()
 
             # 转换 tools 为 LangChain 格式
-            from langchain_core.utils.function_calling import convert_to_openai_tool
             lc_tools = [convert_to_openai_tool(t) for t in tools]
 
             # 使用 tool_choice="auto" 让 LLM 自动选择是否调用工具
@@ -1050,8 +1044,6 @@ Please provide your response in the following JSON format:
 
     async def _record_method_failure(self, method: str, error: str):
         """记录方法失败"""
-        from app.controllers.llm_config import llm_config_controller
-
         capabilities = self.config.capabilities or LLMConfig.get_default_capabilities()
         structured_methods = capabilities.get("structured_output_methods", {})
 
@@ -1066,11 +1058,6 @@ Please provide your response in the following JSON format:
                 method_config["supported"] = False
                 logger.warning(f"Method {method} marked as unsupported after {method_config['failed_count']} failures")
 
-            # 保存更新
-            await llm_config_controller.update_method_status(
-                id=self.config.id,
-                method=method,
-                supported=method_config["supported"],
-                failed_count=method_config["failed_count"],
-                last_error=error
-            )
+            # 保存更新 - 直接操作模型避免循环导入
+            self.config.capabilities = capabilities
+            await self.config.save()

@@ -5,6 +5,7 @@ LiteLLM 配置同步服务
 import os
 from typing import Any, Dict, List, Optional
 
+import httpx
 import yaml
 from tortoise.expressions import Q
 
@@ -167,8 +168,6 @@ class LiteLLMSyncService:
             bool: 是否成功
         """
         try:
-            import httpx
-
             base_url = self.litellm_config.get("base_url", "http://localhost:4000")
             master_key = self.litellm_config.get("master_key", "")
 

@@ -6,6 +6,7 @@ from fastapi import Depends, Header, HTTPException, Request
 from app.core.ctx import CTX_USER_ID
 from app.core.relation import RelationQuery
 from app.models import User
+from app.models.admin import Api
 from app.settings import settings
 
 
@@ -61,7 +62,6 @@ class PermissionControl:
         api_ids = list(set(api_ids))
         if not api_ids:
             raise HTTPException(status_code=403, detail="The user is not bound to a role")
-        from app.models.admin import Api
         apis = await Api.filter(id__in=api_ids).all()
         permission_apis = list(set((api.method, api.path) for api in apis))
         if (method, path) not in permission_apis:

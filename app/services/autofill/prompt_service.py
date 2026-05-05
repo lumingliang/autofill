@@ -3,6 +3,7 @@ Prompt模板组装服务 - 支持Function Calling和纯文本双模式
 """
 from typing import Any, Dict, List, Optional
 
+from app.controllers.autofill import field_group_config_controller, field_spec_controller
 from app.models.autofill import FieldGroupConfig, FieldSpec
 
 
@@ -176,8 +177,6 @@ async def get_field_group_with_fields(field_group_id: int) -> tuple[Optional[Fie
     Returns:
         (字段组配置, 字段明细列表)
     """
-    from app.controllers.autofill import field_group_config_controller, field_spec_controller
-
     field_group = await field_group_config_controller.get(id=field_group_id)
     if not field_group:
         return None, []
@@ -196,8 +195,6 @@ async def get_field_group_by_code_with_fields(code: str) -> tuple[Optional[Field
     Returns:
         (字段组配置, 字段明细列表)
     """
-    from app.controllers.autofill import field_group_config_controller, field_spec_controller
-
     field_group = await field_group_config_controller.get_by_code(code)
     if not field_group:
         return None, []

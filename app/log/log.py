@@ -9,6 +9,8 @@ from contextvars import ContextVar
 
 from loguru import logger
 
+from app.settings import settings
+
 # 请求追踪 ID 上下文变量
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 tenant_domain_var: ContextVar[str] = ContextVar("tenant_domain", default="")
@@ -106,9 +108,7 @@ def setup_logger():
     """初始化日志配置"""
     # 清空 loguru 默认处理器
     logger.remove()
-    
-    from app.settings import settings
-    
+
     # JSON 格式模板
     json_format = "{extra[_json]}\n"
     

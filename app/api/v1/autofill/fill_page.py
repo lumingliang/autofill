@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Header, Query
@@ -23,6 +24,7 @@ from app.schemas.fill_page import (
     FillPageUpdate,
     SwaggerSyncRequest,
 )
+from app.services.agent_v2.openapi_parser import OpenAPIParser
 from app.services.autofill.prompt_service import (
     assemble_prompt,
     build_fields_instructions,
@@ -922,9 +924,6 @@ async def sync_swagger_document(
     """
     同步 OpenAI Swagger JSON 文档，解析 API 端点并生成选项列表
     """
-    from app.services.agent_v2.openapi_parser import OpenAPIParser
-    from datetime import datetime
-
     current_user = await AuthControl.is_authed(token)
 
     # 获取字段明细

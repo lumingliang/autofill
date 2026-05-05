@@ -37,8 +37,11 @@
 
 from dataclasses import dataclass, field
 from typing import List, Optional
-from app.schemas.menus import MenuType
+
+from app.core.relation import RelationQuery
 from app.log import logger
+from app.models.admin import Menu, Role, RoleMenu
+from app.schemas.menus import MenuType
 
 
 @dataclass
@@ -83,8 +86,6 @@ class MenuRegistry:
         同步菜单配置到数据库
         实现增量更新：新增、更新、禁用（不删除）
         """
-        from app.models.admin import Menu, Role, RoleMenu
-
         logger.info("[MenuRegistry] 开始同步菜单到数据库...")
 
         # 获取数据库中所有现有菜单
@@ -174,9 +175,6 @@ class MenuRegistry:
 
     async def _assign_permissions_to_admin(self, menu_ids: List[int]):
         """为新菜单分配权限给管理员角色"""
-        from app.models.admin import Role, RoleMenu
-        from app.core.relation import RelationQuery
-
         # 查找管理员角色（假设ID为1，或者是超级管理员）
         admin_role = await Role.filter(id=1).first()
         if not admin_role:

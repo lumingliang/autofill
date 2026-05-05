@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
+from pydantic import BaseModel, Field
 from tortoise.expressions import Q
 
 from app.controllers.autofill import (dropdown_option_controller,
@@ -15,12 +16,17 @@ from app.controllers.autofill import (dropdown_option_controller,
                                       fill_data_record_controller,
                                       fill_page_controller,
                                       summary_template_controller)
+from app.controllers.llm_config import llm_config_controller
 from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
 from app.log import logger
+from app.models.autofill import FieldGroupFieldSpec, generate_field_group_code
 from app.schemas.base import Success
 from app.schemas.autofill import *
+from app.schemas.fill_page import FieldGroupConfigCreate, OutputTemplateItem, FieldSpecCreate, FieldSpecUpdate, FieldOptions
 from app.services.autofill.ai_fill_service import get_ai_fill_service
+from app.services.autofill.prompt_service import build_function_schema, build_fields_instructions, assemble_prompt
+from app.services.llm.llm_proxy_service import llm_proxy_service
 
 autofill_public_router = APIRouter()
 
@@ -399,10 +405,6 @@ async def get_field_group_handler(
     - 支持通过 field_names 筛选指定字段
     - 返回组装后的Prompt、Function Calling Schema、字段明细等完整信息
     """
-    from pydantic import BaseModel
-    from app.services.autofill.prompt_service import build_function_schema, build_fields_instructions, assemble_prompt
-    from app.models.autofill import FieldGroupFieldSpec
-
     class FieldGroupRequest(BaseModel):
         page_name: str = Field(..., description="页面名称（必填）")
         group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选，不传则查询所有）")
@@ -539,9 +541,6 @@ async def list_field_spec_handler(
     - 支持通过 page_name + group_names 查询多个字段组
     - 支持通过 field_names 筛选指定字段
     """
-    from pydantic import BaseModel
-    from app.models.autofill import FieldGroupFieldSpec
-
     class FieldSpecListRequest(BaseModel):
         page_name: str = Field(..., description="页面名称（必填）")
         group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选，不传则查询所有）")
@@ -652,10 +651,6 @@ async def get_field_groups_schema_handler(
     2. 传了 group_names + field_names -> 仅返回指定字段的完整信息（字段必须在指定字段组中）
     3. 未传 group_names，传了 field_names -> 返回包含这些字段的所有字段组的完整信息
     """
-    from pydantic import BaseModel
-    from app.services.autofill.prompt_service import build_function_schema, build_fields_instructions, assemble_prompt
-    from app.models.autofill import FieldGroupFieldSpec
-
     class FieldGroupsSchemaRequest(BaseModel):
         page_name: str = Field(..., description="页面名称（必填）")
         group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选）")
@@ -937,8 +932,6 @@ async def llm_fill_handler(
     """
     直接LLM填单处理逻辑
     """
-    from pydantic import BaseModel, Field
-
     class LLMFillRequest(BaseModel):
         field_group_id: Optional[int] = Field(None, description="字段组ID")
         field_group_code: Optional[str] = Field(None, description="字段组编码")
@@ -977,10 +970,6 @@ async def llm_fill_handler(
 
     if not field_specs:
         raise HTTPException(status_code=404, detail="No fields found in this group")
-
-    from app.services.autofill.prompt_service import build_function_schema
-    from app.services.llm.llm_proxy_service import llm_proxy_service
-    from app.controllers.llm_config import llm_config_controller
 
     query = params.get("input_data", {}).get("query", "")
     if not query:
@@ -1047,8 +1036,6 @@ async def list_first_level_menus_handler(
     A1. 获取所有一级菜单
     根据 tenant_id + app_name + class_name 查询所有 parent_id=0 的选项
     """
-    from pydantic import BaseModel
-
     class FirstLevelMenusRequest(BaseModel):
         class_name: str = Field("", description="分类名称")
 
@@ -1096,8 +1083,6 @@ async def get_submenus_tree_handler(
     """
     A2. 根据一级菜单名称+应用名称+分类获取二三级菜单（树形结构）
     """
-    from pydantic import BaseModel
-
     class SubmenusTreeRequest(BaseModel):
         first_level_value: str = Field(..., description="一级菜单选项值")
         class_name: str = Field("", description="分类名称")
@@ -1190,10 +1175,6 @@ async def upsert_field_group_handler(
     - 如果页面不存在，返回错误
     - 遍历字段列表：字段不存在则创建并添加关联，存在则只添加关联关系
     """
-    from pydantic import BaseModel
-    from app.models.autofill import FieldGroupFieldSpec, generate_field_group_code
-    from app.schemas.fill_page import FieldGroupConfigCreate, OutputTemplateItem, FieldSpecCreate, FieldSpecUpdate, FieldOptions
-
     class FieldItem(BaseModel):
         field_name: str
         field_label: Optional[str] = None
@@ -1411,8 +1392,6 @@ async def create_field_spec_public_handler(
     """
     公共接口：创建字段明细
     """
-    from pydantic import BaseModel, Field
-
     class FieldSpecCreateRequest(BaseModel):
         field_group_id: int = Field(..., description="字段组ID")
         field_name: str = Field(..., description="字段名（英文）")

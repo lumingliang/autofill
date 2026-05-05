@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 
 from aerich import Command
@@ -5,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
 from tortoise.expressions import Q
+
+from app.core.kafka.consumer import shutdown_kafka_consumers
 
 from app.api import api_router
 from app.controllers.api import api_controller
@@ -139,10 +142,10 @@ async def init_menus():
     await menu_registry.sync_to_database()
 
 
-async def init_apis():
+async def init_apis(app: FastAPI):
     apis = await api_controller.model.exists()
     if not apis:
-        await api_controller.refresh_api()
+        await api_controller.refresh_api(app)
 
 
 async def init_db():
@@ -212,7 +215,6 @@ async def init_kafka_consumers():
 
         # 启动所有消费者
         logger.info(f"[KAFKA INIT] Starting all consumers...")
-        import asyncio
         loop = asyncio.get_event_loop()
         logger.info(f"[KAFKA INIT] Got event loop: {loop}")
         manager.start_all(loop=loop)
@@ -225,17 +227,16 @@ async def init_kafka_consumers():
 async def shutdown_kafka():
     """关闭 Kafka 消费者"""
     try:
-        from app.core.kafka.consumer import shutdown_kafka_consumers
         shutdown_kafka_consumers()
         logger.info("Kafka consumers shutdown successfully")
     except Exception as e:
         logger.error(f"Error shutting down Kafka consumers: {e}")
 
 
-async def init_data():
+async def init_data(app: FastAPI):
     await init_db()
     await init_superuser()
     await init_menus()
-    await init_apis()
+    await init_apis(app)
     # 不需要初始化角色，手动配置
     # await init_roles()

@@ -10,12 +10,14 @@ Query Agent - 智能查询 Agent
 2. 第二轮：将 API 结果返回给 LLM
 3. 第三轮：LLM 使用 validate_result 判断是否需要继续调整
 """
+import json
 import time
 import uuid
-import json
 from typing import Any, Dict, List, Optional
 
 from app.log import logger
+from app.services.llm.llm_config_utils import get_default_llm_config
+from app.services.llm.llm_proxy_service import llm_proxy_service
 
 from ..base.agent import BaseAgent
 from ..base.types import AgentInput, AgentOutput, AgentStatus, AttemptRecord, APIResult, AgentContext, SelectedData
@@ -107,9 +109,6 @@ class QueryAgent(BaseAgent):
         2. 如果是 call_api，执行 API 并将结果返回给 LLM
         3. LLM 验证结果，决定继续调整参数或结束
         """
-        from app.services.llm.llm_config_utils import get_default_llm_config
-        from app.services.llm.llm_proxy_service import llm_proxy_service
-
         start_time = time.time()
         attempts = []
         session_id = str(uuid.uuid4())
@@ -401,7 +400,6 @@ API 信息:
             response_content = api_result.raw_response
         elif api_result.data:
             try:
-                import json
                 response_content = json.dumps(api_result.data, ensure_ascii=False, indent=2)
             except:
                 response_content = str(api_result.data)
