@@ -31,7 +31,7 @@
       <!-- 数据表格 -->
       <div class="table-wrapper">
         <a-table :columns="resizableColumns" :data-source="dataSource" :loading="loading" :pagination="paginationConfig"
-          :row-key="rowKey" :scroll="tableScroll" @change="handleTableChange" @resizeColumn="handleResizeColumn">
+          :row-key="rowKey" :scroll="tableScroll" :row-selection="rowSelection" @change="handleTableChange" @resizeColumn="handleResizeColumn">
           <template v-for="slotName in Object.keys($slots)" :key="slotName" #[slotName]="slotProps">
             <slot :name="slotName" v-bind="slotProps" />
           </template>
@@ -142,6 +142,8 @@ const props = withDefaults(defineProps<{
   minWidth?: number
   // 列宽调整最大宽度
   maxWidth?: number
+  // 行选择配置
+  rowSelection?: any
 }>(), {
   loading: false,
   rowKey: 'id',

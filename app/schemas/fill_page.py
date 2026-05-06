@@ -108,7 +108,7 @@ class OptionItem(BaseModel):
     value: str = ""
     label: str = ""
     fill_instruction: str = Field(default="", description="选项填写指引/说明")
-    corrections: List[Dict] = []
+    corrections: Any = Field(default=[], description="选项人工标注，可以是字符串或列表")
     is_deleted: bool = False
 
 

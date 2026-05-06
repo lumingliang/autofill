@@ -319,6 +319,23 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
         spec_data = obj_in.model_dump(exclude={'field_group_ids'})
         spec_data['tenant_id'] = tenant_id
         spec_data['app_name'] = app_name
+        
+        # 处理选项中的 corrections 字段 - 将字符串转换为列表格式
+        if spec_data.get('options') and spec_data['options'].get('items'):
+            for item in spec_data['options']['items']:
+                if 'corrections' in item and isinstance(item['corrections'], str):
+                    corrections_str = item['corrections'].strip()
+                    if corrections_str:
+                        # 将字符串按换行+*分割转换为列表
+                        corrections_list = []
+                        for text in corrections_str.split('\n*'):
+                            text = text.strip()
+                            if text:
+                                corrections_list.append({"text": text})
+                        item['corrections'] = corrections_list
+                    else:
+                        item['corrections'] = []
+        
         field_spec = await self.create(spec_data)
 
         # 创建关联关系
@@ -349,6 +366,23 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
 
         # 更新字段基本信息（不包含关联关系）
         update_data = obj_in.model_dump(exclude={'field_group_ids'}, exclude_unset=True)
+        
+        # 处理选项中的 corrections 字段 - 将字符串转换为列表格式
+        if update_data.get('options') and update_data['options'].get('items'):
+            for item in update_data['options']['items']:
+                if 'corrections' in item and isinstance(item['corrections'], str):
+                    corrections_str = item['corrections'].strip()
+                    if corrections_str:
+                        # 将字符串按换行+*分割转换为列表
+                        corrections_list = []
+                        for text in corrections_str.split('\n*'):
+                            text = text.strip()
+                            if text:
+                                corrections_list.append({"text": text})
+                        item['corrections'] = corrections_list
+                    else:
+                        item['corrections'] = []
+        
         field_spec = await self.update(id=id, obj_in=update_data)
 
         # 更新关联关系
