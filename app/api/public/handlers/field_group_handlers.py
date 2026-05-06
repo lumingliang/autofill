@@ -163,6 +163,23 @@ async def fetch_field_groups(
     # 构建统一的 Function Calling Schema（可直接用于 LLM 调用）
     unified_function_schema = None
     if all_properties:
+        # 如果有指定 field_names，则只将这些字段设为 required
+        # 否则将所有字段设为 required
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[DEBUG] field_names_filter: {field_names_filter}")
+        logger.info(f"[DEBUG] all_properties keys: {list(all_properties.keys())}")
+        
+        if field_names_filter:
+            # 同时过滤 properties，只保留指定的字段
+            filtered_properties = {k: v for k, v in all_properties.items() if k in field_names_filter}
+            required_fields = list(filtered_properties.keys())
+            logger.info(f"[DEBUG] filtered_properties keys: {list(filtered_properties.keys())}")
+            logger.info(f"[DEBUG] required_fields: {required_fields}")
+        else:
+            filtered_properties = all_properties
+            required_fields = list(all_properties.keys())
+        
         unified_function_schema = {
             "type": "function",
             "function": {
@@ -170,8 +187,8 @@ async def fetch_field_groups(
                 "description": "从对话中提取表单数据",
                 "parameters": {
                     "type": "object",
-                    "properties": all_properties,
-                    "required": list(all_properties.keys())
+                    "properties": filtered_properties,
+                    "required": required_fields
                 }
             }
         }
