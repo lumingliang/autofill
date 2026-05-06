@@ -1,0 +1,2 @@
+ID,字段名,字段标签,字段类型,填写指引,corrections,状态,租户域名,字段组名称,页面名称
+,test_select_field_new,测试下拉字段-已修改,select,修改后的填写指引,*修改后的批注,启用,,default,

@@ -88,9 +88,10 @@ class FillDataRecord(BaseModel, TimestampMixin):
 # ==================== 新增模型 ====================
 
 class FieldType(str, Enum):
-    """字段类型枚举 - 仅支持select和text两种类型"""
-    SELECT = "select"
-    TEXT = "text"
+    """字段类型枚举 - 文本输入、下拉单选、下拉多选"""
+    TEXT = "text"           # 文本输入
+    SELECT_SINGLE = "select_single"   # 下拉单选
+    SELECT_MULTI = "select_multi"     # 下拉多选
 
 
 class FillPage(BaseModel, TimestampMixin):

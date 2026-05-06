@@ -1,0 +1,4 @@
+ID,字段名,字段标签,字段类型,填写指引,corrections,状态,租户域名,字段组名称,页面名称
+13,scene_category,场景分类-场景7批量更新,select,场景7批量更新后的指引,*场景7批量更新批注,启用,,,
+,batch_new_field_1,场景7-批量新增字段1,text,批量新增字段1的指引,*批量新增字段1批注,启用,,default,
+,batch_new_field_2,场景7-批量新增字段2,select,批量新增字段2的指引,,启用,,default,

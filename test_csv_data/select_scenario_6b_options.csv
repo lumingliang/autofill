@@ -1,0 +1,5 @@
+字段ID,字段名,选项值,选项标签,填写说明,corrections,状态,租户域名,字段组名称,页面名称
+,complete_select_field,10,选项十,选项十的说明,*选项十批注,启用,,,
+,complete_select_field,20,选项二十,选项二十的说明,,启用,,,
+,complete_select_field,30,选项三十,选项三十的说明,"*选项三十批注1
+*选项三十批注2",启用,,,

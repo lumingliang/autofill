@@ -310,15 +310,12 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
                     if isinstance(options, dict) and options.get("source"):
                         source = options["source"]
 
-                    # 合并选择模式配置（新值覆盖旧值）
-                    selection_mode = options.get("selection_mode") if isinstance(options, dict) else None
+                    # 合并数量限制配置（新值覆盖旧值，仅多选时有效）
                     min_selections = options.get("min_selections") if isinstance(options, dict) else None
                     max_selections = options.get("max_selections") if isinstance(options, dict) else None
 
                     # 如果没有传新值，保留旧值
                     old_options = field_spec.options or {}
-                    if selection_mode is None and hasattr(old_options, 'selection_mode'):
-                        selection_mode = old_options.selection_mode
                     if min_selections is None and hasattr(old_options, 'min_selections'):
                         min_selections = old_options.min_selections
                     if max_selections is None and hasattr(old_options, 'max_selections'):
@@ -327,9 +324,8 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
                     merged_options = {
                         "items": merged_items,
                         "source": source,
-                        "selection_mode": selection_mode if selection_mode is not None else 0,
                         "min_selections": min_selections if min_selections is not None else 1,
-                        "max_selections": max_selections if max_selections is not None else 1
+                        "max_selections": max_selections if max_selections is not None else 0
                     }
                     update_data.options = FieldOptions(**merged_options)
                 else:
@@ -338,13 +334,11 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
                         # 如果 options 中没有设置 source，默认设置为 static
                         if not options.get("source"):
                             options["source"] = "static"
-                        # 设置选择模式默认值
-                        if "selection_mode" not in options:
-                            options["selection_mode"] = 0  # 默认单选
+                        # 设置数量限制默认值
                         if "min_selections" not in options:
                             options["min_selections"] = 1
                         if "max_selections" not in options:
-                            options["max_selections"] = 1
+                            options["max_selections"] = 0
                         update_data.options = FieldOptions(**options)
                     else:
                         update_data.options = options

@@ -1,0 +1,2 @@
+ID,字段名,字段标签,字段类型,填写指引,corrections,状态,租户域名,字段组名称,页面名称
+,cross_tenant_field,跨租户测试字段,text,跨租户字段的填写指引,*跨租户批注,启用,tenant-a,default,
