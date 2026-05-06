@@ -3,8 +3,8 @@
     <CrudTable ref="crudTableRef" :columns="columns" :data-source="tableData" :loading="loading"
       :pagination="pagination" :filter-model="queryParams" :filter-item-count="filterItemCount" show-modal
       :modal-title="modalTitle" :modal-loading="modalLoading" :modal-form="modalForm" :modal-rules="modalRules"
-      modal-width="800px" @search="handleSearch" @reset="handleReset" @table-change="handleTableChange"
-      @modal-ok="handleSave">
+      modal-width="800px" :row-selection="rowSelection" @search="handleSearch" @reset="handleReset"
+      @table-change="handleTableChange" @modal-ok="handleSave">
       <!-- 筛选条件 -->
       <template #filter-items>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
@@ -35,10 +35,25 @@
 
       <!-- 操作按钮 -->
       <template #actions>
-        <a-button v-permission="'post/api/v1/autofill/field_spec/create'" type="primary" @click="handleAdd">
-          <PlusOutlined />
-          新建字段
-        </a-button>
+        <a-space>
+          <a-button v-permission="'post/api/v1/autofill/field_spec/create'" type="primary" @click="handleAdd">
+            <PlusOutlined />
+            新建字段
+          </a-button>
+          <a-button @click="handleExport">
+            <ExportOutlined />
+            导出选中
+          </a-button>
+          <a-upload :custom-request="handleImport" :show-upload-list="false" accept=".csv">
+            <a-button>
+              <ImportOutlined />
+              导入
+            </a-button>
+          </a-upload>
+          <a-typography-text v-if="selectedRowKeys.length > 0" type="secondary">
+            已选择 {{ selectedRowKeys.length }} 项
+          </a-typography-text>
+        </a-space>
       </template>
 
       <!-- 表格列自定义 -->
@@ -125,13 +140,15 @@
                 <a-col :span="12">
                   <div class="limit-input-wrapper">
                     <span class="limit-label">最少选择</span>
-                    <a-input-number v-model:value="form.options.min_selections" :min="1" :max="form.options.max_selections || 100" style="width: 100%" />
+                    <a-input-number v-model:value="form.options.min_selections" :min="1"
+                      :max="form.options.max_selections || 100" style="width: 100%" />
                   </div>
                 </a-col>
                 <a-col :span="12">
                   <div class="limit-input-wrapper">
                     <span class="limit-label">最多选择</span>
-                    <a-input-number v-model:value="form.options.max_selections" :min="form.options.min_selections || 1" :max="100" style="width: 100%" />
+                    <a-input-number v-model:value="form.options.max_selections" :min="form.options.min_selections || 1"
+                      :max="100" style="width: 100%" />
                   </div>
                 </a-col>
               </a-row>
@@ -177,13 +194,31 @@
           <template v-if="form.options.source === 'static'">
             <a-form-item label="选项列表">
               <div v-for="(item, index) in form.options.items" :key="index" class="option-item">
-                <a-space>
-                  <a-input v-model:value="item.value" placeholder="选项值" style="width: 150px" />
-                  <a-input v-model:value="item.label" placeholder="选项标签" style="width: 150px" />
-                  <a-input v-model:value="item.fill_instruction" placeholder="填写说明" style="width: 200px" />
-                  <a-button type="link" danger @click="removeOption(index)">
-                    <DeleteOutlined />
-                  </a-button>
+                <a-space direction="vertical" style="width: 100%">
+                  <a-space>
+                    <a-input v-model:value="item.value" placeholder="选项值" style="width: 120px" />
+                    <a-input v-model:value="item.label" placeholder="选项标签" style="width: 120px" />
+                    <a-input v-model:value="item.fill_instruction" placeholder="填写说明" style="width: 150px" />
+                    <a-button type="link" danger @click="removeOption(index)">
+                      <DeleteOutlined />
+                    </a-button>
+                  </a-space>
+                  <!-- 选项的人工标注数组 -->
+                  <div class="option-corrections">
+                    <div class="correction-label">人工标注：</div>
+                    <div v-for="(corr, corrIndex) in item.corrections" :key="corrIndex" class="correction-item">
+                      <a-space>
+                        <a-textarea v-model:value="corr.text" placeholder="批注内容" :rows="2" style="width: 400px" />
+                        <a-button type="link" danger @click="removeOptionCorrection(index, corrIndex)">
+                          <DeleteOutlined />
+                        </a-button>
+                      </a-space>
+                    </div>
+                    <a-button type="dashed" block @click="addOptionCorrection(index)" style="margin-top: 8px">
+                      <PlusOutlined />
+                      添加批注
+                    </a-button>
+                  </div>
                 </a-space>
               </div>
               <a-button type="dashed" block @click="addOption">
@@ -200,7 +235,7 @@
           <a-form-item label="批注列表">
             <div v-for="(item, index) in form.corrections" :key="index" class="correction-item">
               <a-space>
-                <a-input v-model:value="item.text" placeholder="批注内容" style="width: 400px" />
+                <a-textarea v-model:value="item.text" placeholder="批注内容" :rows="2" style="width: 400px" />
                 <a-button type="link" danger @click="removeCorrection(index)">
                   <DeleteOutlined />
                 </a-button>
@@ -226,7 +261,7 @@ import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
-import { DeleteOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
@@ -265,6 +300,21 @@ const pagination = reactive({
   pageSize: 10,
   total: 0,
 })
+
+// 多选相关
+const selectedRowKeys = ref<number[]>([])
+const selectedRows = ref<any[]>([])
+
+// 行选择配置
+const rowSelection = computed(() => ({
+  type: 'checkbox' as const,
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: number[], rows: any[]) => {
+    selectedRowKeys.value = keys
+    selectedRows.value = rows
+  },
+  preserveSelectedRowKeys: true,
+}))
 
 // 弹窗数据
 const modalTitle = ref('')
@@ -468,6 +518,23 @@ const removeOption = (index: number) => {
   modalForm.options.items.splice(index, 1)
 }
 
+const addOptionCorrection = (optionIndex: number) => {
+  const item = modalForm.options.items[optionIndex]
+  if (!item.corrections) {
+    item.corrections = []
+  }
+  item.corrections.push({
+    text: '',
+  })
+}
+
+const removeOptionCorrection = (optionIndex: number, correctionIndex: number) => {
+  const item = modalForm.options.items[optionIndex]
+  if (item.corrections) {
+    item.corrections.splice(correctionIndex, 1)
+  }
+}
+
 const addCorrection = () => {
   modalForm.corrections.push({
     id: Date.now().toString(),
@@ -570,6 +637,63 @@ const handleDelete = async (record: any) => {
     }
   } catch (error: any) {
     message.error(error.message || '删除失败')
+  }
+}
+
+// 导出选中字段
+const handleExport = async () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要导出的字段')
+    return
+  }
+
+  try {
+    const res: any = await api.exportFieldSpecs({
+      ids: selectedRowKeys.value
+    })
+
+    if (res.code === 200) {
+      // 下载基础字段CSV
+      const baseBlob = new Blob([res.data.base_csv], { type: 'text/csv;charset=utf-8;' })
+      const baseLink = document.createElement('a')
+      baseLink.href = URL.createObjectURL(baseBlob)
+      baseLink.download = `field_specs_base_${new Date().getTime()}.csv`
+      baseLink.click()
+
+      // 下载选项详情CSV
+      const optionsBlob = new Blob([res.data.options_csv], { type: 'text/csv;charset=utf-8;' })
+      const optionsLink = document.createElement('a')
+      optionsLink.href = URL.createObjectURL(optionsBlob)
+      optionsLink.download = `field_specs_options_${new Date().getTime()}.csv`
+      optionsLink.click()
+
+      message.success('导出成功')
+    } else {
+      message.error(res.msg || '导出失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '导出失败')
+  }
+}
+
+// 导入字段
+const handleImport = async (info: any) => {
+  const file = info.file
+  if (!file) return
+
+  try {
+    const res: any = await api.importFieldSpecs({
+      file: file
+    })
+
+    if (res.code === 200) {
+      message.success(`导入成功：${res.data.success_count} 个字段`)
+      fetchData()
+    } else {
+      message.error(res.msg || '导入失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '导入失败')
   }
 }
 

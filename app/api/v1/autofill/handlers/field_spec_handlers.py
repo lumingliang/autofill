@@ -1,9 +1,13 @@
 """
 字段明细管理接口
 """
+import csv
+import io
 from datetime import datetime
+from typing import List
 
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, File, Header, Query, UploadFile
+from pydantic import BaseModel
 from tortoise.expressions import Q
 
 from app.controllers.autofill import (
@@ -288,3 +292,260 @@ async def sync_swagger_document(
 
     except Exception as e:
         return Fail(code=500, msg=f"同步失败: {str(e)}")
+
+
+class ExportRequest(BaseModel):
+    """导出请求"""
+    ids: List[int]
+
+
+@router.post("/field_spec/export", summary="导出字段明细")
+async def export_field_specs(
+    export_in: ExportRequest,
+    token: str = Header(..., description="token验证"),
+):
+    """
+    导出字段明细为两个CSV文件：
+    1. 基础字段信息（ID, 字段名, 字段标签, 字段类型, 填写指引, corrections）
+    2. 选项详情（针对select类型字段的选项信息）
+    """
+    current_user = await AuthControl.is_authed(token)
+
+    # 构建查询条件 - 超级管理员可以导出任何字段，普通用户只能导出自己租户的字段
+    query = Q(id__in=export_in.ids)
+    if not is_superuser(current_user):
+        query &= Q(tenant_id=current_user.current_tenant_id)
+
+    # 查询选中的字段
+    specs = await field_spec_controller.model.filter(query).all()
+
+    if not specs:
+        return Fail(code=404, msg="未找到要导出的字段")
+
+    # 准备基础字段CSV
+    base_output = io.StringIO()
+    base_writer = csv.writer(base_output)
+    base_writer.writerow(['ID', '字段名', '字段标签', '字段类型', '填写指引', 'corrections'])
+
+    # 准备选项详情CSV
+    options_output = io.StringIO()
+    options_writer = csv.writer(options_output)
+    options_writer.writerow(['字段ID', '字段名', '选项值', '选项标签', '填写说明', 'corrections'])
+
+    for spec in specs:
+        # 写入基础字段信息
+        corrections_text = ''
+        if spec.corrections:
+            # 每行都以 * 开头
+            corrections_text = '\n'.join(['*' + c.get('text', '') for c in spec.corrections if c.get('text')])
+
+        base_writer.writerow([
+            spec.id,
+            spec.field_name,
+            spec.field_label or '',
+            spec.field_type.value if spec.field_type else '',
+            spec.fill_instruction or '',
+            corrections_text
+        ])
+
+        # 写入选项详情（仅select类型）
+        if spec.field_type == 'select' and spec.options:
+            items = spec.options.get('items', [])
+            for item in items:
+                if item.get('is_deleted'):
+                    continue
+
+                # 处理选项的corrections
+                option_corrections = item.get('corrections', '')
+                if isinstance(option_corrections, list):
+                    # 每行都以 * 开头
+                    option_corrections = '\n'.join(['*' + c.get('text', '') for c in option_corrections if c.get('text')])
+
+                options_writer.writerow([
+                    spec.id,
+                    spec.field_name,
+                    item.get('value', ''),
+                    item.get('label', ''),
+                    item.get('fill_instruction', ''),
+                    option_corrections
+                ])
+
+    return Success(data={
+        "base_csv": base_output.getvalue(),
+        "options_csv": options_output.getvalue()
+    })
+
+
+@router.post("/field_spec/import", summary="导入字段明细")
+async def import_field_specs(
+    file: UploadFile = File(..., description="CSV文件"),
+    token: str = Header(..., description="token验证"),
+):
+    """
+    从CSV文件导入字段明细
+    支持两种CSV格式：
+    1. 基础字段信息（ID, 字段名, 字段标签, 字段类型, 填写指引, corrections）
+    2. 选项详情（字段ID, 字段名, 选项值, 选项标签, 填写说明, corrections）
+    """
+    current_user = await AuthControl.is_authed(token)
+    tenant_id = current_user.current_tenant_id if not is_superuser(current_user) else 0
+    app_name = "autofill"  # 默认应用名
+
+    if not file.filename.endswith('.csv'):
+        return Fail(code=400, msg="请上传CSV文件")
+
+    try:
+        content = await file.read()
+        content_str = content.decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(content_str))
+
+        # 检测CSV类型
+        fieldnames = csv_reader.fieldnames or []
+        is_options_csv = '字段ID' in fieldnames and '选项值' in fieldnames
+
+        success_count = 0
+        error_messages = []
+
+        if is_options_csv:
+            # 处理选项详情CSV
+            for row in csv_reader:
+                try:
+                    field_id = row.get('字段ID', '').strip()
+                    field_name = row.get('字段名', '').strip()
+                    option_value = row.get('选项值', '').strip()
+                    option_label = row.get('选项标签', '').strip()
+                    fill_instruction = row.get('填写说明', '').strip()
+                    corrections_text = row.get('corrections', '').strip()
+
+                    if not field_id or not option_value:
+                        error_messages.append(f"跳过缺少字段ID或选项值的行")
+                        continue
+
+                    # 查找字段
+                    existing_query = Q(id=int(field_id))
+                    if not is_superuser(current_user):
+                        existing_query &= Q(tenant_id=tenant_id)
+                    existing = await field_spec_controller.model.filter(existing_query).first()
+
+                    if not existing:
+                        error_messages.append(f"字段ID {field_id} 不存在或无权限，跳过")
+                        continue
+
+                    # 解析corrections - 每行以 * 开头
+                    corrections = []
+                    if corrections_text:
+                        for line in corrections_text.split('\n'):
+                            line = line.strip()
+                            if line.startswith('*'):
+                                text = line[1:].strip()  # 去掉开头的 *
+                                if text:
+                                    corrections.append({"text": text})
+
+                    # 更新选项
+                    options = existing.options or {}
+                    items = options.get('items', [])
+
+                    # 查找并更新选项
+                    option_found = False
+                    for item in items:
+                        if str(item.get('value', '')) == option_value:
+                            item['label'] = option_label
+                            item['fill_instruction'] = fill_instruction
+                            item['corrections'] = corrections
+                            option_found = True
+                            break
+
+                    if not option_found:
+                        # 添加新选项
+                        items.append({
+                            'value': option_value,
+                            'label': option_label,
+                            'fill_instruction': fill_instruction,
+                            'corrections': corrections,
+                            'is_deleted': False
+                        })
+
+                    options['items'] = items
+                    existing.options = options
+                    await existing.save()
+                    success_count += 1
+
+                except Exception as e:
+                    error_messages.append(f"处理行失败: {str(e)}")
+        else:
+            # 处理基础字段信息CSV
+            for row in csv_reader:
+                try:
+                    field_id = row.get('ID', '').strip()
+                    field_name = row.get('字段名', '').strip()
+                    field_label = row.get('字段标签', '').strip()
+                    field_type = row.get('字段类型', '').strip()
+                    fill_instruction = row.get('填写指引', '').strip()
+                    corrections_text = row.get('corrections', '').strip()
+
+                    if not field_name:
+                        error_messages.append(f"跳过空字段名行")
+                        continue
+
+                    # 解析corrections - 每行以 * 开头
+                    corrections = []
+                    if corrections_text:
+                        for line in corrections_text.split('\n'):
+                            line = line.strip()
+                            if line.startswith('*'):
+                                text = line[1:].strip()  # 去掉开头的 *
+                                if text:
+                                    corrections.append({"text": text})
+
+                    # 准备数据
+                    data = {
+                        "field_name": field_name,
+                        "field_label": field_label,
+                        "field_type": field_type,
+                        "fill_instruction": fill_instruction,
+                        "corrections": corrections,
+                        "is_active": True,
+                    }
+
+                    if field_id:
+                        # 更新已有字段 - 超级管理员可以更新任何字段，普通用户只能更新自己租户的字段
+                        existing_query = Q(id=int(field_id))
+                        if not is_superuser(current_user):
+                            existing_query &= Q(tenant_id=tenant_id)
+                        existing = await field_spec_controller.model.filter(existing_query).first()
+                        if existing:
+                            await field_spec_controller.update(id=int(field_id), obj_in=data)
+                            success_count += 1
+                        else:
+                            error_messages.append(f"字段ID {field_id} 不存在或无权限，跳过")
+                    else:
+                        # 检查字段名是否已存在（仅检查当前租户）
+                        existing_query = Q(field_name=field_name)
+                        if not is_superuser(current_user):
+                            existing_query &= Q(tenant_id=tenant_id)
+                        existing = await field_spec_controller.model.filter(existing_query).first()
+                        if existing:
+                            error_messages.append(f"字段名 {field_name} 已存在，跳过")
+                            continue
+
+                        # 创建新字段
+                        data["tenant_id"] = tenant_id if tenant_id > 0 else 0
+                        data["app_name"] = app_name
+                        await field_spec_controller.create(obj_in=data)
+                        success_count += 1
+
+                except Exception as e:
+                    error_messages.append(f"处理行失败: {str(e)}")
+
+        result = {
+            "success_count": success_count,
+            "errors": error_messages[:10]  # 最多返回10条错误
+        }
+
+        if error_messages:
+            result["error_count"] = len(error_messages)
+
+        return Success(data=result)
+
+    except Exception as e:
+        return Fail(code=500, msg=f"导入失败: {str(e)}")
