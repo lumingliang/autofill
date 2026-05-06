@@ -357,24 +357,37 @@ async def get_field_groups_schema(
 
 async def llm_fill_handler(request: Request, auth_info: dict):
     """直接LLM填单处理逻辑"""
-    class LLMFillRequest(BaseModel):
-        page_name: str = Field(..., description="页面名称（必填）")
-        group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选，不传则查询所有）")
-        field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
-        query: str = Field(..., description="用户输入的查询内容")
+    from app.schemas.public.field_group import LLMFillRequest
 
     params = await parse_request_params(request, LLMFillRequest)
 
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
 
+    # 处理 group_fields 参数（新的传参格式）
+    group_fields = params.get("group_fields")
+    if group_fields:
+        # 使用新的传参格式：group_fields = {"default": ["field1", "field2"], "group2": []}
+        group_names = list(group_fields.keys())
+        # 收集所有指定的字段名（用于过滤）
+        all_field_names = []
+        for fields in group_fields.values():
+            if fields:  # 如果不是空列表，则添加这些字段
+                all_field_names.extend(fields)
+        field_names = all_field_names if all_field_names else []
+    else:
+        # 使用旧的传参格式
+        group_names = params.get("group_names", [])
+        field_names = params.get("field_names", [])
+
     # 调用 fetch_field_groups 获取字段组配置（返回可直接使用的统一 schema）
     result_data = await fetch_field_groups(
         tenant_id=tenant_id,
         app_name=app_name,
         page_name=params.get("page_name"),
-        group_names=params.get("group_names", []),
-        field_names=params.get("field_names", [])
+        group_names=group_names,
+        field_names=field_names,
+        group_fields=group_fields  # 传递 group_fields 以支持按字段组分别过滤
     )
 
     unified_function_schema = result_data.get("unified_function_schema")

@@ -33,13 +33,19 @@ async def fetch_field_groups(
     app_name: str,
     page_name: str,
     group_names: List[str] = None,
-    field_names: List[str] = None
+    field_names: List[str] = None,
+    group_fields: Dict[str, List[str]] = None
 ) -> Dict[str, Any]:
     """
     查询字段组配置核心业务逻辑
     - 支持通过 page_name + group_names 查询多个字段组
-    - 支持通过 field_names 筛选指定字段
+    - 支持通过 field_names 筛选指定字段（全局过滤）
+    - 支持通过 group_fields 按字段组分别指定字段（优先级更高）
     - 返回统一的 Function Calling Schema（可直接用于 LLM 调用）
+
+    Args:
+        group_fields: 字段组与字段的映射关系，如 {"default": ["field1"], "group2": []}
+                     空列表表示查询该组所有字段
 
     Returns:
         {
@@ -52,6 +58,7 @@ async def fetch_field_groups(
     """
     group_names = group_names or []
     field_names = field_names or []
+    group_fields = group_fields or {}
 
     page = await fill_page_controller.model.filter(
         tenant_id=tenant_id,
@@ -91,11 +98,30 @@ async def fetch_field_groups(
         field_specs = []
         if field_spec_ids:
             field_q = Q(id__in=field_spec_ids, is_active=True)
-            if field_names_filter:
+            
+            # 优先使用 group_fields 按字段组分别过滤
+            if group_fields and fg.group_name in group_fields:
+                group_field_names = group_fields[fg.group_name]
+                if group_field_names:  # 如果指定了字段列表，则过滤
+                    field_q &= Q(field_name__in=group_field_names)
+                # 如果 group_field_names 是空列表，则不添加字段过滤，查询该组所有字段
+            elif field_names_filter:
+                # 使用全局 field_names 过滤
                 field_q &= Q(field_name__in=list(field_names_filter))
+            
             field_specs = await field_spec_controller.model.filter(field_q).all()
 
-        if field_names_filter and not field_specs:
+        # 检查是否需要跳过该字段组
+        # 如果使用了 group_fields 且该组没有字段，则跳过
+        # 如果使用了全局 field_names_filter 且没有匹配字段，则跳过
+        if group_fields and fg.group_name in group_fields:
+            # 使用 group_fields 模式
+            group_field_names = group_fields[fg.group_name]
+            if group_field_names and not field_specs:  # 指定了字段但没找到
+                continue
+            # 如果 group_field_names 是空列表，即使没有 field_specs 也不跳过（可能该组确实没有字段）
+        elif field_names_filter and not field_specs:
+            # 全局 field_names 模式
             continue
 
         # 收集所有字段
@@ -165,17 +191,17 @@ async def fetch_field_groups(
     if all_properties:
         # 如果有指定 field_names，则只将这些字段设为 required
         # 否则将所有字段设为 required
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"[DEBUG] field_names_filter: {field_names_filter}")
-        logger.info(f"[DEBUG] all_properties keys: {list(all_properties.keys())}")
         
-        if field_names_filter:
-            # 同时过滤 properties，只保留指定的字段
+        # 如果使用 group_fields，则不使用全局 field_names_filter 过滤 properties
+        # 因为每个字段组已经单独过滤过了
+        if group_fields:
+            # 使用 group_fields 时，all_properties 已经只包含需要的字段
+            filtered_properties = all_properties
+            required_fields = list(all_properties.keys())
+        elif field_names_filter:
+            # 使用全局 field_names 过滤
             filtered_properties = {k: v for k, v in all_properties.items() if k in field_names_filter}
             required_fields = list(filtered_properties.keys())
-            logger.info(f"[DEBUG] filtered_properties keys: {list(filtered_properties.keys())}")
-            logger.info(f"[DEBUG] required_fields: {required_fields}")
         else:
             filtered_properties = all_properties
             required_fields = list(all_properties.keys())
