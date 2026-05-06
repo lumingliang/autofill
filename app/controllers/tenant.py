@@ -39,8 +39,14 @@ class TenantController(CRUDBase[Tenant, TenantCreate, TenantUpdate]):
         )
 
         # 批量关联所有菜单和API
-        await RelationQuery.batch_add_role_menus([(admin_role.id, m["id"]) for m in all_menus])
-        await RelationQuery.batch_add_role_apis([(admin_role.id, a["id"]) for a in all_apis])
+        await RelationQuery.batch_add_role_menus(
+            [(admin_role.id, m["id"]) for m in all_menus],
+            tenant_id=tenant.id
+        )
+        await RelationQuery.batch_add_role_apis(
+            [(admin_role.id, a["id"]) for a in all_apis],
+            tenant_id=tenant.id
+        )
 
         return tenant, admin_role
 

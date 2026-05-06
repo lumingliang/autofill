@@ -192,6 +192,7 @@ class AIFillDataRequest(BaseModel):
     session_id: str
     data: Dict[str, Any]
     response_mode: str = Field(default="sync", description="响应模式: sync 或 async")
+    page_name: str = Field(default="", description="页面名称，传入时优先使用页面配置的 Dify URL 和 API Key")
 
 
 class AIFillDataResultRequest(BaseModel):

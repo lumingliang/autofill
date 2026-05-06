@@ -16,3 +16,11 @@ db.sqlite3-wal
 ._.DS_Store
 uploads/
 logs/
+
+# Backup files
+*.tar.gz
+*.zip
+*.tar
+*.bak
+*.backup
+node_modules/

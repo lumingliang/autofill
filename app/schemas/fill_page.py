@@ -120,6 +120,10 @@ class FieldOptions(BaseModel):
     items: List[OptionItem] = []
     swagger_json: str = Field("", description="OpenAI Swagger JSON 文档")
     appkey: str = Field("", description="API 调用鉴权密钥")
+    # 选择模式和数量限制（selection_mode: 0=单选, 1=多选）
+    selection_mode: int = Field(default=0, description="选择模式：0=单选(默认), 1=多选")
+    min_selections: int = Field(default=1, description="最少选择数量（多选时有效）")
+    max_selections: int = Field(default=1, description="最多选择数量（多选时有效，0表示无限制）")
 
 
 class FieldSpecCreate(BaseModel):
