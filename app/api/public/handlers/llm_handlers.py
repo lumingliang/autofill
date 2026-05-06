@@ -626,7 +626,7 @@ async def _optimize_field_batch(tenant_id: int, app_name: str, fields: list, con
             "field_label": field.field_label or field.field_name,
             "field_type": field_type,
             "current_instruction": field.fill_instruction or "",
-            "options": field.options.get("items", []) if field.options and field_type == "select" else []
+            "options": field.options.get("items", []) if field.options and field_type in ["select_single", "select_multi"] else []
         }
         fields_info.append(field_info)
     

@@ -113,17 +113,16 @@ class OptionItem(BaseModel):
 
 
 class FieldOptions(BaseModel):
-    """字段选项配置（select类型）"""
+    """字段选项配置（下拉单选/多选类型）"""
     source: str = Field(default="static", description="选项来源：static/api")
     api_identifier: str = Field("", description="API标识")
     last_sync_at: str = Field("", description="最后同步时间")
     items: List[OptionItem] = []
     swagger_json: str = Field("", description="OpenAI Swagger JSON 文档")
     appkey: str = Field("", description="API 调用鉴权密钥")
-    # 选择模式和数量限制（selection_mode: 0=单选, 1=多选）
-    selection_mode: int = Field(default=0, description="选择模式：0=单选(默认), 1=多选")
+    # 数量限制（仅多选时有效）
     min_selections: int = Field(default=1, description="最少选择数量（多选时有效）")
-    max_selections: int = Field(default=1, description="最多选择数量（多选时有效，0表示无限制）")
+    max_selections: int = Field(default=0, description="最多选择数量（多选时有效，0表示无限制）")
 
 
 class FieldSpecCreate(BaseModel):

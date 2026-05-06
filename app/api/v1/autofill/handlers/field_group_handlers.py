@@ -270,7 +270,7 @@ def _build_field_group_markdown(group, fields) -> str:
         if field.fill_instruction:
             lines.append(f"- **填写说明**: {field.fill_instruction}")
 
-        if field.field_type.value == 'select' and field.options:
+        if field.field_type.value in ['select_single', 'select_multi'] and field.options:
             items = field.options.get('items', [])
             if items:
                 lines.append("")

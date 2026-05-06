@@ -59,17 +59,9 @@
       <!-- 表格列自定义 -->
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'field_type'">
-          <a-space direction="vertical" size="small">
-            <a-tag :color="record.field_type === 'select' ? 'blue' : 'green'">
-              {{ record.field_type === 'select' ? '下拉选择' : '文本输入' }}
-            </a-tag>
-            <template v-if="record.field_type === 'select' && record.options">
-              <a-tag v-if="record.options.selection_mode === 1" color="orange">
-                多选({{ record.options.min_selections }}-{{ record.options.max_selections }})
-              </a-tag>
-              <a-tag v-else color="cyan">单选</a-tag>
-            </template>
-          </a-space>
+          <a-tag :color="getFieldTypeColor(record.field_type)">
+            {{ getFieldTypeLabel(record.field_type) }}
+          </a-tag>
         </template>
         <template v-if="column.key === 'field_groups'">
           <a-space v-if="record.field_groups && record.field_groups.length > 0" wrap>
@@ -115,26 +107,20 @@
         <a-form-item label="字段类型" name="field_type">
           <a-radio-group v-model:value="form.field_type" :disabled="modalAction === 'edit'">
             <a-radio value="text">文本输入</a-radio>
-            <a-radio value="select">下拉选择</a-radio>
+            <a-radio value="select_single">下拉单选</a-radio>
+            <a-radio value="select_multi">下拉多选</a-radio>
           </a-radio-group>
         </a-form-item>
         <a-form-item label="填写指引" name="fill_instruction">
           <a-textarea v-model:value="form.fill_instruction" placeholder="请输入字段填写指引，用于生成LLM描述" :rows="3" />
         </a-form-item>
 
-        <!-- Select类型选项配置 -->
-        <template v-if="form.field_type === 'select'">
+        <!-- 下拉单选/多选类型选项配置 -->
+        <template v-if="form.field_type === 'select_single' || form.field_type === 'select_multi'">
           <a-divider orientation="left">选项配置</a-divider>
-          <!-- 选择模式配置 -->
-          <a-form-item label="选择模式" name="options.selection_mode">
-            <a-radio-group v-model:value="form.options.selection_mode">
-              <a-radio :value="0">单选</a-radio>
-              <a-radio :value="1">多选</a-radio>
-            </a-radio-group>
-          </a-form-item>
 
           <!-- 多选时显示选项数限制 -->
-          <template v-if="form.options.selection_mode === 1">
+          <template v-if="form.field_type === 'select_multi'">
             <a-form-item label="选项数限制" class="selection-limit-item">
               <a-row :gutter="16">
                 <a-col :span="12">
@@ -336,19 +322,35 @@ const modalForm = reactive({
     last_sync_at: '',
     sync_endpoints_count: 0,
     items: [] as any[],
-    selection_mode: 0,  // 0=单选, 1=多选
     min_selections: 1,
-    max_selections: 1,
+    max_selections: 0,  // 0表示无限制
   },
   corrections: [] as any[],
   is_active: true,
 })
 
-// 选项数据
+// 选项数据 - 新的字段类型：文本输入、下拉单选、下拉多选
 const fieldTypeOptions = [
   { label: '文本输入', value: 'text' },
-  { label: '下拉选择', value: 'select' },
+  { label: '下拉单选', value: 'select_single' },
+  { label: '下拉多选', value: 'select_multi' },
 ]
+
+// 获取字段类型标签
+const getFieldTypeLabel = (type: string) => {
+  const option = fieldTypeOptions.find(opt => opt.value === type)
+  return option?.label || type
+}
+
+// 获取字段类型颜色
+const getFieldTypeColor = (type: string) => {
+  switch (type) {
+    case 'text': return 'green'
+    case 'select_single': return 'blue'
+    case 'select_multi': return 'orange'
+    default: return 'default'
+  }
+}
 const fieldGroupOptions = ref<{ label: string; value: number }[]>([])
 
 // 计算属性
@@ -460,9 +462,8 @@ const resetModalForm = () => {
     last_sync_at: '',
     sync_endpoints_count: 0,
     items: [],
-    selection_mode: 0,
     min_selections: 1,
-    max_selections: 1,
+    max_selections: 0,  // 0表示无限制
   }
   modalForm.corrections = []
   modalForm.is_active = true
@@ -492,9 +493,8 @@ const handleEdit = (record: any) => {
     last_sync_at: record.options?.last_sync_at || '',
     sync_endpoints_count: record.options?.sync_endpoints_count || 0,
     items: record.options?.items || [],
-    selection_mode: record.options?.selection_mode ?? 0,
     min_selections: record.options?.min_selections ?? 1,
-    max_selections: record.options?.max_selections ?? 1,
+    max_selections: record.options?.max_selections ?? 0,  // 0表示无限制
   }
   modalForm.is_active = record.is_active
   crudTableRef.value?.openEditModal(record)
@@ -601,11 +601,11 @@ const handleSyncSwagger = async () => {
 const handleSave = async () => {
   modalLoading.value = true
   try {
-    // 清理空选项
-    if (modalForm.field_type === 'select') {
+    // 清理空选项（下拉单选/多选类型）
+    if (modalForm.field_type === 'select_single' || modalForm.field_type === 'select_multi') {
       modalForm.options.items = modalForm.options.items.filter((item: any) => item.value && item.label)
     }
-    // 清理空批注
+    // 清理空批注（文本输入类型）
     if (modalForm.field_type === 'text') {
       modalForm.corrections = modalForm.corrections.filter((item: any) => item.text)
     }
