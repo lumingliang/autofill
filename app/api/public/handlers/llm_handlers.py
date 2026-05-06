@@ -17,7 +17,7 @@ from app.controllers.llm_config import llm_config_controller
 from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
 from app.log import logger
-from app.models.autofill import FieldGroupFieldSpec
+from app.models.autofill import FieldGroupFieldSpec, FillPage
 from app.schemas.autofill import AIFillDataRequest, AIFillDataResultRequest
 from app.schemas.base import Success
 from app.services.autofill.ai_fill_service import get_ai_fill_service
@@ -27,6 +27,7 @@ from app.services.autofill.prompt_service import (
     build_function_schema,
 )
 from app.services.llm.llm_proxy_service import llm_proxy_service
+from app.api.public.handlers.field_group_handlers import fetch_field_groups
 
 router = APIRouter()
 
@@ -39,6 +40,18 @@ async def get_ai_fill_data_handler(request: Request, auth_info: dict):
     app_name = auth_info["app_name"]
     dify_url = auth_info["dify_url"]
     dify_api_key = auth_info["dify_api_key"]
+
+    # 如果传入了页面名称，优先使用页面配置的 Dify URL 和 API Key
+    page_name = params.get("page_name", "")
+    if page_name:
+        page = await FillPage.filter(
+            tenant_id=tenant_id,
+            page_name=page_name,
+            is_active=True
+        ).first()
+        if page and page.dify_agent_url and page.dify_api_key:
+            dify_url = page.dify_agent_url
+            dify_api_key = page.dify_api_key
 
     if not dify_url or not dify_api_key:
         raise HTTPException(status_code=500, detail="Dify configuration not found")
@@ -345,47 +358,32 @@ async def get_field_groups_schema(
 async def llm_fill_handler(request: Request, auth_info: dict):
     """直接LLM填单处理逻辑"""
     class LLMFillRequest(BaseModel):
-        field_group_id: Optional[int] = Field(None, description="字段组ID")
-        field_group_code: Optional[str] = Field(None, description="字段组编码")
-        input_data: Dict[str, Any] = {}
+        page_name: str = Field(..., description="页面名称（必填）")
+        group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选，不传则查询所有）")
+        field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
+        query: str = Field(..., description="用户输入的查询内容")
 
     params = await parse_request_params(request, LLMFillRequest)
 
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
 
-    field_group = None
-    if params.get("field_group_id"):
-        field_group = await field_group_config_controller.model.filter(
-            id=params["field_group_id"]
-        ).first()
-    elif params.get("field_group_code"):
-        field_group = await field_group_config_controller.model.filter(
-            group_code=params["field_group_code"]
-        ).first()
-    else:
-        raise HTTPException(status_code=400, detail="field_group_id or field_group_code is required")
-
-    if not field_group:
-        raise HTTPException(status_code=404, detail="Field group not found")
-
-    page = await fill_page_controller.model.filter(
-        id=field_group.page_id,
+    # 调用 fetch_field_groups 获取字段组配置（返回可直接使用的统一 schema）
+    result_data = await fetch_field_groups(
         tenant_id=tenant_id,
-        app_name=app_name
-    ).first()
+        app_name=app_name,
+        page_name=params.get("page_name"),
+        group_names=params.get("group_names", []),
+        field_names=params.get("field_names", [])
+    )
 
-    if not page:
-        raise HTTPException(status_code=403, detail="Access denied")
+    unified_function_schema = result_data.get("unified_function_schema")
+    if not unified_function_schema:
+        raise HTTPException(status_code=404, detail="No field groups found")
 
-    field_specs = await field_spec_controller.get_by_field_group(field_group.id, active_only=False)
-
-    if not field_specs:
-        raise HTTPException(status_code=404, detail="No fields found in this group")
-
-    query = params.get("input_data", {}).get("query", "")
+    query = params.get("query", "")
     if not query:
-        raise HTTPException(status_code=400, detail="input_data.query is required")
+        raise HTTPException(status_code=400, detail="query is required")
 
     config = await llm_config_controller.get_default_config(
         tenant_id=tenant_id,
@@ -395,26 +393,59 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     if not config:
         raise HTTPException(status_code=500, detail="No LLM configuration found")
 
-    tools = [build_function_schema(field_group, field_specs)]
-    system_prompt = field_group.prompt_template_base or "你是一个智能填单助手。"
+    # 构建包含字段指引的 system_prompt
+    base_prompt = result_data.get("combined_prompt", "你是一个智能填单助手。")
+
+    # 从数据库查询字段模型对象用于构建指引
+    field_names = params.get("field_names", [])
+    if field_names:
+        field_specs = await field_spec_controller.model.filter(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            field_name__in=field_names,
+            is_active=True
+        ).all()
+    else:
+        field_specs = []
+
+    # 添加字段指引到 system_prompt
+    if field_specs:
+        fields_instructions = build_fields_instructions(field_specs)
+        system_prompt = f"""{base_prompt}
+
+请根据以下字段指引从对话中提取信息：
+
+{fields_instructions}
+
+请严格按照字段要求提取信息。"""
+    else:
+        system_prompt = base_prompt
 
     try:
-        result = await llm_proxy_service.process_request(
+        llm_result = await llm_proxy_service.process_request(
             query=query,
-            tools=tools,
+            tools=[unified_function_schema],
             system_prompt=system_prompt,
-            tool_choice={"type": "function", "function": {"name": "extract_form_data"}},
+            tool_choice={"type": "function", "function": {"name": "fill_form"}},
             config=config
         )
 
-        extracted_data = {k: v for k, v in result.items() if not k.startswith('_')}
+        extracted_data = {k: v for k, v in llm_result.items() if not k.startswith('_')}
+
+        # 调试信息：打印给大模型的参数
+        debug_info = {
+            "system_prompt": system_prompt,
+            "tools": [unified_function_schema],
+            "tool_choice": {"type": "function", "function": {"name": "fill_form"}},
+            "query": query
+        }
 
         return Success(data={
-            "field_group_id": field_group.id,
-            "group_name": field_group.group_name,
-            "group_code": field_group.group_code,
+            "page_name": params.get("page_name"),
+            "group_names": params.get("group_names", []),
             "result": extracted_data,
-            "_meta": result.get("_meta", {})
+            "_meta": llm_result.get("_meta", {}),
+            "_debug": debug_info
         })
 
     except ValueError as e:

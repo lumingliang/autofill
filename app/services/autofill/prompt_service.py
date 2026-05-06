@@ -41,7 +41,20 @@ def build_fields_instructions(fields: List[FieldSpec]) -> str:
 
             options_block = "可选值：\n" + "\n".join(option_strs)
             global_inst = field.fill_instruction or "根据用户意图选择"
-            lines.append(f"- {field.field_label}（字段名：`{field.field_name}`）：{global_inst}\n{options_block}\n  只能从上述选项中选择一个值。")
+
+            # 判断选择模式（0=单选, 1=多选）
+            options = field.options or {}
+            selection_mode = options.get('selection_mode', 0)  # 默认单选
+            min_selections = options.get('min_selections', 1)
+            max_selections = options.get('max_selections', 1)
+
+            if selection_mode == 1:
+                # 多选模式
+                count_desc = f"请选择 {min_selections} 到 {max_selections} 个选项" if max_selections > 0 else f"请至少选择 {min_selections} 个选项"
+                lines.append(f"- {field.field_label}（字段名：`{field.field_name}`）：{global_inst}\n{options_block}\n  【多选】{count_desc}，以数组形式返回选中的值。")
+            else:
+                # 单选模式（默认）
+                lines.append(f"- {field.field_label}（字段名：`{field.field_name}`）：{global_inst}\n{options_block}\n  【单选】只能从上述选项中选择一个值。")
 
     return "\n".join(lines)
 
@@ -73,26 +86,64 @@ def build_function_schema(field_group: FieldGroupConfig, fields: List[FieldSpec]
         elif field.field_type.value == 'select':
             items = [opt for opt in (field.options or {}).get('items', []) if not opt.get('is_deleted', False)]
             enum_values = [opt['label'] for opt in items]
-            option_descs = []
+
+            # 获取选择模式配置
+            options = field.options or {}
+            selection_mode = options.get('selection_mode', 0)  # 0=单选, 1=多选
+            min_selections = options.get('min_selections', 1)
+            max_selections = options.get('max_selections', 1)
+
+            # 构建格式化的选项描述，使用换行符让LLM更容易理解
+            option_lines = []
             for opt in items:
                 label = opt['label']
                 fill_inst = opt.get('fill_instruction', '')
                 corrections_list = opt.get('corrections', [])
                 corrections_text = "；".join([c['text'] for c in corrections_list])
-                full = f"{label}：{fill_inst}" if fill_inst else label
+
+                line = f"  - {label}"
+                if fill_inst:
+                    line += f"：{fill_inst}"
                 if corrections_text:
-                    full += f"；人工补充：{corrections_text}"
-                option_descs.append(full)
+                    line += f"（人工补充：{corrections_text}）"
+                option_lines.append(line)
 
-            description = f"可选值：{'；'.join(option_descs)}"
+            # 组合描述：字段指引 + 格式化选项列表 + 选择模式说明
+            description_parts = []
             if field.fill_instruction:
-                description = field.fill_instruction + " " + description
+                description_parts.append(field.fill_instruction)
+            description_parts.append("可选值：")
+            description_parts.extend(option_lines)
 
-            properties[field.field_name] = {
-                "type": "string",
-                "description": description,
-                "enum": enum_values
-            }
+            if selection_mode == 1:
+                # 多选模式
+                count_desc = f"请选择 {min_selections} 到 {max_selections} 个选项" if max_selections > 0 else f"请至少选择 {min_selections} 个选项"
+                description_parts.append(f"【多选】{count_desc}，以字符串数组形式返回选中的值。")
+
+                # 多选使用数组类型
+                properties[field.field_name] = {
+                    "type": "array",
+                    "description": "\n".join(description_parts),
+                    "items": {
+                        "type": "string",
+                        "enum": enum_values
+                    },
+                    "minItems": min_selections,
+                    "maxItems": max_selections if max_selections > 0 else None
+                }
+                # 移除 None 值
+                if properties[field.field_name]["maxItems"] is None:
+                    del properties[field.field_name]["maxItems"]
+            else:
+                # 单选模式（默认）
+                description_parts.append("【单选】必须从上述选项中选择一个值。")
+                description = "\n".join(description_parts)
+
+                properties[field.field_name] = {
+                    "type": "string",
+                    "description": description,
+                    "enum": enum_values
+                }
 
     return {
         "type": "function",

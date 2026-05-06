@@ -199,6 +199,7 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
         output_templates: Optional[dict] = None
         prompt_template_base: Optional[str] = None
         fields: List[FieldItem] = []
+        is_append: Optional[bool] = False  # 是否合并 options，True=合并，False=覆盖
 
     params = await parse_request_params(request, UpsertFieldGroupRequest)
     tenant_id = auth_info["tenant_id"]
@@ -290,10 +291,63 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
             )
 
             if options:
-                if isinstance(options, dict):
-                    update_data.options = FieldOptions(**options)
+                # 处理 is_append 逻辑：合并新旧 options
+                is_append = params.get("is_append", False)
+                if is_append and field_spec.options:
+                    # 合并新旧 options
+                    existing_items = field_spec.options.items if field_spec.options else []
+                    new_items = options.get("items", []) if isinstance(options, dict) else []
+
+                    # 使用 label 作为 key 去重，新值覆盖旧值
+                    merged_items_map = {item["label"]: item for item in existing_items}
+                    for new_item in new_items:
+                        if isinstance(new_item, dict) and "label" in new_item:
+                            merged_items_map[new_item["label"]] = new_item
+
+                    merged_items = list(merged_items_map.values())
+                    # 如果 options 中没有设置 source，默认设置为 static
+                    source = "static"
+                    if isinstance(options, dict) and options.get("source"):
+                        source = options["source"]
+
+                    # 合并选择模式配置（新值覆盖旧值）
+                    selection_mode = options.get("selection_mode") if isinstance(options, dict) else None
+                    min_selections = options.get("min_selections") if isinstance(options, dict) else None
+                    max_selections = options.get("max_selections") if isinstance(options, dict) else None
+
+                    # 如果没有传新值，保留旧值
+                    old_options = field_spec.options or {}
+                    if selection_mode is None and hasattr(old_options, 'selection_mode'):
+                        selection_mode = old_options.selection_mode
+                    if min_selections is None and hasattr(old_options, 'min_selections'):
+                        min_selections = old_options.min_selections
+                    if max_selections is None and hasattr(old_options, 'max_selections'):
+                        max_selections = old_options.max_selections
+
+                    merged_options = {
+                        "items": merged_items,
+                        "source": source,
+                        "selection_mode": selection_mode if selection_mode is not None else 0,
+                        "min_selections": min_selections if min_selections is not None else 1,
+                        "max_selections": max_selections if max_selections is not None else 1
+                    }
+                    update_data.options = FieldOptions(**merged_options)
                 else:
-                    update_data.options = options
+                    # 直接覆盖
+                    if isinstance(options, dict):
+                        # 如果 options 中没有设置 source，默认设置为 static
+                        if not options.get("source"):
+                            options["source"] = "static"
+                        # 设置选择模式默认值
+                        if "selection_mode" not in options:
+                            options["selection_mode"] = 0  # 默认单选
+                        if "min_selections" not in options:
+                            options["min_selections"] = 1
+                        if "max_selections" not in options:
+                            options["max_selections"] = 1
+                        update_data.options = FieldOptions(**options)
+                    else:
+                        update_data.options = options
 
             field_spec = await field_spec_controller.update_field_spec(
                 id=field_spec.id,

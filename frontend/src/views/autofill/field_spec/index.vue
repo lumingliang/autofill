@@ -44,9 +44,17 @@
       <!-- 表格列自定义 -->
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'field_type'">
-          <a-tag :color="record.field_type === 'select' ? 'blue' : 'green'">
-            {{ record.field_type === 'select' ? '下拉选择' : '文本输入' }}
-          </a-tag>
+          <a-space direction="vertical" size="small">
+            <a-tag :color="record.field_type === 'select' ? 'blue' : 'green'">
+              {{ record.field_type === 'select' ? '下拉选择' : '文本输入' }}
+            </a-tag>
+            <template v-if="record.field_type === 'select' && record.options">
+              <a-tag v-if="record.options.selection_mode === 1" color="orange">
+                多选({{ record.options.min_selections }}-{{ record.options.max_selections }})
+              </a-tag>
+              <a-tag v-else color="cyan">单选</a-tag>
+            </template>
+          </a-space>
         </template>
         <template v-if="column.key === 'field_groups'">
           <a-space v-if="record.field_groups && record.field_groups.length > 0" wrap>
@@ -102,6 +110,34 @@
         <!-- Select类型选项配置 -->
         <template v-if="form.field_type === 'select'">
           <a-divider orientation="left">选项配置</a-divider>
+          <!-- 选择模式配置 -->
+          <a-form-item label="选择模式" name="options.selection_mode">
+            <a-radio-group v-model:value="form.options.selection_mode">
+              <a-radio :value="0">单选</a-radio>
+              <a-radio :value="1">多选</a-radio>
+            </a-radio-group>
+          </a-form-item>
+
+          <!-- 多选时显示选项数限制 -->
+          <template v-if="form.options.selection_mode === 1">
+            <a-form-item label="选项数限制" class="selection-limit-item">
+              <a-row :gutter="16">
+                <a-col :span="12">
+                  <div class="limit-input-wrapper">
+                    <span class="limit-label">最少选择</span>
+                    <a-input-number v-model:value="form.options.min_selections" :min="1" :max="form.options.max_selections || 100" style="width: 100%" />
+                  </div>
+                </a-col>
+                <a-col :span="12">
+                  <div class="limit-input-wrapper">
+                    <span class="limit-label">最多选择</span>
+                    <a-input-number v-model:value="form.options.max_selections" :min="form.options.min_selections || 1" :max="100" style="width: 100%" />
+                  </div>
+                </a-col>
+              </a-row>
+            </a-form-item>
+          </template>
+
           <a-form-item label="选项来源" name="options.source">
             <a-radio-group v-model:value="form.options.source">
               <a-radio value="static">静态选项</a-radio>
@@ -250,6 +286,9 @@ const modalForm = reactive({
     last_sync_at: '',
     sync_endpoints_count: 0,
     items: [] as any[],
+    selection_mode: 0,  // 0=单选, 1=多选
+    min_selections: 1,
+    max_selections: 1,
   },
   corrections: [] as any[],
   is_active: true,
@@ -371,6 +410,9 @@ const resetModalForm = () => {
     last_sync_at: '',
     sync_endpoints_count: 0,
     items: [],
+    selection_mode: 0,
+    min_selections: 1,
+    max_selections: 1,
   }
   modalForm.corrections = []
   modalForm.is_active = true
@@ -400,6 +442,9 @@ const handleEdit = (record: any) => {
     last_sync_at: record.options?.last_sync_at || '',
     sync_endpoints_count: record.options?.sync_endpoints_count || 0,
     items: record.options?.items || [],
+    selection_mode: record.options?.selection_mode ?? 0,
+    min_selections: record.options?.min_selections ?? 1,
+    max_selections: record.options?.max_selections ?? 1,
   }
   modalForm.is_active = record.is_active
   crudTableRef.value?.openEditModal(record)
@@ -549,6 +594,20 @@ onMounted(() => {
   .option-item,
   .correction-item {
     margin-bottom: 8px;
+  }
+
+  .selection-limit-item {
+    .limit-input-wrapper {
+      display: flex;
+      flex-direction: column;
+
+      .limit-label {
+        font-size: 14px;
+        color: rgba(0, 0, 0, 0.85);
+        margin-bottom: 8px;
+        line-height: 1.5715;
+      }
+    }
   }
 }
 </style>
