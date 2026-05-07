@@ -1,16 +1,21 @@
 """
 下拉选项相关接口
+全部采用POST路由，请求参数使用schema定义
 """
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
-from pydantic import BaseModel, Field
 from tortoise.expressions import Q
 
 from app.controllers.autofill import dropdown_option_controller
 from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
-from app.schemas.autofill import DropdownOptionListRequest, DropdownOptionDetailRequest
 from app.schemas.base import Success
+from app.schemas.public import (
+    DropdownOptionListRequest,
+    DropdownOptionDetailRequest,
+    FirstLevelMenusRequest,
+    SubmenusTreeRequest,
+)
 
 router = APIRouter()
 
@@ -72,7 +77,6 @@ async def list_dropdown_options_handler(request: Request, auth_info: dict):
         ])
 
 
-@router.get("/autofill/dropdown_options/list", summary="查询下拉选项列表")
 @router.post("/autofill/dropdown_options/list", summary="查询下拉选项列表")
 async def list_dropdown_options(
     request: Request,
@@ -80,8 +84,8 @@ async def list_dropdown_options(
 ):
     """
     Dify调用: 根据 app_name + class_name + parent_id 查询下拉选项列表
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await list_dropdown_options_handler(request, auth_info)
 
@@ -118,7 +122,6 @@ async def get_dropdown_option_handler(request: Request, auth_info: dict):
     })
 
 
-@router.get("/autofill/dropdown_options", summary="查询下拉选项详情")
 @router.post("/autofill/dropdown_options", summary="查询下拉选项详情")
 async def get_dropdown_option(
     request: Request,
@@ -126,8 +129,8 @@ async def get_dropdown_option(
 ):
     """
     Dify调用: 根据ID查询选项详情及其子选项
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await get_dropdown_option_handler(request, auth_info)
 
@@ -136,9 +139,6 @@ async def get_dropdown_option(
 
 async def list_first_level_menus_handler(request: Request, auth_info: dict):
     """A1. 获取所有一级菜单"""
-    class FirstLevelMenusRequest(BaseModel):
-        class_name: str = Field("", description="分类名称")
-
     params = await parse_request_params(request, FirstLevelMenusRequest)
 
     tenant_id = auth_info["tenant_id"]
@@ -161,7 +161,6 @@ async def list_first_level_menus_handler(request: Request, auth_info: dict):
     ])
 
 
-@router.get("/autofill/dropdown/first_level", summary="A1. 获取所有一级菜单")
 @router.post("/autofill/dropdown/first_level", summary="A1. 获取所有一级菜单")
 async def list_first_level_menus(
     request: Request,
@@ -169,18 +168,14 @@ async def list_first_level_menus(
 ):
     """
     获取所有一级菜单（parent_id=0 的选项）
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await list_first_level_menus_handler(request, auth_info)
 
 
 async def get_submenus_tree_handler(request: Request, auth_info: dict):
     """A2. 根据一级菜单名称+应用名称+分类获取二三级菜单（树形结构）"""
-    class SubmenusTreeRequest(BaseModel):
-        first_level_value: str = Field(..., description="一级菜单选项值")
-        class_name: str = Field("", description="分类名称")
-
     params = await parse_request_params(request, SubmenusTreeRequest)
 
     tenant_id = auth_info["tenant_id"]
@@ -218,7 +213,6 @@ async def get_submenus_tree_handler(request: Request, auth_info: dict):
     })
 
 
-@router.get("/autofill/dropdown/submenus_tree", summary="A2. 获取二三级菜单树形结构")
 @router.post("/autofill/dropdown/submenus_tree", summary="A2. 获取二三级菜单树形结构")
 async def get_submenus_tree(
     request: Request,
@@ -226,7 +220,7 @@ async def get_submenus_tree(
 ):
     """
     根据一级菜单名称+应用名称+分类获取二三级菜单（树形结构）
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await get_submenus_tree_handler(request, auth_info)

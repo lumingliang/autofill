@@ -11,20 +11,10 @@ from pydantic import BaseModel, Field
 
 from app.core.autofill_auth import APIKeyAuth
 from app.log import logger
+from app.schemas.public import DataQueryRequest
 from app.services.agent_v2 import DataQueryAgent, QueryResult
 
 agent_v2_router = APIRouter()
-
-
-class DataQueryRequest(BaseModel):
-    """数据查询请求"""
-    query: str = Field(..., description="用户查询语句，描述要查询的数据")
-    openapi_spec: str = Field(..., description="OpenAPI 规范来源（URL 或本地文件路径）")
-    api_key: Optional[str] = Field(None, description="API 认证密钥（可选）")
-    headers: Optional[Dict[str, str]] = Field(None, description="自定义请求头（可选）")
-    max_iterations: int = Field(5, description="最大迭代次数")
-    temperature: float = Field(0.0, description="LLM 温度参数")
-    chat_history: Optional[List[Dict[str, str]]] = Field(None, description="聊天记录，格式为 [{\"role\": \"user|assistant\", \"content\": \"...\"}]")
 
 
 class IterationRecordResponse(BaseModel):

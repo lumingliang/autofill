@@ -1,12 +1,12 @@
 """
 LLM/AI 填单相关接口
+全部采用POST路由，请求参数使用schema定义
 """
 import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
-from pydantic import BaseModel, Field
 from tortoise.expressions import Q
 
 from app.controllers.autofill import (
@@ -19,8 +19,14 @@ from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
 from app.log import logger
 from app.models.autofill import FieldGroupFieldSpec, FillPage
-from app.schemas.autofill import AIFillDataRequest, AIFillDataResultRequest
 from app.schemas.base import Success
+from app.schemas.public import (
+    AIFillDataRequest,
+    AIFillDataResultRequest,
+    LLMFillRequest,
+    FieldGroupsSchemaRequest,
+    OptimizeFieldInstructionRequest,
+)
 from app.services.autofill.ai_fill_service import get_ai_fill_service
 from app.services.autofill.prompt_service import (
     assemble_prompt,
@@ -102,7 +108,6 @@ async def get_ai_fill_data_result_handler(request: Request, auth_info: dict):
     return Success(data=result)
 
 
-@router.get("/autofill/get_ai_fill_data", summary="获取AI填单数据")
 @router.post("/autofill/get_ai_fill_data", summary="获取AI填单数据")
 async def get_ai_fill_data(
     request: Request,
@@ -110,13 +115,12 @@ async def get_ai_fill_data(
 ):
     """
     三方应用调用: 接收请求 -> 存储数据 -> 转发Dify -> 返回响应
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await get_ai_fill_data_handler(request, auth_info)
 
 
-@router.get("/autofill/get_ai_fill_data_result", summary="查询AI填单异步结果")
 @router.post("/autofill/get_ai_fill_data_result", summary="查询AI填单异步结果")
 async def get_ai_fill_data_result(
     request: Request,
@@ -124,8 +128,8 @@ async def get_ai_fill_data_result(
 ):
     """
     查询AI填单异步处理结果
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await get_ai_fill_data_result_handler(request, auth_info)
 
@@ -218,11 +222,6 @@ async def get_field_groups_schema_handler(request: Request, auth_info: dict):
     查询字段组Schema信息（简化版）
     核心逻辑：确定字段组 -> 查询字段关联 -> 过滤字段 -> 合并输出
     """
-    class FieldGroupsSchemaRequest(BaseModel):
-        page_name: str = Field(..., description="页面名称（必填）")
-        group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选）")
-        field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选）")
-
     params = await parse_request_params(request, FieldGroupsSchemaRequest)
 
     tenant_id = auth_info["tenant_id"]
@@ -338,12 +337,11 @@ async def get_field_groups_schema_handler(request: Request, auth_info: dict):
         },
         "function_calling": {
             "schema": function_schema,
-            "json_schema": __import__('json').dumps(function_schema, ensure_ascii=False, indent=2),
+            "json_schema": json.dumps(function_schema, ensure_ascii=False, indent=2),
         }
     })
 
 
-@router.get("/autofill/field_groups/schema", summary="查询多个字段组的完整Schema")
 @router.post("/autofill/field_groups/schema", summary="查询多个字段组的完整Schema")
 async def get_field_groups_schema(
     request: Request,
@@ -351,16 +349,14 @@ async def get_field_groups_schema(
 ):
     """
     查询多个字段组的完整Schema信息
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await get_field_groups_schema_handler(request, auth_info)
 
 
 async def llm_fill_handler(request: Request, auth_info: dict):
     """直接LLM填单处理逻辑"""
-    from app.schemas.public.field_group import LLMFillRequest
-
     params = await parse_request_params(request, LLMFillRequest)
 
     tenant_id = auth_info["tenant_id"]
@@ -486,8 +482,6 @@ async def llm_fill(
 
 async def optimize_field_instructions_handler(request: Request, auth_info: dict):
     """优化字段填写指引处理逻辑"""
-    from app.schemas.public.field_group import OptimizeFieldInstructionRequest
-
     params = await parse_request_params(request, OptimizeFieldInstructionRequest)
 
     tenant_id = auth_info["tenant_id"]
