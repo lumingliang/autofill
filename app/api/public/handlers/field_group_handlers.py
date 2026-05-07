@@ -28,6 +28,55 @@ from app.services.autofill.prompt_service import (
 router = APIRouter()
 
 
+def _merge_system_prompts(system_prompts: List[str]) -> str:
+    """
+    智能合并多个字段组的 system prompt
+    - 去重：移除重复的提示语
+    - 优先级：保留最详细的提示
+    - 格式化：统一格式，避免冲突
+    """
+    if not system_prompts:
+        return "你是一个智能填单助手。"
+    
+    # 如果只有一个prompt，直接返回
+    if len(system_prompts) == 1:
+        return system_prompts[0]
+    
+    # 去重并保留顺序
+    seen = set()
+    unique_prompts = []
+    for prompt in system_prompts:
+        # 标准化：去除多余空白，用于比较
+        normalized = " ".join(prompt.split())
+        if normalized not in seen and prompt.strip():
+            seen.add(normalized)
+            unique_prompts.append(prompt)
+    
+    # 如果去重后只有一个，直接返回
+    if len(unique_prompts) == 1:
+        return unique_prompts[0]
+    
+    # 智能合并：提取共同部分，保留特殊要求
+    # 策略：使用第一个作为主要prompt，其他的作为补充
+    base_prompt = unique_prompts[0]
+    additional_prompts = unique_prompts[1:]
+    
+    # 检查是否有冲突的指令，并合并
+    merged_sections = []
+    
+    # 添加基础prompt
+    merged_sections.append(base_prompt)
+    
+    # 添加其他prompt的补充说明
+    for prompt in additional_prompts:
+        # 提取prompt中的特殊要求（如果有）
+        # 简化处理：直接添加，但标记来源
+        if prompt not in base_prompt:  # 避免完全重复
+            merged_sections.append(f"【补充要求】{prompt}")
+    
+    return "\n\n".join(merged_sections)
+
+
 async def fetch_field_groups(
     tenant_id: int,
     app_name: str,
@@ -60,6 +109,13 @@ async def fetch_field_groups(
     field_names = field_names or []
     group_fields = group_fields or {}
 
+    # 参数验证
+    if not page_name:
+        raise ValueError("page_name 不能为空")
+    
+    if not tenant_id or not app_name:
+        raise ValueError("tenant_id 和 app_name 不能为空")
+
     page = await fill_page_controller.model.filter(
         tenant_id=tenant_id,
         app_name=app_name,
@@ -67,13 +123,7 @@ async def fetch_field_groups(
     ).first()
 
     if not page:
-        return {
-            "page_name": page_name,
-            "field_groups": [],
-            "all_field_specs": [],
-            "unified_function_schema": None,
-            "combined_prompt": "",
-        }
+        raise ValueError(f"页面 '{page_name}' 不存在 (tenant_id={tenant_id}, app_name={app_name})")
 
     q = Q(tenant_id=tenant_id, app_name=app_name, page_id=page.id)
     if group_names:
@@ -189,20 +239,25 @@ async def fetch_field_groups(
     # 构建统一的 Function Calling Schema（可直接用于 LLM 调用）
     unified_function_schema = None
     if all_properties:
-        # 如果有指定 field_names，则只将这些字段设为 required
-        # 否则将所有字段设为 required
+        # 智能确定 required 字段
+        # 策略：
+        # 1. 如果使用了 group_fields（分步填单场景），所有字段都设为 required
+        #    因为用户明确指定了要查询的字段组，期望这些字段都有值
+        # 2. 如果使用了 field_names（字段过滤场景），只将指定的字段设为 required
+        #    其他字段虽然返回schema，但设为可选，允许LLM不返回
+        # 3. 默认情况（查询所有字段），所有字段设为 required
         
-        # 如果使用 group_fields，则不使用全局 field_names_filter 过滤 properties
-        # 因为每个字段组已经单独过滤过了
         if group_fields:
-            # 使用 group_fields 时，all_properties 已经只包含需要的字段
+            # 分步填单场景：使用 group_fields 时，all_properties 已经只包含需要的字段
             filtered_properties = all_properties
             required_fields = list(all_properties.keys())
         elif field_names_filter:
-            # 使用全局 field_names 过滤
-            filtered_properties = {k: v for k, v in all_properties.items() if k in field_names_filter}
-            required_fields = list(filtered_properties.keys())
+            # 字段过滤场景：只将明确指定的字段设为 required
+            # 但保留其他字段的schema，设为可选
+            filtered_properties = all_properties
+            required_fields = list(field_names_filter & set(all_properties.keys()))
         else:
+            # 默认场景：所有字段设为 required
             filtered_properties = all_properties
             required_fields = list(all_properties.keys())
         
@@ -219,8 +274,8 @@ async def fetch_field_groups(
             }
         }
 
-    # 合并后的 Prompt
-    combined_prompt = "\n\n".join(system_prompts) if system_prompts else "你是一个智能填单助手。"
+    # 合并后的 Prompt - 优化：去重并智能合并
+    combined_prompt = _merge_system_prompts(system_prompts)
 
     return {
         "page_name": page.page_name if page else page_name,

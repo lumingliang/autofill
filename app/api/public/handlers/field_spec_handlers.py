@@ -240,6 +240,11 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
         fill_instruction = field_item.get("fill_instruction") or ""
         options = field_item.get("options", {})
 
+        # 支持 "select" 作为下拉类型的别名，根据 selection_mode 判断单选/多选
+        if field_type == "select":
+            # 从 options 中获取 selection_mode，0=单选，1=多选
+            selection_mode = options.get("selection_mode", 1)
+            field_type = "select_single" if selection_mode == 0 else "select_multi"
         if field_type not in ["text", "select_single", "select_multi"]:
             field_type = "text"
 

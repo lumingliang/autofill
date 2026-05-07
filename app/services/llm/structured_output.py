@@ -358,6 +358,10 @@ class StructuredOutputService:
                 await self._record_method_failure(method, f"{type(e).__name__}: {e}")
 
         if result and result.success:
+            # 后处理：修复多选字段的格式问题
+            # 从tools中提取多选字段信息
+            result.data = self._post_process_multi_select(result.data, tools)
+            result.latency_ms = int((time.time() - start_time) * 1000)
             return result
 
         # 所有方法都失败
@@ -366,6 +370,51 @@ class StructuredOutputService:
             error=f"所有方法都失败，最后错误: {last_error}",
             method="none"
         )
+
+    def _post_process_multi_select(self, data: Dict[str, Any], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        后处理：修复多选字段的格式问题
+        有些LLM模型返回字符串而不是数组，需要转换
+        """
+        if not data or not tools:
+            return data
+        
+        # 从tools中提取多选字段（array类型）
+        multi_select_fields = set()
+        for tool in tools:
+            if isinstance(tool, dict):
+                properties = tool.get("function", {}).get("parameters", {}).get("properties", {})
+                for field_name, field_schema in properties.items():
+                    if field_schema.get("type") == "array":
+                        multi_select_fields.add(field_name)
+        
+        # 处理每个多选字段
+        for field_name in multi_select_fields:
+            if field_name in data:
+                value = data[field_name]
+                # 如果值是字符串，尝试转换为数组
+                if isinstance(value, str):
+                    try:
+                        # 处理类似 "[ 'a', 'b' ]" 或 "['a', 'b']" 的字符串
+                        import ast
+                        parsed = ast.literal_eval(value)
+                        if isinstance(parsed, list):
+                            data[field_name] = parsed
+                            logger.debug(f"转换多选字段 {field_name}: 字符串 '{value}' -> 数组 {parsed}")
+                        else:
+                            # 如果不是数组，包装成数组
+                            data[field_name] = [value]
+                            logger.debug(f"包装多选字段 {field_name}: 字符串 '{value}' -> 数组 [{value}]")
+                    except (ValueError, SyntaxError):
+                        # 如果解析失败，尝试按逗号分割
+                        if ',' in value:
+                            data[field_name] = [v.strip() for v in value.split(',')]
+                            logger.debug(f"分割多选字段 {field_name}: 字符串 '{value}' -> 数组 {data[field_name]}")
+                        else:
+                            data[field_name] = [value]
+                            logger.debug(f"包装多选字段 {field_name}: 字符串 '{value}' -> 数组 [{value}]")
+        
+        return data
 
     async def _try_method(
         self,

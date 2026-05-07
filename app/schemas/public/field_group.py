@@ -21,6 +21,7 @@ class LLMFillRequest(BasePublicRequest):
     field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
     group_fields: Optional[Dict[str, List[str]]] = Field(default=None, description="字段组与字段的映射关系，key为字段组名，value为该组要查询的字段列表（空列表表示查询该组所有字段）")
     query: str = Field(..., description="用户输入的查询内容")
+    method: Optional[str] = Field(default=None, description="LLM调用方法（可选），可选值：with_structured_output、bind_tools、custom_fc_non_stream，不传则使用系统默认策略")
 
 
 class OptimizeFieldInstructionRequest(BasePublicRequest):

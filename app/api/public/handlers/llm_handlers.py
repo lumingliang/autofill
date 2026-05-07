@@ -2,6 +2,7 @@
 LLM/AI 填单相关接口
 全部采用POST路由，请求参数使用schema定义
 """
+import ast
 import json
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +39,77 @@ from app.services.llm.structured_output import StructuredOutputService
 from app.api.public.handlers.field_group_handlers import fetch_field_groups
 
 router = APIRouter()
+
+
+def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) -> Dict[str, Any]:
+    """
+    将LLM提取的数据 enriched 为包含完整选项信息的结构
+    
+    输入: {"service_types": ["拖车服务", "送油服务"]}
+    输出: {
+        "service_types": {
+            "type": "select_multi",
+            "values": ["1", "4"],
+            "labels": ["拖车服务", "送油服务"]
+        }
+    }
+    """
+    if not extracted_data or not field_specs:
+        return extracted_data
+    
+    # 构建字段名到字段配置的映射
+    field_spec_map = {fs.field_name: fs for fs in field_specs}
+    
+    enriched = {}
+    
+    for field_name, extracted_value in extracted_data.items():
+        field_spec = field_spec_map.get(field_name)
+        if not field_spec:
+            # 如果找不到字段配置，保持原样
+            enriched[field_name] = extracted_value
+            continue
+        
+        field_type = field_spec.field_type.value
+        
+        if field_type == 'text':
+            # 文本类型：直接返回
+            enriched[field_name] = {
+                "type": "text",
+                "value": extracted_value
+            }
+        
+        elif field_type in ['select_single', 'select_multi']:
+            # 下拉类型：需要映射label到value
+            items = [opt for opt in (field_spec.options or {}).get('items', []) 
+                    if not opt.get('is_deleted', False)]
+            
+            # 构建label到value的映射
+            label_to_value = {opt['label']: opt.get('value', opt['label']) for opt in items}
+            
+            if field_type == 'select_single':
+                # 单选
+                label = extracted_value
+                value = label_to_value.get(label, label)
+                enriched[field_name] = {
+                    "type": "select_single",
+                    "value": {"value": value, "label": label}
+                }
+            else:
+                # 多选
+                labels = extracted_value if isinstance(extracted_value, list) else [extracted_value]
+                value_label_pairs = [
+                    {"value": label_to_value.get(label, label), "label": label}
+                    for label in labels
+                ]
+                enriched[field_name] = {
+                    "type": "select_multi",
+                    "value": value_label_pairs
+                }
+        else:
+            # 其他类型：保持原样
+            enriched[field_name] = extracted_value
+    
+    return enriched
 
 
 async def get_ai_fill_data_handler(request: Request, auth_info: dict):
@@ -379,18 +451,26 @@ async def llm_fill_handler(request: Request, auth_info: dict):
         field_names = params.get("field_names", [])
 
     # 调用 fetch_field_groups 获取字段组配置（返回可直接使用的统一 schema）
-    result_data = await fetch_field_groups(
-        tenant_id=tenant_id,
-        app_name=app_name,
-        page_name=params.get("page_name"),
-        group_names=group_names,
-        field_names=field_names,
-        group_fields=group_fields  # 传递 group_fields 以支持按字段组分别过滤
-    )
+    try:
+        result_data = await fetch_field_groups(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            page_name=params.get("page_name"),
+            group_names=group_names,
+            field_names=field_names,
+            group_fields=group_fields  # 传递 group_fields 以支持按字段组分别过滤
+        )
+    except ValueError as e:
+        # 参数验证错误或页面不存在
+        logger.warning(f"fetch_field_groups validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"fetch_field_groups error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"获取字段配置失败: {str(e)}")
 
     unified_function_schema = result_data.get("unified_function_schema")
     if not unified_function_schema:
-        raise HTTPException(status_code=404, detail="No field groups found")
+        raise HTTPException(status_code=404, detail="未找到有效的字段配置，请检查字段组是否存在且包含有效字段")
 
     query = params.get("query", "")
     if not query:
@@ -432,16 +512,26 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     else:
         system_prompt = base_prompt
 
+    # 获取用户指定的调用方法（如果提供）
+    method = params.get("method")
+
     try:
         llm_result = await llm_proxy_service.process_request(
             query=query,
             tools=[unified_function_schema],
             system_prompt=system_prompt,
             tool_choice={"type": "function", "function": {"name": "fill_form"}},
-            config=config
+            config=config,
+            method=method
         )
 
         extracted_data = {k: v for k, v in llm_result.items() if not k.startswith('_')}
+
+        # 注意：多选字段的后处理已经下沉到 structured_output 层
+        # llm_proxy_service.process_request 内部会自动处理字符串到数组的转换
+
+        # 构建完整的返回数据：将label映射为包含value、label、type的完整结构
+        enriched_result = _enrich_extracted_data(extracted_data, field_specs)
 
         # 调试信息：打印给大模型的参数
         debug_info = {
@@ -454,7 +544,7 @@ async def llm_fill_handler(request: Request, auth_info: dict):
         return Success(data={
             "page_name": params.get("page_name"),
             "group_names": params.get("group_names", []),
-            "result": extracted_data,
+            "result": enriched_result,
             "_meta": llm_result.get("_meta", {}),
             "_debug": debug_info
         })
