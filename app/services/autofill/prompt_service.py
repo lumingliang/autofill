@@ -7,27 +7,43 @@ from app.controllers.autofill import field_group_config_controller, field_spec_c
 from app.models.autofill import FieldGroupConfig, FieldSpec
 
 
-def build_fields_instructions(fields: List[FieldSpec]) -> str:
+def build_fields_instructions(fields: List) -> str:
     """
     组装字段指令（用于纯文本Prompt和Function Calling描述）
 
     Args:
-        fields: 字段明细列表
+        fields: 字段明细列表（支持模型对象或dict）
 
     Returns:
         组装后的字段指令字符串
     """
     lines = []
     for field in fields:
-        if field.field_type.value == 'text':
-            desc = field.fill_instruction or "根据对话内容提取"
-            if field.corrections:
-                corrections_text = "；".join([c['text'] for c in field.corrections])
-                desc += f"。人工补充规则：{corrections_text}"
-            lines.append(f"- {field.field_label}（字段名：`{field.field_name}`）：{desc}")
+        # 兼容模型对象和 dict 两种格式
+        if isinstance(field, dict):
+            field_type = field.get("field_type", "")
+            field_name = field.get("field_name", "")
+            field_label = field.get("field_label", field_name)
+            fill_instruction = field.get("fill_instruction", "")
+            corrections = field.get("corrections", [])
+            options = field.get("options", {})
+        else:
+            field_type = field.field_type.value if hasattr(field.field_type, 'value') else str(field.field_type)
+            field_name = field.field_name
+            field_label = field.field_label
+            fill_instruction = field.fill_instruction
+            corrections = field.corrections
+            options = field.options
 
-        elif field.field_type.value in ['select_single', 'select_multi']:
-            items = [opt for opt in (field.options or {}).get('items', []) if not opt.get('is_deleted', False)]
+        if field_type == 'text':
+            desc = fill_instruction or "根据对话内容提取"
+            if corrections:
+                corrections_text = "；".join([c['text'] for c in corrections])
+                desc += f"。人工补充规则：{corrections_text}"
+            lines.append(f"- {field_label}（字段名：`{field_name}`）：{desc}")
+
+        elif field_type in ['select_single', 'select_multi']:
+            items = [opt for opt in (options or {}).get('items', []) if not opt.get('is_deleted', False)]
             option_strs = []
             for opt in items:
                 label = opt['label']
@@ -40,20 +56,19 @@ def build_fields_instructions(fields: List[FieldSpec]) -> str:
                 option_strs.append(f"  - {full_desc}")
 
             options_block = "可选值：\n" + "\n".join(option_strs)
-            global_inst = field.fill_instruction or "根据用户意图选择"
+            global_inst = fill_instruction or "根据用户意图选择"
 
             # 获取数量限制配置（仅多选时有效）
-            options = field.options or {}
             min_selections = options.get('min_selections', 1)
             max_selections = options.get('max_selections', 0)
 
-            if field.field_type.value == 'select_multi':
+            if field_type == 'select_multi':
                 # 多选模式
                 count_desc = f"请选择 {min_selections} 到 {max_selections} 个选项" if max_selections > 0 else f"请至少选择 {min_selections} 个选项"
-                lines.append(f"- {field.field_label}（字段名：`{field.field_name}`）：{global_inst}\n{options_block}\n  【多选】{count_desc}，以数组形式返回选中的值。")
+                lines.append(f"- {field_label}（字段名：`{field_name}`）：{global_inst}\n{options_block}\n  【多选】{count_desc}，以数组形式返回选中的值。")
             else:
                 # 单选模式
-                lines.append(f"- {field.field_label}（字段名：`{field.field_name}`）：{global_inst}\n{options_block}\n  【单选】只能从上述选项中选择一个值。")
+                lines.append(f"- {field_label}（字段名：`{field_name}`）：{global_inst}\n{options_block}\n  【单选】只能从上述选项中选择一个值。")
 
     return "\n".join(lines)
 

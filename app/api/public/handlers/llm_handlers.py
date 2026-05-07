@@ -58,7 +58,13 @@ def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) ->
         return extracted_data
     
     # 构建字段名到字段配置的映射
-    field_spec_map = {fs.field_name: fs for fs in field_specs}
+    # 兼容模型对象和 dict 两种格式
+    field_spec_map = {}
+    for fs in field_specs:
+        if isinstance(fs, dict):
+            field_spec_map[fs.get("field_name")] = fs
+        else:
+            field_spec_map[fs.field_name] = fs
     
     enriched = {}
     
@@ -69,7 +75,13 @@ def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) ->
             enriched[field_name] = extracted_value
             continue
         
-        field_type = field_spec.field_type.value
+        # 兼容模型对象和 dict 两种格式
+        if isinstance(field_spec, dict):
+            field_type = field_spec.get("field_type", "")
+            options = field_spec.get("options", {})
+        else:
+            field_type = field_spec.field_type.value if hasattr(field_spec.field_type, 'value') else str(field_spec.field_type)
+            options = field_spec.options
         
         if field_type == 'text':
             # 文本类型：直接返回
@@ -80,7 +92,7 @@ def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) ->
         
         elif field_type in ['select_single', 'select_multi']:
             # 下拉类型：需要映射label到value
-            items = [opt for opt in (field_spec.options or {}).get('items', []) 
+            items = [opt for opt in (options or {}).get('items', []) 
                     if not opt.get('is_deleted', False)]
             
             # 构建label到value的映射
@@ -487,17 +499,9 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     # 构建包含字段指引的 system_prompt
     base_prompt = result_data.get("combined_prompt", "你是一个智能填单助手。")
 
-    # 从数据库查询字段模型对象用于构建指引
-    field_names = params.get("field_names", [])
-    if field_names:
-        field_specs = await field_spec_controller.model.filter(
-            tenant_id=tenant_id,
-            app_name=app_name,
-            field_name__in=field_names,
-            is_active=True
-        ).all()
-    else:
-        field_specs = []
+    # 从数据库查询字段模型对象用于构建指引和 enriched 处理
+    # 使用 result_data 中的 all_field_specs（包含所有字段的完整配置）
+    field_specs = result_data.get("all_field_specs", [])
 
     # 添加字段指引到 system_prompt
     if field_specs:
