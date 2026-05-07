@@ -117,7 +117,7 @@ async def create_field_spec_public_handler(request: Request, auth_info: dict):
         field_group_id: int = Field(..., description="字段组ID")
         field_name: str = Field(..., description="字段名（英文）")
         field_label: str = Field(..., description="字段显示名称")
-        field_type: str = Field(default="select", description="字段类型: select/text")
+        field_type: str = Field(default="text", description="字段类型: text/select_single/select_multi")
         fill_instruction: str = Field(default="", description="字段填写指引")
         options: dict = Field(default_factory=dict, description="选项配置")
 
@@ -147,7 +147,7 @@ async def create_field_spec_public_handler(request: Request, auth_info: dict):
         "field_group_id": params["field_group_id"],
         "field_name": params["field_name"],
         "field_label": params["field_label"],
-        "field_type": params.get("field_type", "select"),
+        "field_type": params.get("field_type", "text"),
         "fill_instruction": params.get("fill_instruction", ""),
         "options": params.get("options", {}),
         "corrections": [],
@@ -265,7 +265,7 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
         fill_instruction = field_item.get("fill_instruction") or ""
         options = field_item.get("options", {})
 
-        if field_type not in ["select", "text"]:
+        if field_type not in ["text", "select_single", "select_multi"]:
             field_type = "text"
 
         field_spec = await field_spec_controller.model.filter(
