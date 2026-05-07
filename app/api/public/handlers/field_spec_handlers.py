@@ -1,11 +1,11 @@
 """
 字段明细相关接口
+全部采用POST路由，请求参数使用schema定义
 """
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
-from pydantic import BaseModel, Field
 from tortoise.expressions import Q
 
 from app.controllers.autofill import (
@@ -18,6 +18,11 @@ from app.core.request_parser import parse_request_params
 from app.models.autofill import FieldGroupFieldSpec, generate_field_group_code
 from app.schemas.base import Success
 from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate, FieldOptions, OutputTemplateItem
+from app.schemas.public import (
+    FieldSpecListRequest,
+    FieldSpecCreateRequest,
+    UpsertFieldGroupRequest,
+)
 
 router = APIRouter()
 
@@ -28,11 +33,6 @@ async def list_field_spec_handler(request: Request, auth_info: dict):
     - 支持通过 page_name + group_names 查询多个字段组
     - 支持通过 field_names 筛选指定字段
     """
-    class FieldSpecListRequest(BaseModel):
-        page_name: str = Field(..., description="页面名称（必填）")
-        group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选，不传则查询所有）")
-        field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
-
     params = await parse_request_params(request, FieldSpecListRequest)
 
     tenant_id = auth_info["tenant_id"]
@@ -97,7 +97,6 @@ async def list_field_spec_handler(request: Request, auth_info: dict):
     return Success(data=result)
 
 
-@router.get("/autofill/field_spec/list", summary="查询字段明细列表")
 @router.post("/autofill/field_spec/list", summary="查询字段明细列表")
 async def list_field_spec(
     request: Request,
@@ -105,22 +104,14 @@ async def list_field_spec(
 ):
     """
     根据app_name/page_name/group_names查询字段明细列表
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await list_field_spec_handler(request, auth_info)
 
 
 async def create_field_spec_public_handler(request: Request, auth_info: dict):
     """公共接口：创建字段明细"""
-    class FieldSpecCreateRequest(BaseModel):
-        field_group_id: int = Field(..., description="字段组ID")
-        field_name: str = Field(..., description="字段名（英文）")
-        field_label: str = Field(..., description="字段显示名称")
-        field_type: str = Field(default="text", description="字段类型: text/select_single/select_multi")
-        fill_instruction: str = Field(default="", description="字段填写指引")
-        options: dict = Field(default_factory=dict, description="选项配置")
-
     params = await parse_request_params(request, FieldSpecCreateRequest)
 
     tenant_id = auth_info["tenant_id"]
@@ -185,22 +176,6 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
     - 如果页面不存在，返回错误
     - 遍历字段列表：字段不存在则创建并添加关联，存在则只添加关联关系
     """
-    class FieldItem(BaseModel):
-        field_name: str
-        field_label: Optional[str] = None
-        field_type: str = "text"
-        fill_instruction: Optional[str] = None
-        options: Optional[dict] = None
-
-    class UpsertFieldGroupRequest(BaseModel):
-        page_name: str
-        group_name: str
-        group_code: Optional[str] = None
-        output_templates: Optional[dict] = None
-        prompt_template_base: Optional[str] = None
-        fields: List[FieldItem] = []
-        is_append: Optional[bool] = False  # 是否合并 options，True=合并，False=覆盖
-
     params = await parse_request_params(request, UpsertFieldGroupRequest)
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]

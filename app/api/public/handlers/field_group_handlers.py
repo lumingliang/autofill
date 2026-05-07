@@ -1,12 +1,12 @@
 """
 字段组相关接口
+全部采用POST路由，请求参数使用schema定义
 """
 import json
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
-from pydantic import BaseModel, Field
 from tortoise.expressions import Q
 
 from app.controllers.autofill import (
@@ -248,11 +248,10 @@ async def get_field_group_handler(request: Request, auth_info: dict):
         field_names=params.get("field_names", [])
     )
 
-    # HTTP 接口返回字段组列表（保持兼容性）
+    # HTTP 接口返回字段组列表
     return Success(data=result.get("field_groups", []))
 
 
-@router.get("/autofill/field_group", summary="查询字段组配置")
 @router.post("/autofill/field_group", summary="查询字段组配置")
 async def get_field_group(
     request: Request,
@@ -260,7 +259,7 @@ async def get_field_group(
 ):
     """
     根据app_name/page_name/字段组名或code查询字段组配置
-    支持 GET 和 POST 方法
-    支持参数传递方式: Query / Form-Data / JSON Body
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
     """
     return await get_field_group_handler(request, auth_info)

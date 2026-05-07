@@ -6,7 +6,7 @@ from fastapi import APIRouter
 router = APIRouter()
 
 
-@router.get("/test/error", include_in_schema=False)
+@router.post("/test/error", include_in_schema=False)
 async def test_error():
     """测试错误日志 - 触发异常"""
     def inner_function():
@@ -17,7 +17,7 @@ async def test_error():
     inner_function()
 
 
-@router.get("/test/success", include_in_schema=False)
+@router.post("/test/success", include_in_schema=False)
 async def test_success():
     """测试成功响应"""
     return {"code": 0, "msg": "success", "data": {"message": "测试成功响应", "nested": {"key": "value"}}}

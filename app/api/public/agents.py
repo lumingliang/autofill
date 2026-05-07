@@ -11,22 +11,10 @@ from pydantic import BaseModel, Field
 
 from app.core.autofill_auth import APIKeyAuth
 from app.log import logger
+from app.schemas.public import AgentRunRequest
 from app.services.agent import AgentInput, AgentContext, QueryAgent
 
 agents_router = APIRouter()
-
-
-class AgentRunRequest(BaseModel):
-    """Agent 执行请求"""
-    query: str = Field(..., description="用户查询语句，描述要执行的操作")
-    curl: str = Field(..., description="API 调用的 curl 命令（无需占位符）")
-    system_prompt: str = Field("", description="系统提示词，指导如何提取参数")
-    expected_result: str = Field("", description="期望结果描述，用于验证")
-    max_attempts: int = Field(10, description="最大尝试次数")
-    timeout: int = Field(30, description="每次请求的超时时间(秒)")
-    llm_model: str = Field("gpt-4o-mini", description="使用的 LLM 模型")
-    llm_temperature: float = Field(0.0, description="温度参数")
-    llm_method: str = Field("bind_tools_stream", description="LLM 调用方法(推荐): bind_tools_stream, bind_tools_non_stream, with_structured_output, custom_fc_non_stream, custom_fc_stream")
 
 
 class SelectedDataResponse(BaseModel):
