@@ -123,14 +123,24 @@ def test_multi_select_fill():
             service_types = extracted.get("service_types")
 
             print(f"\n提取结果:")
-            print(f"  service_types: {service_types}")
+            print(f"  service_types: {json.dumps(service_types, ensure_ascii=False, indent=2)}")
             print(f"  类型: {type(service_types)}")
 
-            if isinstance(service_types, list):
-                print(f"\n✅ 多选测试通过！返回数组格式")
+            # 验证新的 enriched 格式
+            if isinstance(service_types, dict) and service_types.get("type") == "select_multi":
+                values = service_types.get("values", [])
+                labels = service_types.get("labels", [])
+                print(f"\n✅ 多选测试通过！返回 enriched 格式")
+                print(f"   - type: {service_types.get('type')}")
+                print(f"   - values: {values}")
+                print(f"   - labels: {labels}")
+                return True
+            elif isinstance(service_types, list):
+                # 兼容旧格式
+                print(f"\n✅ 多选测试通过！返回数组格式（旧格式）")
                 return True
             else:
-                print(f"\n⚠️  多选测试未通过！期望数组，实际为 {type(service_types)}")
+                print(f"\n⚠️  多选测试未通过！格式不正确: {type(service_types)}")
                 return False
         else:
             print(f"\n❌ 请求失败: {result.get('msg')}")

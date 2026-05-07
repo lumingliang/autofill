@@ -105,9 +105,21 @@ def step2_extract_dynamic_fields(step1_result):
         print("\n❌ 第一步没有结果，无法执行第二步")
         return None
 
-    # 获取第一步的结果值
-    scene_category = step1_result.get("scene_category", "")
-    primary_event_type = step1_result.get("一级事件类型", "")
+    # 获取第一步的结果值（处理 enriched 格式）
+    scene_category_data = step1_result.get("scene_category", {})
+    primary_event_type_data = step1_result.get("一级事件类型", {})
+    
+    # 提取 label 值（用于构建字段组名称）
+    if isinstance(scene_category_data, dict) and "value" in scene_category_data:
+        # enriched 格式: {"type": "select_single", "value": {"value": "x", "label": "y"}}
+        scene_category = scene_category_data.get("value", {}).get("label", "")
+    else:
+        scene_category = scene_category_data
+        
+    if isinstance(primary_event_type_data, dict) and "value" in primary_event_type_data:
+        primary_event_type = primary_event_type_data.get("value", {}).get("label", "")
+    else:
+        primary_event_type = primary_event_type_data
     
     print("\n" + "=" * 70)
     print("【第二步】动态提取字段")
