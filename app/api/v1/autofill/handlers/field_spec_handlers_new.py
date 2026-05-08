@@ -77,7 +77,6 @@ async def import_field_specs(
                     tenant_domain = row.get('租户域名', '').strip()
                     group_name = row.get('字段组名称', '').strip()
                     page_name = row.get('页面名称', '').strip()
-                    option_source = row.get('选项来源', '').strip()
 
                     if not field_name:
                         error_messages.append(f"跳过空字段名行")
@@ -126,12 +125,6 @@ async def import_field_specs(
                         field_spec.corrections = corrections
                         field_spec.is_active = True
 
-                        # 更新选项来源
-                        if field_type in ['select_single', 'select_multi'] and option_source:
-                            options = field_spec.options or {}
-                            options['source'] = 'api' if option_source == 'API接口' else 'static'
-                            field_spec.options = options
-
                         await field_spec.save()
                         success_count += 1
                     else:
@@ -162,7 +155,6 @@ async def import_field_specs(
                         # 准备选项配置
                         options = {}
                         if field_type in ['select_single', 'select_multi']:
-                            options['source'] = 'api' if option_source == 'API接口' else 'static'
                             options['items'] = []
                             if field_type == 'select_multi':
                                 options['min_selections'] = 1

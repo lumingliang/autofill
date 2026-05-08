@@ -149,7 +149,7 @@ class FieldSpec(BaseModel, TimestampMixin):
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     fill_instruction = fields.TextField(default="", description="字段填写指引（用于生成LLM描述）")
-    options = fields.JSONField(default=dict, description="select类型选项配置，含source/api_identifier/items/last_sync_at/swagger_json/appkey")
+    options = fields.JSONField(default=dict, description="select类型选项配置，含items/min_selections/max_selections")
     corrections = fields.JSONField(default=list, description="text类型全局批注列表[{id, text, created_by, created_at}]")
     is_active = fields.BooleanField(default=True, description="是否启用")
 

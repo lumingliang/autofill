@@ -114,12 +114,7 @@ class OptionItem(BaseModel):
 
 class FieldOptions(BaseModel):
     """字段选项配置（下拉单选/多选类型）"""
-    source: str = Field(default="static", description="选项来源：static/api")
-    api_identifier: str = Field("", description="API标识")
-    last_sync_at: str = Field("", description="最后同步时间")
     items: List[OptionItem] = []
-    swagger_json: str = Field("", description="OpenAI Swagger JSON 文档")
-    appkey: str = Field("", description="API 调用鉴权密钥")
     # 数量限制（仅多选时有效）
     min_selections: int = Field(default=1, description="最少选择数量（多选时有效）")
     max_selections: int = Field(default=0, description="最多选择数量（多选时有效，0表示无限制）")
@@ -191,18 +186,4 @@ class FieldSpecQueryRequest(BaseModel):
     field_type: str = Field("", description="字段类型")
 
 
-# ==================== Swagger 同步接口 Schemas ====================
 
-class SwaggerSyncRequest(BaseModel):
-    """Swagger 同步请求"""
-    field_spec_id: int = Field(..., description="字段明细ID")
-    swagger_json: str = Field(..., description="OpenAI Swagger JSON 文档")
-    appkey: str = Field("", description="API 调用鉴权密钥")
-
-
-class SwaggerSyncResponse(BaseModel):
-    """Swagger 同步响应"""
-    success: bool = Field(False, description="是否同步成功")
-    message: str = Field("", description="同步结果消息")
-    synced_count: int = Field(0, description="同步的选项数量")
-    endpoints: List[Dict] = Field(default_factory=list, description="解析的API端点列表")

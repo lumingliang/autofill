@@ -184,7 +184,6 @@ export default {
   createFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/create', data),
   updateFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/update', data),
   deleteFieldSpec: (params: any = {}) => request.delete('/autofill/field_spec/delete', { params }),
-  syncSwagger: (data: any = {}) => request.post('/autofill/field_spec/sync_swagger', data),
   exportFieldSpecs: (data: any = {}) => request.post('/autofill/field_spec/export', data),
   importFieldSpecs: (data: any = {}) => request.post('/autofill/field_spec/import', data, {
     headers: { 'Content-Type': 'multipart/form-data' }
