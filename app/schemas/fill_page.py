@@ -205,6 +205,11 @@ class FieldSpecQueryRequest(BaseModel):
 class FieldSpecSyncOptionsRequest(BaseModel):
     """同步字段选项请求"""
     field_id: int = Field(0, description="字段ID（编辑时传入，新建时为0）")
+    field_name: str = Field(..., description="字段名称（必填）")
+    field_label: str = Field(..., description="字段标签（必填）")
+    field_type: str = Field("select_single", description="字段类型")
+    field_group_ids: List[int] = Field(default_factory=list, description="关联字段组ID列表（必填）")
+    fill_instruction: str = Field("", description="填写指引")
     options: FieldOptions = Field(default_factory=FieldOptions, description="字段选项配置包含api_schema和api_headers")
 
 

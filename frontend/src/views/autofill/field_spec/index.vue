@@ -164,7 +164,7 @@
           <!-- Schema配置 -->
           <a-form-item label="OpenAPI Schema">
             <a-textarea v-model:value="form.options.api_schema"
-              placeholder="请输入OpenAPI/Swagger配置（YAML格式）&#10;&#10;支持以下扩展字段：&#10;1. x-api-params: 配置静态请求参数&#10;2. x-field-mapping: 配置字段映射（JSONPath语法）&#10;&#10;示例：&#10;paths:&#10;  /api/endpoint:&#10;    post:&#10;      x-api-params:&#10;        parent_id: 0&#10;      x-field-mapping:&#10;        label_path: '$.data[*].summary'&#10;        value_path: '$.data[*].option_value'&#10;&#10;字段映射语法说明：&#10;  $.data[*].name     -> 从data数组中提取name字段&#10;  $.result[*].title  -> 从result数组中提取title字段&#10;  $.data[0].list[*]  -> 从data[0].list数组中提取元素&#10;&#10;默认映射（标准格式）：&#10;  label_path: '$.data[*].label'&#10;  value_path: '$.data[*].value'"
+              placeholder="请输入OpenAPI/Swagger配置（YAML格式）&#10;&#10;支持以下扩展字段：&#10;1. x-api-params: 配置静态请求参数&#10;2. x-field-mapping: 配置字段映射（JSONPath语法）&#10;&#10;示例：&#10;paths:&#10;  /api/endpoint:&#10;    post:&#10;      x-api-params:&#10;        parent_id: 0&#10;        app_name: test_app&#10;        class_name: 400电话&#10;      x-field-mapping:&#10;        label_path: '$.data[*].summary'&#10;        value_path: '$.data[*].option_value'&#10;&#10;字段映射语法说明：&#10;  $.data[*].name     -> 从data数组中提取name字段&#10;  $.result[*].title  -> 从result数组中提取title字段&#10;  $.data[0].list[*]  -> 从data[0].list数组中提取元素&#10;&#10;默认映射（标准格式）：&#10;  label_path: '$.data[*].label'&#10;  value_path: '$.data[*].value'"
               :rows="15" />
           </a-form-item>
 
@@ -559,15 +559,38 @@ const handleSyncOptions = async () => {
     return
   }
 
+  // 验证必填字段
+  if (!modalForm.field_name) {
+    message.warning('请先填写字段名称')
+    return
+  }
+  if (!modalForm.field_label) {
+    message.warning('请先填写字段标签')
+    return
+  }
+  if (!modalForm.field_group_ids || modalForm.field_group_ids.length === 0) {
+    message.warning('请至少选择一个关联字段组')
+    return
+  }
+
   syncLoading.value = true
   try {
     const res: any = await api.syncFieldSpecOptions({
       field_id: modalForm.id,
+      field_name: modalForm.field_name,
+      field_label: modalForm.field_label,
+      field_type: modalForm.field_type,
+      field_group_ids: modalForm.field_group_ids,
+      fill_instruction: modalForm.fill_instruction || '',
       options: modalForm.options,
     })
     if (res.code === 200) {
       // 更新选项列表
       modalForm.options.items = res.data.items || []
+      // 更新字段ID（如果是新建）
+      if (res.data.field_id && !modalForm.id) {
+        modalForm.id = res.data.field_id
+      }
       message.success(`同步成功，共更新 ${res.data.updated_count || 0} 个选项`)
     } else {
       message.error(res.msg || '同步失败')

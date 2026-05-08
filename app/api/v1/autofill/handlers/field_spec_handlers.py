@@ -6,7 +6,10 @@ import io
 from datetime import datetime
 from typing import List
 
+import httpx
+import yaml
 from fastapi import APIRouter, File, Header, Query, UploadFile
+from jsonpath_ng import parse as jsonpath_parse
 from pydantic import BaseModel
 from tortoise.expressions import Q
 
@@ -20,7 +23,7 @@ from app.models.admin import Tenant
 from app.models.autofill import FieldGroupFieldSpec, FieldGroupConfig, FillPage
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate, FieldSpecSyncOptionsRequest
-from app.services.agent_v2.openapi_parser import OpenAPIParser
+from app.services.autofill.field_spec_service import upsert_field_spec
 
 router = APIRouter()
 
@@ -723,21 +726,27 @@ async def sync_field_spec_options(
     token: str = Header(..., description="token验证"),
 ):
     """
-    根据OpenAPI Schema配置从API同步下拉选项
-    1. 解析OpenAPI Schema获取接口信息
-    2. 使用配置的Header请求API
-    3. 根据label匹配更新或插入选项
+    根据OpenAPI Schema配置从API同步下拉选项并保存到字段
+    1. 验证必填字段
+    2. 解析OpenAPI Schema获取接口信息
+    3. 使用配置的Header请求API
+    4. 使用jsonpath-ng解析数据
+    5. 保存到数据库（新建或更新字段）
     """
     current_user = await AuthControl.is_authed(token)
+    tenant_id = current_user.tenant_id if hasattr(current_user, 'tenant_id') else 0
     
-    # 验证Schema配置
+    # 验证必填字段
+    if not sync_in.field_name:
+        return Fail(code=400, msg="字段名称不能为空")
+    if not sync_in.field_label:
+        return Fail(code=400, msg="字段标签不能为空")
+    if not sync_in.field_group_ids:
+        return Fail(code=400, msg="请至少选择一个关联字段组")
     if not sync_in.options.api_schema:
         return Fail(code=400, msg="请先配置OpenAPI Schema")
     
     try:
-        import yaml
-        import httpx
-        
         # 解析YAML格式的Schema
         spec_dict = yaml.safe_load(sync_in.options.api_schema)
         
@@ -778,65 +787,30 @@ async def sync_field_spec_options(
                 headers[header_item.key] = header_item.value
         
         # 从Schema中解析静态参数（x-api-params扩展字段）
-        # 首先尝试从paths的接口定义中获取x-api-params
-        x_api_params = api_config.get('x-api-params', {})
-        
-        # 如果接口级别没有，尝试从全局获取
-        if not x_api_params:
-            x_api_params = spec_dict.get('x-api-params', {})
+        x_api_params = api_config.get('x-api-params') or spec_dict.get('x-api-params', {})
         
         # 使用异步HTTP客户端发送请求
         async with httpx.AsyncClient(timeout=30.0) as client:
             if api_method == 'get':
-                # GET请求：参数放在URL查询字符串中
-                params = {}
-                if isinstance(x_api_params, dict):
-                    params.update(x_api_params)
-                response = await client.get(full_url, headers=headers, params=params)
+                response = await client.get(full_url, headers=headers, params=x_api_params)
             else:
-                # POST请求：参数放在JSON body中
-                json_data = {}
-                if isinstance(x_api_params, dict):
-                    json_data.update(x_api_params)
                 headers['Content-Type'] = 'application/json'
-                response = await client.post(full_url, headers=headers, json=json_data)
+                response = await client.post(full_url, headers=headers, json=x_api_params)
             response.raise_for_status()
             response_data = response.json()
         
-        # 根据schema定义解析数据
-        # 支持多种格式:
-        # 标准格式: { "code": 200, "data": [{"label": "", "value": ""}] }
-        # 下拉选项格式: { "code": 200, "data": [{"id": 1, "option_value": "", "summary": ""}] }
-        
         # 获取字段映射配置（x-field-mapping扩展字段）
-        # 使用jsonpath-ng库解析JSONPath语法
-        # 格式: {"label_path": "$.data[*].summary", "value_path": "$.data[*].option_value"}
-        # 路径语法说明:
-        #   $          - 根对象
-        #   .          - 子属性访问
-        #   [*]        - 数组通配符，匹配数组中所有元素
-        #   [0]        - 数组索引，匹配指定位置的元素
-        # 示例:
-        #   $.data[*].name          -> 从data数组中提取name字段
-        #   $.result.items[*].title -> 从result.items数组中提取title字段
-        #   $.data[0].options[*]    -> 从data[0].options数组中提取元素
-        x_field_mapping = api_config.get('x-field-mapping', {})
-        if not x_field_mapping:
-            x_field_mapping = spec_dict.get('x-field-mapping', {})
+        x_field_mapping = api_config.get('x-field-mapping') or spec_dict.get('x-field-mapping', {})
         
         # 默认使用标准格式
         label_path = x_field_mapping.get('label_path', '$.data[*].label')
         value_path = x_field_mapping.get('value_path', '$.data[*].value')
         
         # 使用jsonpath-ng解析和提取数据
-        from jsonpath_ng import parse as jsonpath_parse
-        
         try:
-            # 解析label路径
             label_expr = jsonpath_parse(label_path)
             label_results = [match.value for match in label_expr.find(response_data)]
             
-            # 解析value路径
             value_expr = jsonpath_parse(value_path)
             value_results = [match.value for match in value_expr.find(response_data)]
         except Exception as e:
@@ -846,48 +820,73 @@ async def sync_field_spec_options(
         if not label_results:
             return Fail(code=400, msg="API返回数据格式不正确，未找到选项列表")
         
-        # 获取现有选项列表
-        existing_items = sync_in.options.items or []
-        existing_items_map = {item.label: item for item in existing_items}
-        
-        # 更新或插入选项
-        updated_count = 0
+        # 构建选项列表
         new_items = []
-        
         for i, label in enumerate(label_results):
-            # 获取对应的value（如果value_results长度不够，使用label作为value）
             value = value_results[i] if i < len(value_results) else label
-            
-            # 处理非字符串类型的值
             label = str(label) if label is not None else ''
             value = str(value) if value is not None else ''
             
-            # 如果label为空，跳过
             if not label:
                 continue
             
-            if label in existing_items_map:
-                # 更新现有选项的value
-                existing_items_map[label].value = value
-                updated_count += 1
-            else:
-                # 插入新选项
-                from app.schemas.fill_page import OptionItem
-                new_items.append(OptionItem(
-                    value=value,
-                    label=label,
-                    fill_instruction='',
-                    corrections=[],
-                    is_deleted=False
-                ))
-                updated_count += 1
+            new_items.append({
+                'value': value,
+                'label': label,
+                'fill_instruction': '',
+                'corrections': [],
+                'is_deleted': False
+            })
         
-        # 合并选项列表（保留原有顺序，新选项追加到末尾）
-        final_items = existing_items + new_items
+        # 获取第一个字段组信息（用于获取app_name）
+        # 超级用户(tenant_id=0)可以访问任何字段组
+        if tenant_id > 0:
+            field_group = await FieldGroupConfig.filter(
+                id=sync_in.field_group_ids[0],
+                tenant_id=tenant_id
+            ).first()
+        else:
+            field_group = await FieldGroupConfig.filter(
+                id=sync_in.field_group_ids[0]
+            ).first()
         
+        if not field_group:
+            return Fail(code=400, msg="字段组不存在或无权限访问")
+        
+        app_name = field_group.app_name
+        
+        # 构建options数据
+        options_data = {
+            'items': new_items,
+            'min_selections': sync_in.options.min_selections or 1,
+            'max_selections': sync_in.options.max_selections or 0,
+            'api_schema': sync_in.options.api_schema,
+            'api_headers': [{'key': h.key, 'value': h.value} for h in (sync_in.options.api_headers or [])]
+        }
+        
+        # 使用service层的upsert_field_spec方法
+        # 同步选项时默认：只同步value（replace模式），删除接口返回中不存在的选项
+        result = await upsert_field_spec(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            field_name=sync_in.field_name,
+            field_label=sync_in.field_label,
+            field_type=sync_in.field_type,
+            field_group_ids=sync_in.field_group_ids,
+            fill_instruction=sync_in.fill_instruction,
+            options=options_data,
+            sync_mode='replace',  # 只同步value，其他字段保持原样
+            delete_not_exist=True  # 删除接口返回中不存在的选项
+        )
+        
+        field_spec = result["field_spec"]
+        updated_count = result["updated_count"]
+        final_items = result["items"]
+
         return Success(data={
-            "items": [item.model_dump() if hasattr(item, 'model_dump') else item.__dict__ for item in final_items],
+            "items": final_items,
             "updated_count": updated_count,
+            "field_id": field_spec.id,
             "message": f"同步成功，共更新 {updated_count} 个选项"
         })
         
