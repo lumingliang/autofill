@@ -17,12 +17,13 @@ from app.core.autofill_auth import APIKeyAuth
 from app.core.request_parser import parse_request_params
 from app.models.autofill import FieldGroupFieldSpec, generate_field_group_code
 from app.schemas.base import Success
-from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate, FieldOptions, OutputTemplateItem
+from app.schemas.fill_page import OutputTemplateItem
 from app.schemas.public import (
     FieldSpecListRequest,
     FieldSpecCreateRequest,
     UpsertFieldGroupRequest,
 )
+from app.services.autofill.field_spec_service import upsert_field_spec
 
 router = APIRouter()
 
@@ -248,115 +249,26 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
         if field_type not in ["text", "select_single", "select_multi"]:
             field_type = "text"
 
-        field_spec = await field_spec_controller.model.filter(
+        # 使用service层的upsert_field_spec方法统一处理字段创建/更新
+        is_append = params.get("is_append", False)
+        result = await upsert_field_spec(
             tenant_id=tenant_id,
             app_name=app_name,
-            field_name=field_name
-        ).first()
+            field_name=field_name,
+            field_label=field_label,
+            field_type=field_type,
+            field_group_ids=[field_group.id],
+            fill_instruction=fill_instruction,
+            options=options,
+            sync_mode="replace",  # upsert接口使用replace模式
+            delete_not_exist=False,  # upsert接口不删除已有选项
+            is_append=is_append  # 根据参数控制是否追加
+        )
 
-        is_new_relation = False
+        field_spec = result["field_spec"]
+        is_new = result["is_new"]
 
-        if field_spec:
-            existing_relations = await FieldGroupFieldSpec.filter(field_spec_id=field_spec.id).all()
-            existing_group_ids = [r.field_group_id for r in existing_relations]
-            if field_group.id not in existing_group_ids:
-                existing_group_ids.append(field_group.id)
-
-            update_data = FieldSpecUpdate(
-                id=field_spec.id,
-                field_label=field_label,
-                field_type=field_type,
-                fill_instruction=fill_instruction,
-                field_group_ids=existing_group_ids
-            )
-
-            if options:
-                # 处理 is_append 逻辑：合并新旧 options
-                is_append = params.get("is_append", False)
-                if is_append and field_spec.options:
-                    # 合并新旧 options
-                    existing_items = field_spec.options.items if field_spec.options else []
-                    new_items = options.get("items", []) if isinstance(options, dict) else []
-
-                    # 使用 label 作为 key 去重，新值覆盖旧值
-                    merged_items_map = {item["label"]: item for item in existing_items}
-                    for new_item in new_items:
-                        if isinstance(new_item, dict) and "label" in new_item:
-                            merged_items_map[new_item["label"]] = new_item
-
-                    merged_items = list(merged_items_map.values())
-
-                    # 合并数量限制配置（新值覆盖旧值，仅多选时有效）
-                    min_selections = options.get("min_selections") if isinstance(options, dict) else None
-                    max_selections = options.get("max_selections") if isinstance(options, dict) else None
-
-                    # 如果没有传新值，保留旧值
-                    old_options = field_spec.options or {}
-                    if min_selections is None and hasattr(old_options, 'min_selections'):
-                        min_selections = old_options.min_selections
-                    if max_selections is None and hasattr(old_options, 'max_selections'):
-                        max_selections = old_options.max_selections
-
-                    merged_options = {
-                        "items": merged_items,
-                        "min_selections": min_selections if min_selections is not None else 1,
-                        "max_selections": max_selections if max_selections is not None else 0
-                    }
-                    update_data.options = FieldOptions(**merged_options)
-                else:
-                    # 直接覆盖
-                    if isinstance(options, dict):
-                        # 设置数量限制默认值
-                        if "min_selections" not in options:
-                            options["min_selections"] = 1
-                        if "max_selections" not in options:
-                            options["max_selections"] = 0
-                        update_data.options = FieldOptions(**options)
-                    else:
-                        update_data.options = options
-
-            field_spec = await field_spec_controller.update_field_spec(
-                id=field_spec.id,
-                obj_in=update_data,
-                tenant_id=tenant_id,
-                app_name=app_name
-            )
-        else:
-            create_data = FieldSpecCreate(
-                field_name=field_name,
-                field_label=field_label,
-                field_type=field_type,
-                fill_instruction=fill_instruction,
-                field_group_ids=[field_group.id]
-            )
-
-            if options:
-                if isinstance(options, dict):
-                    create_data.options = FieldOptions(**options)
-                else:
-                    create_data.options = options
-
-            field_spec = await field_spec_controller.create_field_spec(
-                obj_in=create_data,
-                tenant_id=tenant_id,
-                app_name=app_name
-            )
-            is_new_relation = True
-
-        existing_relation = await FieldGroupFieldSpec.filter(
-            field_group_id=field_group.id,
-            field_spec_id=field_spec.id
-        ).first()
-
-        if not existing_relation:
-            await FieldGroupFieldSpec.create(
-                field_group_id=field_group.id,
-                field_spec_id=field_spec.id,
-                tenant_id=tenant_id,
-                app_name=app_name
-            )
-            is_new_relation = True
-
+        # 获取字段关联的所有字段组
         relations = await FieldGroupFieldSpec.filter(field_spec_id=field_spec.id).all()
         group_ids = [r.field_group_id for r in relations]
 
@@ -366,7 +278,7 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
             "field_label": field_spec.field_label,
             "field_type": field_spec.field_type,
             "field_group_ids": group_ids,
-            "is_new_relation": is_new_relation
+            "is_new": is_new
         })
 
     return Success(data={
