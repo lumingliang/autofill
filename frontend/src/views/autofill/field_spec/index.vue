@@ -188,38 +188,16 @@
           <a-divider orientation="left">选项列表</a-divider>
 
           <a-form-item label="选项列表">
-            <div v-for="(item, index) in form.options.items" :key="index" class="option-item">
-              <a-space direction="vertical" style="width: 100%">
-                <a-space>
-                  <a-input v-model:value="item.value" placeholder="选项值" style="width: 120px" />
-                  <a-input v-model:value="item.label" placeholder="选项标签" style="width: 120px" />
-                  <a-input v-model:value="item.fill_instruction" placeholder="填写说明" style="width: 150px" />
-                  <a-button type="link" danger @click="removeOption(index)">
-                    <DeleteOutlined />
-                  </a-button>
-                </a-space>
-                <!-- 选项的人工标注数组 -->
-                <div class="option-corrections">
-                  <div class="correction-label">人工标注：</div>
-                  <div v-for="(corr, corrIndex) in item.corrections" :key="corrIndex" class="correction-item">
-                    <a-space>
-                      <a-textarea v-model:value="corr.text" placeholder="批注内容" :rows="2" style="width: 400px" />
-                      <a-button type="link" danger @click="removeOptionCorrection(index, corrIndex)">
-                        <DeleteOutlined />
-                      </a-button>
-                    </a-space>
-                  </div>
-                  <a-button type="dashed" block @click="addOptionCorrection(index)" style="margin-top: 8px">
-                    <PlusOutlined />
-                    添加批注
-                  </a-button>
-                </div>
-              </a-space>
-            </div>
-            <a-button type="dashed" block @click="addOption">
-              <PlusOutlined />
-              添加选项
-            </a-button>
+            <a-typography-text type="secondary" style="margin-bottom: 8px; display: block;">
+              使用 Markdown 格式编辑选项，格式示例：<br>
+              <code>## 选项标签</code> - 选项标题（人工识别）<br>
+              <code>- 选项值:</code> 选项值（ID等）<br>
+              <code>- 填写说明:</code> 填写说明内容<br>
+              <code>- 批注:</code> 人工标注内容（可多个）
+            </a-typography-text>
+            <a-textarea v-model:value="optionsMarkdown" :rows="20"
+              placeholder="## 智能网联&#10;- 选项值: 1001&#10;- 填写说明: 选择云控相关问题&#10;- 批注: 这是批注内容1&#10;- 批注: 这是批注内容2&#10;&#10;## 产品咨询&#10;- 选项值: 1002&#10;- 填写说明: 选择产品咨询类问题"
+              @blur="parseMarkdownToOptions" />
           </a-form-item>
         </template>
 
@@ -367,6 +345,116 @@ const modalForm = reactive({
   is_active: true,
 })
 
+// Markdown 格式的选项列表
+const optionsMarkdown = ref('')
+
+// 将选项数据转换为 Markdown 格式
+const convertOptionsToMarkdown = (items: any[]): string => {
+  if (!items || items.length === 0) return ''
+
+  return items.map((item, index) => {
+    const lines: string[] = []
+
+    // 选项标签作为二级标题（人工识别）
+    lines.push(`## ${item.label || ''}`)
+
+    // 选项值
+    if (item.value) {
+      lines.push(`- 选项值: ${item.value}`)
+    }
+
+    // 填写说明
+    if (item.fill_instruction) {
+      lines.push(`- 填写说明: ${item.fill_instruction}`)
+    }
+
+    // 人工标注（可能有多个）
+    if (item.corrections && item.corrections.length > 0) {
+      item.corrections.forEach((corr: any) => {
+        if (corr.text) {
+          lines.push(`- 批注: ${corr.text}`)
+        }
+      })
+    }
+
+    // 选项之间添加空行（最后一个除外）
+    if (index < items.length - 1) {
+      lines.push('')
+    }
+
+    return lines.join('\n')
+  }).join('\n')
+}
+
+// 将 Markdown 格式解析为选项数据
+const parseMarkdownToOptions = () => {
+  const markdown = optionsMarkdown.value.trim()
+  if (!markdown) {
+    modalForm.options.items = []
+    return
+  }
+
+  const items: any[] = []
+  const lines = markdown.split('\n')
+  let currentItem: any = null
+
+  for (const line of lines) {
+    const trimmedLine = line.trim()
+    if (!trimmedLine) continue
+
+    // 匹配二级标题 ## 选项标签
+    const headerMatch = trimmedLine.match(/^##\s*(.+)$/)
+    if (headerMatch) {
+      // 保存上一个选项
+      if (currentItem) {
+        items.push(currentItem)
+      }
+      // 创建新选项
+      currentItem = {
+        label: headerMatch[1].trim(),
+        value: '',
+        fill_instruction: '',
+        corrections: [],
+        is_deleted: false,
+      }
+      continue
+    }
+
+    // 如果没有当前选项，跳过
+    if (!currentItem) continue
+
+    // 匹配 - 选项值: xxx
+    const valueMatch = trimmedLine.match(/^-\s*选项值[:：]\s*(.*)$/i)
+    if (valueMatch) {
+      currentItem.value = valueMatch[1].trim()
+      continue
+    }
+
+    // 匹配 - 填写说明: xxx
+    const instructionMatch = trimmedLine.match(/^-\s*填写说明[:：]\s*(.*)$/i)
+    if (instructionMatch) {
+      currentItem.fill_instruction = instructionMatch[1].trim()
+      continue
+    }
+
+    // 匹配 - 批注: xxx
+    const correctionMatch = trimmedLine.match(/^-\s*批注[:：]\s*(.*)$/i)
+    if (correctionMatch) {
+      currentItem.corrections.push({
+        text: correctionMatch[1].trim(),
+      })
+      continue
+    }
+  }
+
+  // 保存最后一个选项
+  if (currentItem) {
+    items.push(currentItem)
+  }
+
+  modalForm.options.items = items
+}
+
 // 选项数据 - 新的字段类型：文本输入、下拉单选、下拉多选
 const fieldTypeOptions = [
   { label: '文本输入', value: 'text' },
@@ -501,6 +589,7 @@ const resetModalForm = () => {
   }
   modalForm.corrections = []
   modalForm.is_active = true
+  optionsMarkdown.value = ''
 }
 
 const handleAdd = () => {
@@ -527,6 +616,8 @@ const handleEdit = (record: any) => {
     api_schema: record.options?.api_schema || '',
   }
   modalForm.is_active = record.is_active
+  // 将选项数据转换为 Markdown 格式
+  optionsMarkdown.value = convertOptionsToMarkdown(record.options?.items || [])
   crudTableRef.value?.openEditModal(record)
   // 确保 corrections 是数组，避免 null 导致的问题（必须在 openEditModal 之后执行，因为 openEditModal 内部会 Object.assign 覆盖值）
   // 由于 Object.assign 会将 null 直接赋值给 corrections，我们需要重新赋值为数组
@@ -534,36 +625,7 @@ const handleEdit = (record: any) => {
     ; (modalForm as any).corrections = [...corrections]
 }
 
-const addOption = () => {
-  modalForm.options.items.push({
-    value: '',
-    label: '',
-    fill_instruction: '',
-    corrections: [],
-    is_deleted: false,
-  })
-}
 
-const removeOption = (index: number) => {
-  modalForm.options.items.splice(index, 1)
-}
-
-const addOptionCorrection = (optionIndex: number) => {
-  const item = modalForm.options.items[optionIndex]
-  if (!item.corrections) {
-    item.corrections = []
-  }
-  item.corrections.push({
-    text: '',
-  })
-}
-
-const removeOptionCorrection = (optionIndex: number, correctionIndex: number) => {
-  const item = modalForm.options.items[optionIndex]
-  if (item.corrections) {
-    item.corrections.splice(correctionIndex, 1)
-  }
-}
 
 const addCorrection = () => {
   modalForm.corrections.push({
@@ -627,6 +689,8 @@ const handleSyncOptions = async () => {
     if (res.code === 200) {
       // 更新选项列表
       modalForm.options.items = res.data.items || []
+      // 同步成功后，将选项数据转换为 Markdown 格式
+      optionsMarkdown.value = convertOptionsToMarkdown(res.data.items || [])
       // 更新字段ID（如果是新建）
       if (res.data.field_id && !modalForm.id) {
         modalForm.id = res.data.field_id
@@ -685,6 +749,9 @@ const handleCancelCurlModal = () => {
 const handleSave = async () => {
   modalLoading.value = true
   try {
+    // 先将 Markdown 解析为选项数据
+    parseMarkdownToOptions()
+
     // 清理空选项（下拉单选/多选类型）
     if (modalForm.field_type === 'select_single' || modalForm.field_type === 'select_multi') {
       modalForm.options.items = modalForm.options.items.filter((item: any) => item.value && item.label)
