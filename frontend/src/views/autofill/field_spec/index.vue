@@ -170,10 +170,16 @@
 
           <!-- 同步按钮 -->
           <a-form-item>
-            <a-button type="primary" :loading="syncLoading" @click="handleSyncOptions">
-              <SyncOutlined />
-              同步选项
-            </a-button>
+            <a-space>
+              <a-button type="primary" :loading="syncLoading" @click="handleSyncOptions">
+                <SyncOutlined />
+                同步选项
+              </a-button>
+              <a-button @click="showCurlModal">
+                <CodeOutlined />
+                从 curl 导入
+              </a-button>
+            </a-space>
             <a-typography-text type="secondary" style="margin-left: 8px">
               根据Schema配置从API同步下拉选项
             </a-typography-text>
@@ -241,6 +247,30 @@
         </a-form-item>
       </template>
     </CrudTable>
+
+    <!-- curl 解析弹窗 -->
+    <a-modal v-model:visible="curlModalVisible" title="从 curl 命令导入 OpenAPI Schema" :confirm-loading="curlModalLoading"
+      @ok="handleParseCurl" @cancel="handleCancelCurlModal" width="800px">
+      <a-form layout="vertical">
+        <a-form-item label="curl 命令" required>
+          <a-textarea v-model:value="curlForm.curl_command"
+            placeholder="请输入 curl 命令，例如：&#10;curl -X POST http://localhost:9999/api/autofill/dropdown_options/list \\&#10;  -H 'Authorization: Bearer your_token' \\&#10;  -H 'Content-Type: application/json' \\&#10;  -d '{&quot;parent_id&quot;: 0}'"
+            :rows="8" />
+        </a-form-item>
+        <a-form-item label="标签字段 JSONPath">
+          <a-input v-model:value="curlForm.label_path" placeholder="$.data[*].label" />
+          <a-typography-text type="secondary">
+            用于从响应中提取选项标签的 JSONPath 表达式
+          </a-typography-text>
+        </a-form-item>
+        <a-form-item label="值字段 JSONPath">
+          <a-input v-model:value="curlForm.value_path" placeholder="$.data[*].value" />
+          <a-typography-text type="secondary">
+            用于从响应中提取选项值的 JSONPath 表达式
+          </a-typography-text>
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -249,7 +279,7 @@ import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
-import { DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { CodeOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
@@ -309,6 +339,16 @@ const modalTitle = ref('')
 const modalLoading = ref(false)
 const modalAction = ref<'add' | 'edit'>('add')
 const syncLoading = ref(false)
+
+// curl 解析弹窗数据
+const curlModalVisible = ref(false)
+const curlModalLoading = ref(false)
+const curlForm = reactive({
+  curl_command: '',
+  label_path: '$.data[*].label',
+  value_path: '$.data[*].value',
+})
+
 const modalForm = reactive({
   id: undefined as number | undefined,
   field_group_ids: [] as number[],
@@ -600,6 +640,46 @@ const handleSyncOptions = async () => {
   } finally {
     syncLoading.value = false
   }
+}
+
+// curl 解析相关方法
+const showCurlModal = () => {
+  curlForm.curl_command = ''
+  curlForm.label_path = '$.data[*].label'
+  curlForm.value_path = '$.data[*].value'
+  curlModalVisible.value = true
+}
+
+const handleParseCurl = async () => {
+  if (!curlForm.curl_command.trim()) {
+    message.warning('请输入 curl 命令')
+    return
+  }
+
+  curlModalLoading.value = true
+  try {
+    const res: any = await api.parseCurlCommand({
+      curl_command: curlForm.curl_command,
+      label_path: curlForm.label_path,
+      value_path: curlForm.value_path,
+    })
+    if (res.code === 200) {
+      // 将生成的 Schema 填入表单
+      modalForm.options.api_schema = res.data.openapi_schema
+      message.success(res.data.message || 'curl 解析成功，已生成 OpenAPI Schema')
+      curlModalVisible.value = false
+    } else {
+      message.error(res.msg || '解析失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '解析失败')
+  } finally {
+    curlModalLoading.value = false
+  }
+}
+
+const handleCancelCurlModal = () => {
+  curlModalVisible.value = false
 }
 
 const handleSave = async () => {

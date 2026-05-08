@@ -220,4 +220,18 @@ class FieldSpecSyncOptionsResponse(BaseModel):
     message: str = Field(default="", description="同步结果消息")
 
 
+class CurlParseRequest(BaseModel):
+    """CURL 解析请求"""
+    curl_command: str = Field(..., description="curl 命令字符串")
+    label_path: str = Field("$.data[*].label", description="标签字段的 JSONPath")
+    value_path: str = Field("$.data[*].value", description="值字段的 JSONPath")
+
+
+class CurlParseResponse(BaseModel):
+    """CURL 解析响应"""
+    openapi_schema: str = Field("", description="生成的 OpenAPI Schema (YAML 格式)")
+    response_preview: Dict = Field(default_factory=dict, description="API 响应数据预览")
+    message: str = Field("", description="处理结果消息")
+
+
 

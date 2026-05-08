@@ -189,5 +189,6 @@ export default {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
   syncFieldSpecOptions: (data: any = {}) => request.post('/autofill/field_spec/sync_options', data),
+  parseCurlCommand: (data: any = {}) => request.post('/autofill/field_spec/parse_curl', data),
 
 }
