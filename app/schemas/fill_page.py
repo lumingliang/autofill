@@ -112,12 +112,28 @@ class OptionItem(BaseModel):
     is_deleted: bool = False
 
 
+class ApiHeaderItem(BaseModel):
+    """API请求Header配置项"""
+    key: str = Field(default="", description="Header键")
+    value: str = Field(default="", description="Header值")
+
+
+class ApiParamItem(BaseModel):
+    """API请求静态参数配置项"""
+    key: str = Field(default="", description="参数键")
+    value: str = Field(default="", description="参数值")
+
+
 class FieldOptions(BaseModel):
     """字段选项配置（下拉单选/多选类型）"""
     items: List[OptionItem] = []
     # 数量限制（仅多选时有效）
     min_selections: int = Field(default=1, description="最少选择数量（多选时有效）")
     max_selections: int = Field(default=0, description="最多选择数量（多选时有效，0表示无限制）")
+    # API配置
+    api_headers: List[ApiHeaderItem] = Field(default_factory=list, description="API请求Header配置列表")
+    api_params: List[ApiParamItem] = Field(default_factory=list, description="API请求静态参数配置列表（如app_name、class_name、parent_id等）")
+    api_schema: str = Field(default="", description="OpenAPI/Swagger Schema配置（YAML格式）")
 
 
 class FieldSpecCreate(BaseModel):
@@ -184,6 +200,19 @@ class FieldSpecQueryRequest(BaseModel):
     field_group_id: int = Field(0, description="字段组ID")
     field_name: str = Field("", description="字段名称")
     field_type: str = Field("", description="字段类型")
+
+
+class FieldSpecSyncOptionsRequest(BaseModel):
+    """同步字段选项请求"""
+    field_id: int = Field(0, description="字段ID（编辑时传入，新建时为0）")
+    options: FieldOptions = Field(default_factory=FieldOptions, description="字段选项配置包含api_schema和api_headers")
+
+
+class FieldSpecSyncOptionsResponse(BaseModel):
+    """同步字段选项响应"""
+    items: List[OptionItem] = Field(default_factory=list, description="同步后的选项列表")
+    updated_count: int = Field(default=0, description="更新/插入的选项数量")
+    message: str = Field(default="", description="同步结果消息")
 
 
 
