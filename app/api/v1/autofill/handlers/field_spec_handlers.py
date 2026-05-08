@@ -776,19 +776,32 @@ async def sync_field_spec_options(
         
         if not api_path:
             return Fail(code=400, msg="Schema中未找到GET或POST接口")
-        
+
         # 构建完整URL
         full_url = base_url.rstrip('/') + api_path
-        
+
+        # 从Schema中解析静态参数（x-api-params扩展字段）
+        x_api_params = api_config.get('x-api-params') or spec_dict.get('x-api-params', {})
+
+        # 从x-api-params中提取headers（如果存在）
+        schema_headers = {}
+        if isinstance(x_api_params, dict) and 'headers' in x_api_params:
+            schema_headers = x_api_params.pop('headers', {})
+
         # 构建请求Headers
+        # 优先级：请求Header设置 > Schema中的header配置
         headers = {}
+
+        # 首先添加Schema中的headers（优先级较低）
+        for key, value in schema_headers.items():
+            if key and value:
+                headers[key] = value
+
+        # 然后添加/覆盖请求中设置的headers（优先级较高）
         for header_item in sync_in.options.api_headers:
             if header_item.key and header_item.value:
                 headers[header_item.key] = header_item.value
-        
-        # 从Schema中解析静态参数（x-api-params扩展字段）
-        x_api_params = api_config.get('x-api-params') or spec_dict.get('x-api-params', {})
-        
+
         # 使用异步HTTP客户端发送请求
         async with httpx.AsyncClient(timeout=30.0) as client:
             if api_method == 'get':
