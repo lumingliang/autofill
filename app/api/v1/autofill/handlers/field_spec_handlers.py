@@ -25,8 +25,14 @@ from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.models.admin import Tenant
 from app.models.autofill import FieldGroupFieldSpec, FieldGroupConfig, FillPage
 from app.schemas.base import Fail, Success, SuccessExtra
-from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate, FieldSpecSyncOptionsRequest
+from app.schemas.fill_page import (
+    FieldSpecCreate, FieldSpecUpdate, FieldSpecSyncOptionsRequest,
+    CurlParseRequest, CurlParseResponse
+)
 from app.services.autofill.field_spec_service import upsert_field_spec
+from app.utils.curl_parser import (
+    parse_curl_command, generate_openapi_schema_from_curl, infer_schema_from_response
+)
 
 router = APIRouter()
 
@@ -931,3 +937,85 @@ async def sync_field_spec_options(
         return Fail(code=400, msg=f"请求API失败: {str(e)}")
     except Exception as e:
         return Fail(code=500, msg=f"同步失败: {str(e)}")
+
+
+@router.post("/field_spec/parse_curl", summary="解析 curl 命令生成 OpenAPI Schema")
+async def parse_curl_command_endpoint(
+    request: CurlParseRequest,
+    token: str = Header(..., description="token验证"),
+):
+    """
+    解析 curl 命令，执行请求，并生成 OpenAPI Schema
+    
+    流程:
+    1. 解析 curl 命令提取请求参数
+    2. 执行 HTTP 请求获取响应
+    3. 分析响应数据结构
+    4. 生成完整的 OpenAPI 3.0 Schema
+    """
+    await AuthControl.is_authed(token)
+    
+    if not request.curl_command or not request.curl_command.strip():
+        return Fail(code=400, msg="curl 命令不能为空")
+    
+    try:
+        # 1. 解析 curl 命令
+        parsed = parse_curl_command(request.curl_command)
+        
+        # 2. 执行 HTTP 请求
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            method = parsed['method'].lower()
+            url = parsed['url']
+            headers = parsed['headers']
+            body = parsed['body']
+            
+            if method == 'get':
+                response = await client.get(url, headers=headers)
+            elif method == 'post':
+                if body and isinstance(body, dict):
+                    response = await client.post(url, headers=headers, json=body)
+                else:
+                    response = await client.post(url, headers=headers)
+            elif method == 'put':
+                if body and isinstance(body, dict):
+                    response = await client.put(url, headers=headers, json=body)
+                else:
+                    response = await client.put(url, headers=headers)
+            elif method == 'patch':
+                if body and isinstance(body, dict):
+                    response = await client.patch(url, headers=headers, json=body)
+                else:
+                    response = await client.patch(url, headers=headers)
+            elif method == 'delete':
+                response = await client.delete(url, headers=headers)
+            else:
+                return Fail(code=400, msg=f"不支持的 HTTP 方法: {method}")
+            
+            response.raise_for_status()
+            response_data = response.json()
+        
+        # 3. 生成 OpenAPI Schema
+        openapi_dict = generate_openapi_schema_from_curl(
+            request.curl_command,
+            response_data,
+            label_path=request.label_path,
+            value_path=request.value_path
+        )
+        
+        # 4. 转换为 YAML 格式
+        openapi_yaml = yaml.dump(openapi_dict, allow_unicode=True, sort_keys=False)
+        
+        return Success(data={
+            "openapi_schema": openapi_yaml,
+            "response_preview": response_data,
+            "message": "curl 解析成功，已生成 OpenAPI Schema"
+        })
+        
+    except ValueError as e:
+        return Fail(code=400, msg=f"curl 命令解析错误: {str(e)}")
+    except httpx.HTTPError as e:
+        return Fail(code=400, msg=f"执行 curl 请求失败: {str(e)}")
+    except json.JSONDecodeError as e:
+        return Fail(code=400, msg=f"响应数据不是有效的 JSON: {str(e)}")
+    except Exception as e:
+        return Fail(code=500, msg=f"解析失败: {str(e)}")
