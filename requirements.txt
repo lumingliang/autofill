@@ -47,3 +47,7 @@ python-multipart==0.0.20
 black==24.10.0
 isort==5.13.2
 ruff==0.9.1
+
+# OpenAPI/Swagger Parsing
+prance==23.6.21.0
+pyyaml==6.0.1

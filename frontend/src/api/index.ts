@@ -188,5 +188,6 @@ export default {
   importFieldSpecs: (data: any = {}) => request.post('/autofill/field_spec/import', data, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
+  syncFieldSpecOptions: (data: any = {}) => request.post('/autofill/field_spec/sync_options', data),
 
 }

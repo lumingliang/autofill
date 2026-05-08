@@ -224,3 +224,58 @@ async def get_submenus_tree(
     支持参数传递方式: JSON Body
     """
     return await get_submenus_tree_handler(request, auth_info)
+
+
+# ==================== 标准下拉列表接口（用于OpenAPI同步）====================
+
+@router.get("/common/dict/event-type", summary="获取事件类型下拉列表")
+async def get_event_type_list(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    返回用于前端下拉选择框的事件类型枚举列表
+    标准格式: { "code": 200, "message": "操作成功", "data": [{"label": "", "value": ""}] }
+    必须携带固定鉴权Header
+    支持查询参数: app_name, class_name, parent_id
+    """
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+
+    # 获取查询参数（静态参数）
+    params = dict(request.query_params)
+    query_app_name = params.get("app_name", app_name)
+    query_class_name = params.get("class_name", "event_type")
+    parent_id = int(params.get("parent_id", 0))
+
+    # 查询下拉选项列表（支持通过参数指定分类）
+    options = await dropdown_option_controller.model.filter(
+        tenant_id=tenant_id,
+        app_name=query_app_name,
+        class_name=query_class_name,
+        parent_id=parent_id
+    ).all()
+
+    # 转换为标准下拉格式
+    data = [
+        {
+            "label": option.summary or option.option_value,
+            "value": option.option_value
+        }
+        for option in options
+    ]
+
+    # 如果没有数据，返回示例数据
+    if not data:
+        data = [
+            {"label": "会议事件", "value": "MEETING"},
+            {"label": "培训事件", "value": "TRAINING"},
+            {"label": "团建事件", "value": "TEAM_BUILDING"},
+            {"label": "其他事件", "value": "OTHER"}
+        ]
+
+    return {
+        "code": 200,
+        "message": "操作成功",
+        "data": data
+    }

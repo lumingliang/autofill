@@ -141,6 +141,46 @@
             </a-form-item>
           </template>
 
+          <!-- API配置 -->
+          <a-divider orientation="left">API配置</a-divider>
+
+          <!-- Header配置 -->
+          <a-form-item label="请求Header">
+            <div v-for="(header, index) in form.options.api_headers" :key="index" class="header-item">
+              <a-space>
+                <a-input v-model:value="header.key" placeholder="Header键" style="width: 150px" />
+                <a-input v-model:value="header.value" placeholder="Header值" style="width: 250px" />
+                <a-button type="link" danger @click="removeApiHeader(index)">
+                  <DeleteOutlined />
+                </a-button>
+              </a-space>
+            </div>
+            <a-button type="dashed" block @click="addApiHeader">
+              <PlusOutlined />
+              添加Header
+            </a-button>
+          </a-form-item>
+
+          <!-- Schema配置 -->
+          <a-form-item label="OpenAPI Schema">
+            <a-textarea v-model:value="form.options.api_schema"
+              placeholder="请输入OpenAPI/Swagger配置（YAML格式）&#10;&#10;支持以下扩展字段：&#10;1. x-api-params: 配置静态请求参数&#10;2. x-field-mapping: 配置字段映射（JSONPath语法）&#10;&#10;示例：&#10;paths:&#10;  /api/endpoint:&#10;    post:&#10;      x-api-params:&#10;        parent_id: 0&#10;      x-field-mapping:&#10;        label_path: '$.data[*].summary'&#10;        value_path: '$.data[*].option_value'&#10;&#10;字段映射语法说明：&#10;  $.data[*].name     -> 从data数组中提取name字段&#10;  $.result[*].title  -> 从result数组中提取title字段&#10;  $.data[0].list[*]  -> 从data[0].list数组中提取元素&#10;&#10;默认映射（标准格式）：&#10;  label_path: '$.data[*].label'&#10;  value_path: '$.data[*].value'"
+              :rows="15" />
+          </a-form-item>
+
+          <!-- 同步按钮 -->
+          <a-form-item>
+            <a-button type="primary" :loading="syncLoading" @click="handleSyncOptions">
+              <SyncOutlined />
+              同步选项
+            </a-button>
+            <a-typography-text type="secondary" style="margin-left: 8px">
+              根据Schema配置从API同步下拉选项
+            </a-typography-text>
+          </a-form-item>
+
+          <a-divider orientation="left">选项列表</a-divider>
+
           <a-form-item label="选项列表">
             <div v-for="(item, index) in form.options.items" :key="index" class="option-item">
               <a-space direction="vertical" style="width: 100%">
@@ -209,7 +249,7 @@ import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
-import { DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
@@ -268,6 +308,7 @@ const rowSelection = computed(() => ({
 const modalTitle = ref('')
 const modalLoading = ref(false)
 const modalAction = ref<'add' | 'edit'>('add')
+const syncLoading = ref(false)
 const modalForm = reactive({
   id: undefined as number | undefined,
   field_group_ids: [] as number[],
@@ -279,6 +320,8 @@ const modalForm = reactive({
     items: [] as any[],
     min_selections: 1,
     max_selections: 0,  // 0表示无限制
+    api_headers: [] as { key: string; value: string }[],
+    api_schema: '',
   },
   corrections: [] as any[],
   is_active: true,
@@ -413,6 +456,8 @@ const resetModalForm = () => {
     items: [],
     min_selections: 1,
     max_selections: 0,  // 0表示无限制
+    api_headers: [],
+    api_schema: '',
   }
   modalForm.corrections = []
   modalForm.is_active = true
@@ -438,6 +483,8 @@ const handleEdit = (record: any) => {
     items: record.options?.items || [],
     min_selections: record.options?.min_selections ?? 1,
     max_selections: record.options?.max_selections ?? 0,  // 0表示无限制
+    api_headers: record.options?.api_headers || [],
+    api_schema: record.options?.api_schema || '',
   }
   modalForm.is_active = record.is_active
   crudTableRef.value?.openEditModal(record)
@@ -491,7 +538,46 @@ const removeCorrection = (index: number) => {
   modalForm.corrections.splice(index, 1)
 }
 
+// API Header 相关方法
+const addApiHeader = () => {
+  if (!modalForm.options.api_headers) {
+    modalForm.options.api_headers = []
+  }
+  modalForm.options.api_headers.push({ key: '', value: '' })
+}
 
+const removeApiHeader = (index: number) => {
+  if (modalForm.options.api_headers) {
+    modalForm.options.api_headers.splice(index, 1)
+  }
+}
+
+// 同步选项方法
+const handleSyncOptions = async () => {
+  if (!modalForm.options.api_schema) {
+    message.warning('请先配置OpenAPI Schema')
+    return
+  }
+
+  syncLoading.value = true
+  try {
+    const res: any = await api.syncFieldSpecOptions({
+      field_id: modalForm.id,
+      options: modalForm.options,
+    })
+    if (res.code === 200) {
+      // 更新选项列表
+      modalForm.options.items = res.data.items || []
+      message.success(`同步成功，共更新 ${res.data.updated_count || 0} 个选项`)
+    } else {
+      message.error(res.msg || '同步失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '同步失败')
+  } finally {
+    syncLoading.value = false
+  }
+}
 
 const handleSave = async () => {
   modalLoading.value = true
@@ -611,7 +697,8 @@ onMounted(() => {
 .field-spec-management {
 
   .option-item,
-  .correction-item {
+  .correction-item,
+  .header-item {
     margin-bottom: 8px;
   }
 
