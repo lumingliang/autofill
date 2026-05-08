@@ -3,10 +3,13 @@
 """
 import csv
 import io
+import os
+import tempfile
 from datetime import datetime
-from typing import List
+from typing import List, Dict, Any, Optional
 
 import httpx
+import prance
 import yaml
 from fastapi import APIRouter, File, Header, Query, UploadFile
 from jsonpath_ng import parse as jsonpath_parse
@@ -26,6 +29,45 @@ from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate, FieldSpecSyn
 from app.services.autofill.field_spec_service import upsert_field_spec
 
 router = APIRouter()
+
+
+def parse_openapi_schema(schema_content: str) -> Dict[str, Any]:
+    """
+    使用 prance 解析 OpenAPI Schema
+    支持 OpenAPI 2.0/3.0，自动解析 $ref 引用
+    """
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(schema_content)
+        temp_path = f.name
+
+    try:
+        parser = prance.ResolvingParser(temp_path, backend='openapi-spec-validator')
+        return parser.specification
+    finally:
+        os.unlink(temp_path)
+
+
+def get_endpoint_config(spec: Dict[str, Any]) -> tuple:
+    """
+    获取第一个 GET 或 POST 端点的配置
+    返回: (base_url, path, method, operation)
+    """
+    # 获取 base URL
+    servers = spec.get('servers', [])
+    base_url = servers[0].get('url', '') if servers else ''
+    
+    # 获取第一个端点
+    paths = spec.get('paths', {})
+    if not paths:
+        raise ValueError("Schema中未找到paths配置")
+    
+    for path, methods in paths.items():
+        if 'get' in methods:
+            return base_url, path, 'get', methods['get']
+        if 'post' in methods:
+            return base_url, path, 'post', methods['post']
+    
+    raise ValueError("Schema中未找到GET或POST接口")
 
 
 @router.get("/field_spec/list", summary="字段明细列表")
@@ -728,10 +770,11 @@ async def sync_field_spec_options(
     """
     根据OpenAPI Schema配置从API同步下拉选项并保存到字段
     1. 验证必填字段
-    2. 解析OpenAPI Schema获取接口信息
-    3. 使用配置的Header请求API
-    4. 使用jsonpath-ng解析数据
-    5. 保存到数据库（新建或更新字段）
+    2. 使用 prance 解析OpenAPI Schema（支持2.0/3.0，自动解析$ref）
+    3. 从Schema中提取请求配置（支持GET/POST，自动识别参数位置）
+    4. 支持自定义 headers 和 params（优先级高于Schema配置）
+    5. 使用jsonpath-ng解析数据
+    6. 保存到数据库（新建或更新字段）
     """
     current_user = await AuthControl.is_authed(token)
     tenant_id = current_user.tenant_id if hasattr(current_user, 'tenant_id') else 0
@@ -747,77 +790,56 @@ async def sync_field_spec_options(
         return Fail(code=400, msg="请先配置OpenAPI Schema")
     
     try:
-        # 解析YAML格式的Schema
-        spec_dict = yaml.safe_load(sync_in.options.api_schema)
+        # 使用 prance 解析 OpenAPI Schema（支持2.0/3.0，自动解析$ref引用）
+        spec = parse_openapi_schema(sync_in.options.api_schema)
         
-        # 获取服务器URL和路径
-        servers = spec_dict.get('servers', [])
-        base_url = servers[0].get('url', '') if servers else ''
+        # 获取端点配置: base_url, path, method, operation
+        base_url, path, method, operation = get_endpoint_config(spec)
+        full_url = f"{base_url.rstrip('/')}{path}"
         
-        paths = spec_dict.get('paths', {})
-        if not paths:
-            return Fail(code=400, msg="Schema中未找到paths配置")
+        # 从 x-api-params 获取固定参数和 headers
+        x_api_params = operation.get('x-api-params', {})
         
-        # 获取第一个接口（支持GET或POST）
-        api_path = None
-        api_method = None
-        api_config = None
-        for path, methods in paths.items():
-            if 'get' in methods:
-                api_path = path
-                api_method = 'get'
-                api_config = methods['get']
-                break
-            elif 'post' in methods:
-                api_path = path
-                api_method = 'post'
-                api_config = methods['post']
-                break
+        # 提取 headers（优先级：请求 Header > Schema header）
+        headers = x_api_params.get('headers', {}).copy()
+        for h in (sync_in.options.api_headers or []):
+            if h.key and h.value:
+                headers[h.key] = h.value
         
-        if not api_path:
-            return Fail(code=400, msg="Schema中未找到GET或POST接口")
-
-        # 构建完整URL
-        full_url = base_url.rstrip('/') + api_path
-
-        # 从Schema中解析静态参数（x-api-params扩展字段）
-        x_api_params = api_config.get('x-api-params') or spec_dict.get('x-api-params', {})
-
-        # 从x-api-params中提取headers（如果存在）
-        schema_headers = {}
-        if isinstance(x_api_params, dict) and 'headers' in x_api_params:
-            schema_headers = x_api_params.pop('headers', {})
-
-        # 构建请求Headers
-        # 优先级：请求Header设置 > Schema中的header配置
-        headers = {}
-
-        # 首先添加Schema中的headers（优先级较低）
-        for key, value in schema_headers.items():
-            if key and value:
-                headers[key] = value
-
-        # 然后添加/覆盖请求中设置的headers（优先级较高）
-        for header_item in sync_in.options.api_headers:
-            if header_item.key and header_item.value:
-                headers[header_item.key] = header_item.value
-
-        # 使用异步HTTP客户端发送请求
+        # 提取请求参数（排除 headers）
+        params = {k: v for k, v in x_api_params.items() if k != 'headers'}
+        
+        # 判断请求类型并准备 body
+        json_body = None
+        request_body = operation.get('requestBody', {})
+        if request_body and method == 'post':
+            content = request_body.get('content', {})
+            if 'application/json' in content:
+                # 从 schema 提取默认值作为 body
+                schema = content['application/json'].get('schema', {})
+                json_body = {}
+                for prop_name, prop_schema in schema.get('properties', {}).items():
+                    if 'default' in prop_schema:
+                        json_body[prop_name] = prop_schema['default']
+                    elif 'example' in prop_schema:
+                        json_body[prop_name] = prop_schema['example']
+                # 合并 x-api-params 参数
+                json_body.update(params)
+        
+        # 发送请求
         async with httpx.AsyncClient(timeout=30.0) as client:
-            if api_method == 'get':
-                response = await client.get(full_url, headers=headers, params=x_api_params)
+            if method == 'get':
+                response = await client.get(full_url, headers=headers, params=params)
             else:
-                headers['Content-Type'] = 'application/json'
-                response = await client.post(full_url, headers=headers, json=x_api_params)
+                headers.setdefault('Content-Type', 'application/json')
+                response = await client.post(full_url, headers=headers, json=json_body or params)
             response.raise_for_status()
             response_data = response.json()
         
-        # 获取字段映射配置（x-field-mapping扩展字段）
-        x_field_mapping = api_config.get('x-field-mapping') or spec_dict.get('x-field-mapping', {})
-        
-        # 默认使用标准格式
-        label_path = x_field_mapping.get('label_path', '$.data[*].label')
-        value_path = x_field_mapping.get('value_path', '$.data[*].value')
+        # 从 x-field-mapping 获取字段映射
+        x_mapping = operation.get('x-field-mapping', {})
+        label_path = x_mapping.get('label_path', '$.data[*].label')
+        value_path = x_mapping.get('value_path', '$.data[*].value')
         
         # 使用jsonpath-ng解析和提取数据
         try:
@@ -852,7 +874,6 @@ async def sync_field_spec_options(
             })
         
         # 获取第一个字段组信息（用于获取app_name）
-        # 超级用户(tenant_id=0)可以访问任何字段组
         if tenant_id > 0:
             field_group = await FieldGroupConfig.filter(
                 id=sync_in.field_group_ids[0],
@@ -878,7 +899,6 @@ async def sync_field_spec_options(
         }
         
         # 使用service层的upsert_field_spec方法
-        # 同步选项时默认：只同步value（replace模式），删除接口返回中不存在的选项
         result = await upsert_field_spec(
             tenant_id=tenant_id,
             app_name=app_name,
@@ -888,8 +908,8 @@ async def sync_field_spec_options(
             field_group_ids=sync_in.field_group_ids,
             fill_instruction=sync_in.fill_instruction,
             options=options_data,
-            sync_mode='replace',  # 只同步value，其他字段保持原样
-            delete_not_exist=True  # 删除接口返回中不存在的选项
+            sync_mode='replace',
+            delete_not_exist=True
         )
         
         field_spec = result["field_spec"]
@@ -903,6 +923,8 @@ async def sync_field_spec_options(
             "message": f"同步成功，共更新 {updated_count} 个选项"
         })
         
+    except ValueError as e:
+        return Fail(code=400, msg=f"Schema解析错误: {str(e)}")
     except yaml.YAMLError as e:
         return Fail(code=400, msg=f"Schema YAML格式错误: {str(e)}")
     except httpx.HTTPError as e:
