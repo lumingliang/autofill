@@ -141,78 +141,40 @@
             </a-form-item>
           </template>
 
-          <a-form-item label="选项来源" name="options.source">
-            <a-radio-group v-model:value="form.options.source">
-              <a-radio value="static">静态选项</a-radio>
-              <a-radio value="api">API接口</a-radio>
-            </a-radio-group>
-          </a-form-item>
-          <a-form-item v-if="form.options.source === 'api'" label="API标识" name="options.api_identifier">
-            <a-input v-model:value="form.options.api_identifier" placeholder="请输入API标识" />
-          </a-form-item>
-
-          <!-- API类型Swagger配置 -->
-          <template v-if="form.options.source === 'api'">
-            <a-form-item label="AppKey" name="options.appkey">
-              <a-input-password v-model:value="form.options.appkey" placeholder="请输入API调用鉴权密钥（调用该接口时会使用此密钥进行鉴权）" />
-            </a-form-item>
-            <a-form-item label="Swagger JSON" name="options.swagger_json">
-              <a-textarea v-model:value="form.options.swagger_json" placeholder="请粘贴 OpenAI Swagger JSON 文档，用于自动同步API端点"
-                :rows="8" />
-            </a-form-item>
-            <a-form-item>
-              <a-button type="primary" :loading="syncLoading" @click="handleSyncSwagger">
-                <SyncOutlined v-if="!syncLoading" />
-                同步Swagger文档
-              </a-button>
-              <a-typography-text type="secondary" style="margin-left: 8px">
-                点击同步将解析Swagger文档并自动生成选项列表
-              </a-typography-text>
-            </a-form-item>
-            <a-form-item v-if="form.options.last_sync_at" label="最后同步时间">
-              <a-tag color="blue">{{ formatDateTime(form.options.last_sync_at) }}</a-tag>
-              <a-typography-text type="secondary" style="margin-left: 8px">
-                共同步 {{ form.options.sync_endpoints_count || 0 }} 个端点
-              </a-typography-text>
-            </a-form-item>
-          </template>
-
-          <template v-if="form.options.source === 'static'">
-            <a-form-item label="选项列表">
-              <div v-for="(item, index) in form.options.items" :key="index" class="option-item">
-                <a-space direction="vertical" style="width: 100%">
-                  <a-space>
-                    <a-input v-model:value="item.value" placeholder="选项值" style="width: 120px" />
-                    <a-input v-model:value="item.label" placeholder="选项标签" style="width: 120px" />
-                    <a-input v-model:value="item.fill_instruction" placeholder="填写说明" style="width: 150px" />
-                    <a-button type="link" danger @click="removeOption(index)">
-                      <DeleteOutlined />
-                    </a-button>
-                  </a-space>
-                  <!-- 选项的人工标注数组 -->
-                  <div class="option-corrections">
-                    <div class="correction-label">人工标注：</div>
-                    <div v-for="(corr, corrIndex) in item.corrections" :key="corrIndex" class="correction-item">
-                      <a-space>
-                        <a-textarea v-model:value="corr.text" placeholder="批注内容" :rows="2" style="width: 400px" />
-                        <a-button type="link" danger @click="removeOptionCorrection(index, corrIndex)">
-                          <DeleteOutlined />
-                        </a-button>
-                      </a-space>
-                    </div>
-                    <a-button type="dashed" block @click="addOptionCorrection(index)" style="margin-top: 8px">
-                      <PlusOutlined />
-                      添加批注
-                    </a-button>
-                  </div>
+          <a-form-item label="选项列表">
+            <div v-for="(item, index) in form.options.items" :key="index" class="option-item">
+              <a-space direction="vertical" style="width: 100%">
+                <a-space>
+                  <a-input v-model:value="item.value" placeholder="选项值" style="width: 120px" />
+                  <a-input v-model:value="item.label" placeholder="选项标签" style="width: 120px" />
+                  <a-input v-model:value="item.fill_instruction" placeholder="填写说明" style="width: 150px" />
+                  <a-button type="link" danger @click="removeOption(index)">
+                    <DeleteOutlined />
+                  </a-button>
                 </a-space>
-              </div>
-              <a-button type="dashed" block @click="addOption">
-                <PlusOutlined />
-                添加选项
-              </a-button>
-            </a-form-item>
-          </template>
+                <!-- 选项的人工标注数组 -->
+                <div class="option-corrections">
+                  <div class="correction-label">人工标注：</div>
+                  <div v-for="(corr, corrIndex) in item.corrections" :key="corrIndex" class="correction-item">
+                    <a-space>
+                      <a-textarea v-model:value="corr.text" placeholder="批注内容" :rows="2" style="width: 400px" />
+                      <a-button type="link" danger @click="removeOptionCorrection(index, corrIndex)">
+                        <DeleteOutlined />
+                      </a-button>
+                    </a-space>
+                  </div>
+                  <a-button type="dashed" block @click="addOptionCorrection(index)" style="margin-top: 8px">
+                    <PlusOutlined />
+                    添加批注
+                  </a-button>
+                </div>
+              </a-space>
+            </div>
+            <a-button type="dashed" block @click="addOption">
+              <PlusOutlined />
+              添加选项
+            </a-button>
+          </a-form-item>
         </template>
 
         <!-- Text类型批注配置 -->
@@ -247,7 +209,7 @@ import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
-import { DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
@@ -306,7 +268,6 @@ const rowSelection = computed(() => ({
 const modalTitle = ref('')
 const modalLoading = ref(false)
 const modalAction = ref<'add' | 'edit'>('add')
-const syncLoading = ref(false)
 const modalForm = reactive({
   id: undefined as number | undefined,
   field_group_ids: [] as number[],
@@ -315,12 +276,6 @@ const modalForm = reactive({
   field_type: 'text',
   fill_instruction: '',
   options: {
-    source: 'static',
-    api_identifier: '',
-    swagger_json: '',
-    appkey: '',
-    last_sync_at: '',
-    sync_endpoints_count: 0,
     items: [] as any[],
     min_selections: 1,
     max_selections: 0,  // 0表示无限制
@@ -455,12 +410,6 @@ const resetModalForm = () => {
   modalForm.field_type = 'text'
   modalForm.fill_instruction = ''
   modalForm.options = {
-    source: 'static',
-    api_identifier: '',
-    swagger_json: '',
-    appkey: '',
-    last_sync_at: '',
-    sync_endpoints_count: 0,
     items: [],
     min_selections: 1,
     max_selections: 0,  // 0表示无限制
@@ -486,12 +435,6 @@ const handleEdit = (record: any) => {
   modalForm.field_type = record.field_type
   modalForm.fill_instruction = record.fill_instruction || ''
   modalForm.options = {
-    source: record.options?.source || 'static',
-    api_identifier: record.options?.api_identifier || '',
-    swagger_json: record.options?.swagger_json || '',
-    appkey: record.options?.appkey || '',
-    last_sync_at: record.options?.last_sync_at || '',
-    sync_endpoints_count: record.options?.sync_endpoints_count || 0,
     items: record.options?.items || [],
     min_selections: record.options?.min_selections ?? 1,
     max_selections: record.options?.max_selections ?? 0,  // 0表示无限制
@@ -548,55 +491,7 @@ const removeCorrection = (index: number) => {
   modalForm.corrections.splice(index, 1)
 }
 
-const handleSyncSwagger = async () => {
-  // 验证字段ID是否存在（编辑模式）
-  if (!modalForm.id) {
-    message.error('请先保存字段后再同步Swagger文档')
-    return
-  }
 
-  // 验证Swagger JSON是否填写
-  if (!modalForm.options.swagger_json || !modalForm.options.swagger_json.trim()) {
-    message.error('请填写Swagger JSON文档')
-    return
-  }
-
-  // 验证JSON格式
-  try {
-    JSON.parse(modalForm.options.swagger_json)
-  } catch (e) {
-    message.error('Swagger JSON格式不正确，请检查')
-    return
-  }
-
-  syncLoading.value = true
-  try {
-    const res: any = await api.syncSwagger({
-      field_spec_id: modalForm.id,
-      swagger_json: modalForm.options.swagger_json,
-      appkey: modalForm.options.appkey || '',
-    })
-    if (res.code === 200) {
-      message.success(res.data?.message || '同步成功')
-      // 更新本地数据
-      modalForm.options.items = res.data?.endpoints?.map((ep: any) => ({
-        value: ep.operation_id || `${ep.method}_${ep.path.replace(/\//g, '_')}`,
-        label: ep.summary || ep.description || `${ep.method.toUpperCase()} ${ep.path}`,
-        fill_instruction: `${ep.method.toUpperCase()} ${ep.path}${ep.description ? '\n' + ep.description : ''}`,
-        corrections: [],
-        is_deleted: false,
-      })) || []
-      modalForm.options.last_sync_at = new Date().toISOString()
-      modalForm.options.sync_endpoints_count = res.data?.synced_count || 0
-    } else {
-      message.error(res.msg || '同步失败')
-    }
-  } catch (error: any) {
-    message.error(error.message || '同步失败')
-  } finally {
-    syncLoading.value = false
-  }
-}
 
 const handleSave = async () => {
   modalLoading.value = true

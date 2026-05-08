@@ -285,10 +285,6 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
                             merged_items_map[new_item["label"]] = new_item
 
                     merged_items = list(merged_items_map.values())
-                    # 如果 options 中没有设置 source，默认设置为 static
-                    source = "static"
-                    if isinstance(options, dict) and options.get("source"):
-                        source = options["source"]
 
                     # 合并数量限制配置（新值覆盖旧值，仅多选时有效）
                     min_selections = options.get("min_selections") if isinstance(options, dict) else None
@@ -303,7 +299,6 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
 
                     merged_options = {
                         "items": merged_items,
-                        "source": source,
                         "min_selections": min_selections if min_selections is not None else 1,
                         "max_selections": max_selections if max_selections is not None else 0
                     }
@@ -311,9 +306,6 @@ async def upsert_field_group_handler(request: Request, auth_info: dict):
                 else:
                     # 直接覆盖
                     if isinstance(options, dict):
-                        # 如果 options 中没有设置 source，默认设置为 static
-                        if not options.get("source"):
-                            options["source"] = "static"
                         # 设置数量限制默认值
                         if "min_selections" not in options:
                             options["min_selections"] = 1

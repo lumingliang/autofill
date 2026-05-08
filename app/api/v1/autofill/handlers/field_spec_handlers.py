@@ -19,7 +19,7 @@ from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.models.admin import Tenant
 from app.models.autofill import FieldGroupFieldSpec, FieldGroupConfig, FillPage
 from app.schemas.base import Fail, Success, SuccessExtra
-from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate, SwaggerSyncRequest
+from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate
 from app.services.agent_v2.openapi_parser import OpenAPIParser
 
 router = APIRouter()
@@ -229,71 +229,7 @@ async def get_field_specs_by_group(
     return Success(data=data)
 
 
-@router.post("/field_spec/sync_swagger", summary="同步 Swagger 文档并解析为选项")
-async def sync_swagger_document(
-    sync_in: SwaggerSyncRequest,
-    token: str = Header(..., description="token验证"),
-):
-    current_user = await AuthControl.is_authed(token)
 
-    spec = await field_spec_controller.get(id=sync_in.field_spec_id)
-    if not spec:
-        return Fail(code=404, msg="字段明细不存在")
-
-    group = await field_group_config_controller.get(id=spec.field_group_id)
-    if not group:
-        return Fail(code=400, msg="字段组不存在")
-
-    if not is_superuser(current_user):
-        if group.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的字段")
-
-    if spec.field_type not in ["select_single", "select_multi"]:
-        return Fail(code=400, msg="只有下拉单选/多选类型的字段才支持 Swagger 同步")
-
-    try:
-        parser = OpenAPIParser(sync_in.swagger_json)
-        endpoints = parser.get_endpoints()
-
-        if not endpoints:
-            return Fail(code=400, msg="未能从 Swagger 文档中解析出任何 API 端点")
-
-        option_items = []
-        for endpoint in endpoints:
-            value = endpoint.operation_id or f"{endpoint.method}_{endpoint.path.replace('/', '_')}"
-            label = endpoint.summary or endpoint.description or f"{endpoint.method.upper()} {endpoint.path}"
-            base_annotation = f"{endpoint.method.upper()} {endpoint.path}"
-            if endpoint.description:
-                base_annotation += f"\n{endpoint.description}"
-
-            option_items.append({
-                "value": value,
-                "label": label,
-                "base_annotation": base_annotation,
-                "corrections": [],
-                "is_deleted": False,
-            })
-
-        current_options = spec.options or {}
-        current_options["source"] = "api"
-        current_options["items"] = option_items
-        current_options["swagger_json"] = sync_in.swagger_json
-        current_options["appkey"] = sync_in.appkey
-        current_options["last_sync_at"] = datetime.now().isoformat()
-        current_options["sync_endpoints_count"] = len(endpoints)
-
-        spec.options = current_options
-        await spec.save()
-
-        return Success(data={
-            "success": True,
-            "message": f"成功同步 {len(endpoints)} 个 API 端点",
-            "synced_count": len(endpoints),
-            "endpoints": [ep.to_dict() for ep in endpoints],
-        })
-
-    except Exception as e:
-        return Fail(code=500, msg=f"同步失败: {str(e)}")
 
 
 class ExportRequest(BaseModel):
@@ -324,10 +260,10 @@ async def export_field_specs(
     if not specs:
         return Fail(code=404, msg="未找到要导出的字段")
 
-    # 准备基础字段CSV - 增加租户域名、字段组名称、页面名称、状态、选择模式、选项来源字段
+    # 准备基础字段CSV - 增加租户域名、字段组名称、页面名称、状态字段
     base_output = io.StringIO()
     base_writer = csv.writer(base_output)
-    base_writer.writerow(['ID', '字段名', '字段标签', '字段类型', '填写指引', 'corrections', '状态', '租户域名', '字段组名称', '页面名称', '选项来源'])
+    base_writer.writerow(['ID', '字段名', '字段标签', '字段类型', '填写指引', 'corrections', '状态', '租户域名', '字段组名称', '页面名称'])
 
     # 准备选项详情CSV - 增加租户域名、字段组名称、页面名称、状态字段
     options_output = io.StringIO()
@@ -372,11 +308,6 @@ async def export_field_specs(
             # 每行都以 * 开头
             corrections_text = '\n'.join(['*' + c.get('text', '') for c in spec.corrections if c.get('text')])
 
-        # 获取选项来源（仅下拉类型）
-        option_source = ''
-        if spec.field_type in ['select_single', 'select_multi'] and spec.options:
-            option_source = 'API接口' if spec.options.get('source') == 'api' else '静态选项'
-
         # 如果没有关联字段组，导出一行空字段组的数据
         if not groups_data:
             base_writer.writerow([
@@ -390,7 +321,6 @@ async def export_field_specs(
                 tenant_domain,
                 '',  # 字段组名称
                 '',  # 页面名称
-                option_source
             ])
         else:
             # 为每个字段组导出一行
@@ -406,7 +336,6 @@ async def export_field_specs(
                     tenant_domain,
                     group_info['group_name'],
                     group_info['page_name'],
-                    option_source
                 ])
 
         # 写入选项详情（仅下拉单选/多选类型）
@@ -504,7 +433,6 @@ async def import_field_specs(
                     tenant_domain = (row.get('租户域名') or '').strip()
                     group_name = (row.get('字段组名称') or '').strip()
                     page_name = (row.get('页面名称') or '').strip()
-                    option_source = (row.get('选项来源') or '').strip()
 
                     if not field_name:
                         error_messages.append(f"跳过空字段名行")
@@ -558,12 +486,6 @@ async def import_field_specs(
                         field_spec.corrections = corrections
                         field_spec.is_active = True
 
-                        # 更新选项来源
-                        if field_type in ['select_single', 'select_multi'] and option_source:
-                            options = field_spec.options or {}
-                            options['source'] = 'api' if option_source == 'API接口' else 'static'
-                            field_spec.options = options
-
                         await field_spec.save()
                         success_count += 1
                     else:
@@ -599,7 +521,6 @@ async def import_field_specs(
                         # 准备选项配置
                         options = {}
                         if field_type in ['select_single', 'select_multi']:
-                            options['source'] = 'api' if option_source == 'API接口' else 'static'
                             options['items'] = []
                             if field_type == 'select_multi':
                                 options['min_selections'] = 1
