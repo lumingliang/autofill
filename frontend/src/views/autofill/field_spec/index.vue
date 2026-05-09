@@ -99,7 +99,7 @@
             :options="fieldGroupOptions" />
         </a-form-item>
         <a-form-item label="字段名" name="field_name">
-          <a-input v-model:value="form.field_name" placeholder="请输入字段名（英文、数字、下划线）" :disabled="modalAction === 'edit'" />
+          <a-input v-model:value="form.field_name" placeholder="请输入字段名（最多50个字符）" :disabled="modalAction === 'edit'" />
         </a-form-item>
         <a-form-item label="字段标签" name="field_label">
           <a-input v-model:value="form.field_label" placeholder="请输入字段显示名称" />
@@ -499,7 +499,7 @@ const modalRules = {
   ],
   field_name: [
     { required: true, message: '请输入字段名', trigger: 'blur' },
-    { pattern: /^[a-zA-Z0-9_]+$/, message: '字段名只能包含英文、数字、下划线', trigger: 'blur' },
+    { max: 50, message: '字段名最多50个字符', trigger: 'blur' },
   ],
   field_label: [
     { required: true, message: '请输入字段标签', trigger: 'blur' },

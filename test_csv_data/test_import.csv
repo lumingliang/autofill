@@ -1,4 +1,0 @@
-字段ID,字段名,选项值,选项标签,填写说明,corrections,状态,租户域名,字段组名称,页面名称
-,test_import_field,1,选项A,这是选项A的填写说明,,启用,tenant-a,default,用户信息页
-,test_import_field,2,选项B,这是选项B的填写说明,,启用,tenant-a,default,用户信息页
-,test_import_field,3,选项C,这是选项C的填写说明,,启用,tenant-a,default,用户信息页

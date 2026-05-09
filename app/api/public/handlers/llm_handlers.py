@@ -124,6 +124,96 @@ def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) ->
     return enriched
 
 
+def _process_output_templates(field_groups: List[Dict], enriched_result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    处理字段组的输出模板，替换模板中的字段占位符
+    
+    Args:
+        field_groups: 字段组列表，包含 output_templates 配置
+        enriched_result: 提取并enriched后的字段结果
+    
+    Returns:
+        字段组名称 -> 替换后的输出模板内容 的映射
+        格式: {"字段组名称_模板名称": {"template": "替换后的模板内容", "description": "..."}}
+    """
+    output_templates_result = {}
+    
+    for fg in field_groups:
+        group_name = fg.get("group_name", "")
+        output_templates = fg.get("output_templates", {})
+        
+        if not output_templates or not isinstance(output_templates, dict):
+            continue
+        
+        for template_name, template_config in output_templates.items():
+            if not template_config or not isinstance(template_config, dict):
+                continue
+            
+            template_content = template_config.get("template", "")
+            if not template_content or not isinstance(template_content, str):
+                continue
+            
+            # 替换模板中的字段占位符 ${field_name} 或 {{field_name}}
+            processed_template = template_content
+            for field_name, field_data in enriched_result.items():
+                # 支持 ${field_name} 格式
+                placeholder1 = f"${{{field_name}}}"
+                if placeholder1 in processed_template:
+                    display_value = _extract_display_value(field_data)
+                    processed_template = processed_template.replace(placeholder1, str(display_value) if display_value is not None else "")
+                
+                # 支持 {{field_name}} 格式
+                placeholder2 = f"{{{{{field_name}}}}}"
+                if placeholder2 in processed_template:
+                    display_value = _extract_display_value(field_data)
+                    processed_template = processed_template.replace(placeholder2, str(display_value) if display_value is not None else "")
+            
+            # 使用 "字段组名称_模板名称" 作为key
+            result_key = f"{group_name}_{template_name}"
+            output_templates_result[result_key] = {
+                "template": processed_template,
+                "description": template_config.get("description", "")
+            }
+    
+    return output_templates_result
+
+
+def _extract_display_value(field_data: Any) -> Any:
+    """
+    从 enriched 字段数据中提取显示值
+    
+    对于下拉字段，返回 label
+    对于文本字段，返回 value
+    """
+    if not isinstance(field_data, dict):
+        return field_data
+    
+    field_type = field_data.get("type", "")
+    
+    if field_type == "select_single":
+        # 单选: {"type": "select_single", "value": {"value": "...", "label": "..."}}
+        value_obj = field_data.get("value", {})
+        if isinstance(value_obj, dict):
+            return value_obj.get("label", value_obj.get("value", ""))
+        return value_obj
+    
+    elif field_type == "select_multi":
+        # 多选: {"type": "select_multi", "value": [{"value": "...", "label": "..."}, ...]}
+        value_list = field_data.get("value", [])
+        if isinstance(value_list, list):
+            labels = [item.get("label", item.get("value", "")) for item in value_list if isinstance(item, dict)]
+            return ", ".join(labels)
+        return value_list
+    
+    elif field_type == "text":
+        # 文本: {"type": "text", "value": "..."}
+        return field_data.get("value", "")
+    
+    else:
+        # 其他类型，直接返回
+        return field_data.get("value", field_data)
+
+
 async def get_ai_fill_data_handler(request: Request, auth_info: dict):
     """获取AI填单数据处理逻辑，支持同步(sync)和异步(async)两种模式"""
     params = await parse_request_params(request, AIFillDataRequest)
@@ -537,6 +627,10 @@ async def llm_fill_handler(request: Request, auth_info: dict):
         # 构建完整的返回数据：将label映射为包含value、label、type的完整结构
         enriched_result = _enrich_extracted_data(extracted_data, field_specs)
 
+        # 处理输出模板：替换模板中的字段占位符
+        field_groups = result_data.get("field_groups", [])
+        output_templates_result = _process_output_templates(field_groups, enriched_result)
+
         # 调试信息：打印给大模型的参数
         debug_info = {
             "system_prompt": system_prompt,
@@ -549,6 +643,7 @@ async def llm_fill_handler(request: Request, auth_info: dict):
             "page_name": params.get("page_name"),
             "group_names": params.get("group_names", []),
             "result": enriched_result,
+            "output_templates": output_templates_result,
             "_meta": llm_result.get("_meta", {}),
             "_debug": debug_info
         })
