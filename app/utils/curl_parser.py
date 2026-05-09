@@ -19,13 +19,14 @@ def parse_curl_command(curl_command: str) -> Dict[str, Any]:
     - -d, --data: 请求体数据
     - --data-raw: 原始请求体数据
     - -u, --user: 用户认证
+    - -b, --cookie: Cookie 数据
     - URL: 请求地址
     
     返回:
     {
         'method': 'POST',
         'url': 'http://localhost:9999/api/autofill/dropdown_options/list',
-        'headers': {'Authorization': 'Bearer xxx', 'Content-Type': 'application/json'},
+        'headers': {'Authorization': 'Bearer xxx', 'Content-Type': 'application/json', 'Cookie': 'locale=zh-Hans'},
         'body': {'parent_id': 0},
         'body_raw': '{"parent_id": 0}'
     }
@@ -113,6 +114,12 @@ def parse_curl_command(curl_command: str) -> Dict[str, Any]:
             if i < len(tokens):
                 result['headers']['Authorization'] = f"Basic {tokens[i]}"
         
+        # Cookie
+        elif token in ('-b', '--cookie'):
+            i += 1
+            if i < len(tokens):
+                result['headers']['Cookie'] = tokens[i]
+        
         # URL (通常不以 - 开头)
         elif not token.startswith('-') and not result['url']:
             result['url'] = token
@@ -135,7 +142,7 @@ def infer_schema_from_response(response_data: Any) -> Dict[str, Any]:
     返回 OpenAPI 3.0 格式的 schema 对象
     """
     if response_data is None:
-        return {'type': 'null'}
+        return {'type': 'string', 'nullable': True}
     
     if isinstance(response_data, bool):
         return {'type': 'boolean'}

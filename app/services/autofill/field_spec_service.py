@@ -2,11 +2,73 @@
 字段规格服务层
 提供字段的创建、更新、同步等核心逻辑
 """
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
+
+from tortoise.expressions import Q
 
 from app.controllers.autofill import field_spec_controller
-from app.models.autofill import FieldGroupFieldSpec
+from app.models.autofill import FieldGroupFieldSpec, FieldGroupConfig, FieldSpec
+from app.models.admin import Tenant
 from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate, FieldOptions
+
+
+async def find_field_by_unique_key(
+    tenant_domain: str,
+    page_name: str,
+    group_name: str,
+    field_name: str,
+    tenant_id: Optional[int] = None,
+) -> Tuple[Optional[FieldSpec], Optional[FieldGroupConfig]]:
+    """
+    根据唯一标识组合查找字段
+    
+    唯一标识：租户域名 + 页面名称 + 字段组名称 + 字段名
+    
+    Args:
+        tenant_domain: 租户域名
+        page_name: 页面名称
+        group_name: 字段组名称
+        field_name: 字段名
+        tenant_id: 可选的租户ID限制（用于非超级用户）
+    
+    Returns:
+        Tuple[字段对象, 字段组对象] 如果未找到则返回 (None, None)
+    """
+    # 1. 查找租户
+    tenant = await Tenant.filter(domain=tenant_domain).first()
+    if not tenant:
+        return None, None
+    
+    # 检查租户ID限制
+    if tenant_id is not None and tenant.id != tenant_id:
+        return None, None
+    
+    # 2. 查找字段组（支持页面名称过滤）
+    group_query = Q(group_name=group_name, tenant_id=tenant.id)
+    if page_name:
+        group_query &= Q(page_name=page_name)
+    
+    group = await FieldGroupConfig.filter(group_query).first()
+    if not group:
+        return None, None
+    
+    # 3. 查找字段组关联的所有字段ID
+    relations = await FieldGroupFieldSpec.filter(
+        field_group_id=group.id
+    ).all()
+    if not relations:
+        return None, group
+    
+    field_ids = [r.field_spec_id for r in relations]
+    
+    # 4. 在关联的字段中查找匹配的字段名
+    field_query = Q(id__in=field_ids, field_name=field_name)
+    if tenant_id is not None:
+        field_query &= Q(tenant_id=tenant.id)
+    
+    field_spec = await FieldSpec.filter(field_query).first()
+    
+    return field_spec, group
 
 
 async def upsert_field_spec(

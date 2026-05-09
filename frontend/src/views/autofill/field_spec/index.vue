@@ -834,7 +834,7 @@ const handleImport = async (info: any) => {
 
   try {
     const res: any = await api.importFieldSpecs({
-      file: file
+      base_file: file
     })
 
     if (res.code === 200) {
