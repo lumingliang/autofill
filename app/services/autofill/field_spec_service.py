@@ -134,7 +134,10 @@ async def upsert_field_spec(
         new_items = options_data['items']
         
         if sync_mode == 'replace':
-            # replace模式：保留已有选项的fill_instruction和corrections，只更新value和label
+            # replace模式：完全替换选项，使用新的fill_instruction和corrections
+            final_items = new_items
+        elif sync_mode == 'replace_keep_instruction':
+            # replace_keep_instruction模式：保留已有选项的fill_instruction和corrections，只更新value和label
             merged_items_map = {item['label']: item for item in existing_items if isinstance(item, dict) and 'label' in item}
             for new_item in new_items:
                 label = new_item['label']
