@@ -450,10 +450,12 @@ async def import_field_specs(
     2. 选项详情（字段ID, 字段名, 选项值, 选项标签, 填写说明, corrections, 状态, 租户域名, 字段组名称, 页面名称）
 
     导入逻辑：
-    - 根据 租户域名 + 字段组名称 + 字段名 进行匹配
+    - 根据 租户域名 + 页面名称 + 字段组名称 + 字段名 进行唯一标识匹配
+    - 不存在的字段会新建，存在的字段会更新（merge模式）
     - 状态为"已删除"时，删除对应的字段或选项
-    - 支持新增字段和选项
     """
+    from app.services.autofill.field_spec_service import find_field_by_unique_key, upsert_field_spec
+    
     current_user = await AuthControl.is_authed(token)
     tenant_id = current_user.current_tenant_id if not is_superuser(current_user) else 0
     app_name = "autofill"  # 默认应用名
@@ -474,7 +476,6 @@ async def import_field_specs(
 
             for row in csv_reader:
                 try:
-                    field_id = (row.get('ID') or '').strip()
                     field_name = (row.get('字段名') or '').strip()
                     field_label = (row.get('字段标签') or '').strip()
                     field_type = (row.get('字段类型') or '').strip()
@@ -489,30 +490,14 @@ async def import_field_specs(
                         error_messages.append(f"跳过空字段名行")
                         continue
 
-                    # 查找字段
-                    field_spec = None
-                    found_group = None
-                    
-                    # 优先使用唯一标识（租户域名+页面名称+字段组名称+字段名）查找
-                    if not field_spec and tenant_domain and group_name:
-                        field_spec, found_group = await _find_field_by_names(
-                            tenant_domain, group_name, field_name, page_name,
-                            tenant_id if not is_superuser(current_user) else None
-                        )
-                    
-                    # 其次使用ID查找
-                    if not field_spec and field_id:
-                        field_query = Q(id=int(field_id))
-                        if not is_superuser(current_user):
-                            field_query &= Q(tenant_id=tenant_id)
-                        field_spec = await field_spec_controller.model.filter(field_query).first()
-
-                    # 最后仅使用字段名查找（兼容性）
-                    if not field_spec and field_name:
-                        field_query = Q(field_name=field_name)
-                        if not is_superuser(current_user):
-                            field_query &= Q(tenant_id=tenant_id)
-                        field_spec = await field_spec_controller.model.filter(field_query).first()
+                    # 使用唯一标识查找字段
+                    field_spec, group = await find_field_by_unique_key(
+                        tenant_domain=tenant_domain,
+                        page_name=page_name,
+                        group_name=group_name,
+                        field_name=field_name,
+                        tenant_id=tenant_id if not is_superuser(current_user) else None
+                    )
 
                     # 解析corrections
                     corrections = []
@@ -536,7 +521,6 @@ async def import_field_specs(
                         field_spec.fill_instruction = fill_instruction
                         field_spec.corrections = corrections
                         field_spec.is_active = True
-
                         await field_spec.save()
                         success_count += 1
                     else:
@@ -552,12 +536,10 @@ async def import_field_specs(
                                 target_tenant_id = tenant.id
 
                         # 确定字段组ID
-                        # 优先使用查找时找到的字段组
-                        target_group_id = found_group.id if found_group else None
+                        target_group_id = group.id if group else None
                         
                         # 如果没有找到字段组，尝试重新查找
                         if not target_group_id and group_name:
-                            # 优先使用目标租户ID查找字段组
                             search_tenant_id = target_tenant_id if target_tenant_id > 0 else tenant_id
                             group_query = Q(group_name=group_name)
                             if search_tenant_id > 0:
@@ -569,37 +551,18 @@ async def import_field_specs(
                             if group:
                                 target_group_id = group.id
 
-                        # 准备选项配置
-                        options = {}
-                        if field_type in ['select_single', 'select_multi']:
-                            options['items'] = []
-                            if field_type == 'select_multi':
-                                options['min_selections'] = 1
-                                options['max_selections'] = 0
-
-                        from app.schemas.fill_page import FieldSpecCreate, FieldOptions
-                        spec_in = FieldSpecCreate(
+                        # 使用 upsert_field_spec 创建新字段
+                        await upsert_field_spec(
+                            tenant_id=target_tenant_id if target_tenant_id > 0 else tenant_id,
+                            app_name=app_name,
                             field_name=field_name,
                             field_label=field_label or field_name,
                             field_type=field_type or 'text',
+                            field_group_ids=[target_group_id] if target_group_id else [],
                             fill_instruction=fill_instruction,
-                            field_group_ids=[target_group_id] if target_group_id else []
+                            options={'items': []} if field_type in ['select_single', 'select_multi'] else None,
+                            sync_mode='merge'
                         )
-
-                        if options:
-                            spec_in.options = FieldOptions(**options)
-
-                        new_spec = await field_spec_controller.create_field_spec(
-                            obj_in=spec_in,
-                            tenant_id=target_tenant_id if target_tenant_id > 0 else tenant_id,
-                            app_name=app_name
-                        )
-
-                        # 保存corrections
-                        if corrections:
-                            new_spec.corrections = corrections
-                            await new_spec.save()
-
                         success_count += 1
 
                 except Exception as e:
@@ -617,7 +580,6 @@ async def import_field_specs(
 
             for row in csv_reader:
                 try:
-                    field_id = (row.get('字段ID') or '').strip()
                     field_name = (row.get('字段名') or '').strip()
                     option_value = (row.get('选项值') or '').strip()
                     option_label = (row.get('选项标签') or '').strip()
@@ -632,33 +594,56 @@ async def import_field_specs(
                         error_messages.append(f"跳过缺少字段名或选项值的行")
                         continue
 
-                    # 查找字段
-                    field_spec = None
-                    
-                    # 优先使用唯一标识（租户域名+页面名称+字段组名称+字段名）查找
-                    if not field_spec and tenant_domain and group_name:
-                        field_spec, _ = await _find_field_by_names(
-                            tenant_domain, group_name, field_name, page_name,
-                            tenant_id if not is_superuser(current_user) else None
-                        )
-                    
-                    # 其次使用ID查找
-                    if not field_spec and field_id:
-                        field_query = Q(id=int(field_id))
-                        if not is_superuser(current_user):
-                            field_query &= Q(tenant_id=tenant_id)
-                        field_spec = await field_spec_controller.model.filter(field_query).first()
+                    # 使用唯一标识查找字段
+                    field_spec, group = await find_field_by_unique_key(
+                        tenant_domain=tenant_domain,
+                        page_name=page_name,
+                        group_name=group_name,
+                        field_name=field_name,
+                        tenant_id=tenant_id if not is_superuser(current_user) else None
+                    )
 
-                    # 最后仅使用字段名查找（兼容性）
-                    if not field_spec and field_name:
-                        field_query = Q(field_name=field_name)
-                        if not is_superuser(current_user):
-                            field_query &= Q(tenant_id=tenant_id)
-                        field_spec = await field_spec_controller.model.filter(field_query).first()
-
+                    # 如果字段不存在，自动创建字段（使用select_single类型，因为导入选项）
                     if not field_spec:
-                        error_messages.append(f"字段 {field_name} 不存在，跳过")
-                        continue
+                        if status == '已删除':
+                            continue
+
+                        # 确定租户ID
+                        target_tenant_id = tenant_id
+                        if tenant_domain:
+                            tenant = await Tenant.filter(domain=tenant_domain).first()
+                            if tenant:
+                                target_tenant_id = tenant.id
+
+                        # 确定字段组ID
+                        target_group_id = group.id if group else None
+                        
+                        # 如果没有找到字段组，尝试重新查找
+                        if not target_group_id and group_name:
+                            search_tenant_id = target_tenant_id if target_tenant_id > 0 else tenant_id
+                            group_query = Q(group_name=group_name)
+                            if search_tenant_id > 0:
+                                group_query &= Q(tenant_id=search_tenant_id)
+                            if page_name:
+                                group_query &= Q(page_name=page_name)
+                            
+                            group = await FieldGroupConfig.filter(group_query).first()
+                            if group:
+                                target_group_id = group.id
+
+                        # 使用 upsert_field_spec 创建新字段
+                        result = await upsert_field_spec(
+                            tenant_id=target_tenant_id if target_tenant_id > 0 else tenant_id,
+                            app_name=app_name,
+                            field_name=field_name,
+                            field_label=field_name,  # 使用字段名作为标签
+                            field_type='select_single',  # 导入选项时使用下拉单选类型
+                            field_group_ids=[target_group_id] if target_group_id else [],
+                            fill_instruction='',
+                            options={'items': []},
+                            sync_mode='merge'
+                        )
+                        field_spec = result.get('field_spec')
 
                     # 检查是否为删除操作
                     if status == '已删除':
@@ -681,31 +666,43 @@ async def import_field_specs(
                                 if text:
                                     corrections.append({"text": text})
 
-                    # 更新选项
-                    options = field_spec.options or {}
-                    items = options.get('items', [])
+                    # 使用 upsert_field_spec 的 merge 模式更新选项
+                    # 构建选项数据
+                    option_items = [{
+                        'value': option_value,
+                        'label': option_label,
+                        'fill_instruction': fill_instruction,
+                        'corrections': corrections,
+                        'is_deleted': False
+                    }]
 
-                    option_found = False
-                    for item in items:
-                        if str(item.get('value', '')) == option_value:
-                            item['label'] = option_label
-                            item['fill_instruction'] = fill_instruction
-                            item['corrections'] = corrections
-                            item['is_deleted'] = False
-                            option_found = True
-                            break
-
-                    if not option_found:
-                        items.append({
-                            'value': option_value,
-                            'label': option_label,
-                            'fill_instruction': fill_instruction,
-                            'corrections': corrections,
-                            'is_deleted': False
-                        })
-
-                    options['items'] = items
-                    field_spec.options = options
+                    # 获取现有选项并合并
+                    existing_options = field_spec.options or {}
+                    existing_items = existing_options.get('items', [])
+                    
+                    # merge 模式：保留现有选项，更新或添加新选项
+                    # 使用 label 作为匹配键（因为 label 是稳定的，value 可能会变）
+                    merged_items_map = {}
+                    for item in existing_items:
+                        if isinstance(item, dict) and 'label' in item:
+                            merged_items_map[item['label']] = item
+                    
+                    # 更新或添加新选项
+                    for new_item in option_items:
+                        label = new_item['label']
+                        if label in merged_items_map:
+                            # 更新现有选项：直接覆盖所有字段（包括清空的情况）
+                            existing = merged_items_map[label]
+                            existing['value'] = new_item['value']  # 允许更新 value
+                            existing['fill_instruction'] = new_item['fill_instruction']
+                            existing['corrections'] = new_item['corrections']
+                            existing['is_deleted'] = False
+                        else:
+                            # 新选项：使用 value 作为 key 存储
+                            merged_items_map[label] = new_item
+                    
+                    existing_options['items'] = list(merged_items_map.values())
+                    field_spec.options = existing_options
                     await field_spec.save()
                     success_count += 1
 
@@ -725,47 +722,6 @@ async def import_field_specs(
         result["error_count"] = len(error_messages)
 
     return Success(data=result)
-
-
-async def _find_field_by_names(tenant_domain: str, group_name: str, field_name: str, page_name: str = None, tenant_id: int = None):
-    """
-    通过租户域名、页面名称、字段组名称、字段名查找字段
-    这是导入导出使用的唯一标识组合
-    """
-    # 1. 查找租户
-    tenant = await Tenant.filter(domain=tenant_domain).first()
-    if not tenant:
-        return None, None
-
-    if tenant_id is not None and tenant.id != tenant_id:
-        return None, None
-
-    # 2. 构建字段组查询条件
-    group_query = Q(group_name=group_name, tenant_id=tenant.id)
-    if page_name:
-        group_query &= Q(page_name=page_name)
-
-    group = await FieldGroupConfig.filter(group_query).first()
-    if not group:
-        return None, None
-
-    # 3. 查找字段组关联的字段
-    relations = await FieldGroupFieldSpec.filter(
-        field_group_id=group.id
-    ).all()
-    if not relations:
-        return None, group
-
-    field_ids = [r.field_spec_id for r in relations]
-
-    # 4. 查找匹配的字段
-    field_spec = await field_spec_controller.model.filter(
-        id__in=field_ids,
-        field_name=field_name,
-        tenant_id=tenant.id
-    ).first()
-
-    return field_spec, group
 
 
 @router.post("/field_spec/sync_options", summary="同步字段选项（根据OpenAPI Schema从API获取）")
