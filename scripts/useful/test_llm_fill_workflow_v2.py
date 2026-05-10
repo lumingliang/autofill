@@ -162,18 +162,26 @@ def send_llm_fill_request(
     api_key: str,
     page_name: str,
     group_fields: Dict[str, List[str]],
-    query: str
+    query: str,
+    method: str = None,
+    additional_data: Dict[str, Any] = None,
+    use_additional_data: bool = False
 ) -> Dict:
     """
     发送LLM填单请求
-    
+
     Args:
         api_base_url: API基础URL
         api_key: API密钥
         page_name: 页面名称
         group_fields: 字段组与字段的映射关系
         query: 用户对话内容
-    
+        method: LLM调用方法，可选 "with_structured_output", "bind_tools_non_stream",
+                "bind_tools_stream", "custom_fc_non_stream", "custom_fc_stream",
+                "pydantic_parser", "json_parser"
+        additional_data: 附加数据，包含预填充的字段值
+        use_additional_data: 是否使用附加数据
+
     Returns:
         API响应结果
     """
@@ -182,13 +190,20 @@ def send_llm_fill_request(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}"
     }
-    
+
     payload = {
         "page_name": page_name,
         "group_fields": group_fields,
         "query": query
     }
-    
+
+    if method:
+        payload["method"] = method
+
+    if use_additional_data and additional_data:
+        payload["additional_data"] = additional_data
+        payload["use_additional_data"] = True
+
     response = requests.post(url, json=payload, headers=headers, timeout=60)
     response.raise_for_status()
     return response.json()
@@ -254,27 +269,37 @@ def step1_get_basic_fields(
     api_base_url: str,
     api_key: str,
     page_name: str,
-    query: str
+    query: str,
+    method: str = None,
+    additional_data: Dict[str, Any] = None,
+    use_additional_data: bool = False
 ) -> Dict:
     """第一步：获取一级事件类型和服务记录类型"""
     print("\n" + "=" * 80)
     print("【步骤1】获取一级事件类型和服务记录类型")
+    if method:
+        print(f"使用方法: {method}")
+    if use_additional_data and additional_data:
+        print(f"使用附加数据: {list(additional_data.keys())}")
     print("=" * 80)
-    
+
     group_fields = {
         "default": ["一级事件类型", "服务记录类型"]
     }
-    
+
     print(f"请求字段组: {list(group_fields.keys())}")
     print(f"请求字段: {group_fields}")
-    
+
     try:
         response = send_llm_fill_request(
             api_base_url=api_base_url,
             api_key=api_key,
             page_name=page_name,
             group_fields=group_fields,
-            query=query
+            query=query,
+            method=method,
+            additional_data=additional_data,
+            use_additional_data=use_additional_data
         )
         
         if response.get("code") == 200 or response.get("success"):
@@ -322,13 +347,20 @@ def step2_get_detailed_fields(
     api_key: str,
     page_name: str,
     query: str,
-    step1_result: Dict
+    step1_result: Dict,
+    method: str = None,
+    additional_data: Dict[str, Any] = None,
+    use_additional_data: bool = False
 ) -> Dict:
     """第二步：获取详细字段信息"""
     print("\n" + "=" * 80)
     print("【步骤2】获取详细字段信息")
+    if method:
+        print(f"使用方法: {method}")
+    if use_additional_data and additional_data:
+        print(f"使用附加数据: {list(additional_data.keys())}")
     print("=" * 80)
-    
+
     # 提取显示值（用于构建字段组名称）
     service_record_type = extract_field_display_value(
         step1_result.get("服务记录类型", {})
@@ -336,37 +368,40 @@ def step2_get_detailed_fields(
     level1_event_type = extract_field_display_value(
         step1_result.get("一级事件类型", {})
     )
-    
+
     print(f"服务记录类型: {service_record_type}")
     print(f"一级事件类型: {level1_event_type}")
-    
+
     # 构建字段组请求
     service_group_name = f"服务记录-{service_record_type}" if service_record_type else None
     level23_field_name = f"{level1_event_type}_二三级事件类型" if level1_event_type else None
-    
+
     group_fields = {}
-    
+
     if service_group_name:
         group_fields[service_group_name] = []
         print(f"\n将请求字段组: {service_group_name} (所有字段)")
-    
+
     if level23_field_name:
         group_fields["default"] = [level23_field_name]
         print(f"将请求字段: {level23_field_name}")
-    
+
     if not group_fields:
         print("✗ 无法确定要请求的字段组或字段")
         return {}
-    
+
     print(f"\n请求配置: {json.dumps(group_fields, ensure_ascii=False, indent=2)}")
-    
+
     try:
         response = send_llm_fill_request(
             api_base_url=api_base_url,
             api_key=api_key,
             page_name=page_name,
             group_fields=group_fields,
-            query=query
+            query=query,
+            method=method,
+            additional_data=additional_data,
+            use_additional_data=use_additional_data
         )
         
         if response.get("code") == 200 or response.get("success"):
@@ -481,8 +516,17 @@ def main():
     parser.add_argument("--page-name", default=PAGE_NAME, help="页面名称")
     parser.add_argument("--conversation", help="对话内容（直接传入）")
     parser.add_argument("--conversation-file", help="对话内容文件路径")
-    parser.add_argument("--scenario", choices=["rescue", "maintenance", "quality"], 
+    parser.add_argument("--scenario", choices=["rescue", "maintenance", "quality"],
                         default="rescue", help="测试场景")
+    parser.add_argument("--method", choices=[
+        "with_structured_output", "bind_tools_non_stream", "bind_tools_stream",
+        "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser"
+    ], help="LLM调用方法")
+    parser.add_argument("--test-all-methods", action="store_true",
+                        help="测试所有可用的LLM方法")
+    parser.add_argument("--additional-data", help="附加数据JSON文件路径")
+    parser.add_argument("--use-additional-data", action="store_true",
+                        help="使用附加数据")
     parser.add_argument("--output", help="输出结果到JSON文件")
     args = parser.parse_args()
 
@@ -500,12 +544,84 @@ def main():
         }
         conversation = scenarios.get(args.scenario, TEST_CONVERSATION_RESCUE)
 
+    # 加载附加数据
+    additional_data = None
+    if args.use_additional_data and args.additional_data:
+        with open(args.additional_data, 'r', encoding='utf-8') as f:
+            additional_data = json.load(f)
+
+    # 测试所有方法
+    if args.test_all_methods:
+        methods = [
+            "with_structured_output", "bind_tools_non_stream", "bind_tools_stream",
+            "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser"
+        ]
+        print("=" * 80)
+        print("测试所有LLM调用方法")
+        print("=" * 80)
+
+        results = {}
+        for method in methods:
+            print(f"\n{'='*80}")
+            print(f"测试方法: {method}")
+            print(f"{'='*80}")
+
+            step1_result = step1_get_basic_fields(
+                api_base_url=args.base_url,
+                api_key=args.api_key,
+                page_name=args.page_name,
+                query=conversation,
+                method=method,
+                additional_data=additional_data,
+                use_additional_data=args.use_additional_data
+            )
+
+            if step1_result:
+                step2_result = step2_get_detailed_fields(
+                    api_base_url=args.base_url,
+                    api_key=args.api_key,
+                    page_name=args.page_name,
+                    query=conversation,
+                    step1_result=step1_result,
+                    method=method,
+                    additional_data=additional_data,
+                    use_additional_data=args.use_additional_data
+                )
+                results[method] = {
+                    "step1": step1_result,
+                    "step2": step2_result,
+                    "success": True
+                }
+            else:
+                results[method] = {"success": False, "error": "步骤1失败"}
+
+        # 输出所有方法测试结果对比
+        print("\n" + "=" * 80)
+        print("所有方法测试结果对比")
+        print("=" * 80)
+        for method, result in results.items():
+            status = "✓ 成功" if result.get("success") else "✗ 失败"
+            print(f"{method}: {status}")
+
+        # 保存结果
+        if args.output:
+            with open(args.output, 'w', encoding='utf-8') as f:
+                json.dump(results, f, ensure_ascii=False, indent=2)
+            print(f"\n结果已保存到: {args.output}")
+
+        return
+
+    # 单方法测试
     print("=" * 80)
     print("分步测试LLM填单工作流")
     print("=" * 80)
     print(f"API Base URL: {args.base_url}")
     print(f"页面名称: {args.page_name}")
     print(f"测试场景: {args.scenario}")
+    if args.method:
+        print(f"使用方法: {args.method}")
+    if args.use_additional_data and additional_data:
+        print(f"使用附加数据: {list(additional_data.keys())}")
     print(f"\n测试对话内容:\n{conversation[:200]}...")
     print("=" * 80)
 
@@ -514,7 +630,10 @@ def main():
         api_base_url=args.base_url,
         api_key=args.api_key,
         page_name=args.page_name,
-        query=conversation
+        query=conversation,
+        method=args.method,
+        additional_data=additional_data,
+        use_additional_data=args.use_additional_data
     )
 
     if not step1_result:
@@ -527,7 +646,10 @@ def main():
         api_key=args.api_key,
         page_name=args.page_name,
         query=conversation,
-        step1_result=step1_result
+        step1_result=step1_result,
+        method=args.method,
+        additional_data=additional_data,
+        use_additional_data=args.use_additional_data
     )
 
     # 合并结果
