@@ -200,7 +200,6 @@ async def fetch_field_groups(
 
     # 4. 组装字段组结果
     field_groups_result = []
-    all_field_specs = []
     all_properties = {}
     system_prompts = []
 
@@ -211,19 +210,6 @@ async def fetch_field_groups(
         # 如果指定了字段但没找到任何字段，跳过该组
         if group_info.get("type") == "specified" and not field_specs:
             continue
-
-        # 收集所有字段
-        for fs in field_specs:
-            all_field_specs.append({
-                "id": fs.id,
-                "field_name": fs.field_name,
-                "field_label": fs.field_label,
-                "field_type": fs.field_type,
-                "fill_instruction": fs.fill_instruction,
-                "options": fs.options,
-                "corrections": fs.corrections,
-                "is_active": fs.is_active,
-            })
 
         fields_instructions = build_fields_instructions(field_specs)
         function_schema = build_function_schema(fg, field_specs)
@@ -273,6 +259,21 @@ async def fetch_field_groups(
                 "json_schema": json.dumps(function_schema, ensure_ascii=False, indent=2),
             },
         })
+
+    # 从 all_field_specs_map 构建统一的字段列表（去重）
+    all_field_specs = [
+        {
+            "id": fs.id,
+            "field_name": fs.field_name,
+            "field_label": fs.field_label,
+            "field_type": fs.field_type,
+            "fill_instruction": fs.fill_instruction,
+            "options": fs.options,
+            "corrections": fs.corrections,
+            "is_active": fs.is_active,
+        }
+        for fs in all_field_specs_map.values()
+    ]
 
     # 构建统一的 Function Calling Schema（可直接用于 LLM 调用）
     unified_function_schema = None
