@@ -81,21 +81,25 @@ async def fetch_field_groups(
     tenant_id: int,
     app_name: str,
     page_name: str,
-    group_fields: Dict[str, List[str]] = None
+    group_fields: Dict[str, List[str]] = None,
+    additional_data: Dict[str, Any] = None,
+    use_additional_data: bool = False
 ) -> Dict[str, Any]:
     """
     查询字段组配置核心业务逻辑（优化版本）
-    
+
     设计说明：
     - 字段的唯一索引是 field_name + tenant_id + app_name
     - FieldGroupFieldSpec 仅用于管理字段组和字段的映射关系
     - 查询策略分为两种情况：
       1. 指定了字段名：直接用 field_name + tenant_id + app_name 查询字段明细
       2. 未指定字段名：通过 field_group_id 查中间表获取 field_spec_id，再查字段明细
-    
+
     Args:
         group_fields: 字段组与字段的映射关系，如 {"default": ["field1"], "group2": []}
                      空列表表示查询该组所有字段
+        additional_data: 附加数据，包含预填充的字段值
+        use_additional_data: 是否使用附加数据，为true时跳过additional_data中已有字段的查询
 
     Returns:
         {
@@ -142,7 +146,6 @@ async def fetch_field_groups(
         }
 
     # 2. 收集查询条件，批量查询字段
-    # group_query_info: {group_id: {"type": "specified"|"full", "field_names": set()|"field_spec_ids": set()}}
     group_query_info = {}
     all_specified_field_names = set()  # 所有指定字段名（用于批量查询）
     all_full_fetch_group_ids = []  # 需要查全量的字段组ID
@@ -205,10 +208,13 @@ async def fetch_field_groups(
     all_properties = {}
     system_prompts = []
 
+    # 如果使用附加数据，获取需要过滤的字段名集合
+    additional_field_names = set(additional_data.keys()) if use_additional_data and additional_data else set()
+
     for fg in field_groups:
         query_info = group_query_info.get(fg.id, {})
         query_type = query_info.get("type", "full")
-        
+
         # 根据查询类型获取字段
         if query_type == "specified":
             target_names = query_info.get("field_names", set())
@@ -219,6 +225,13 @@ async def fetch_field_groups(
         else:
             spec_ids = set(group_to_spec_ids.get(fg.id, []))
             field_specs = [fs for fs in all_field_specs_map.values() if fs.id in spec_ids]
+
+        # 如果使用附加数据，过滤掉附加数据中已有的字段
+        if use_additional_data and additional_field_names:
+            field_specs = [fs for fs in field_specs if fs.field_name not in additional_field_names]
+            # 过滤后如果没有字段了，跳过该组
+            if not field_specs:
+                continue
 
         fields_instructions = build_fields_instructions(field_specs)
         function_schema = build_function_schema(fg, field_specs)

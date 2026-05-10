@@ -635,16 +635,21 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
 
-    # 处理 group_fields 参数
+    # 处理参数
     group_fields = params.get("group_fields", {}) or {}
+    additional_data = params.get("additional_data", {}) or {}
+    use_additional_data = params.get("use_additional_data", False)
 
     # 调用 fetch_field_groups 获取字段组配置（返回可直接使用的统一 schema）
+    # 如果 use_additional_data=true，附加数据中已有的字段会被过滤掉，不会发给LLM
     try:
         result_data = await fetch_field_groups(
             tenant_id=tenant_id,
             app_name=app_name,
             page_name=params.get("page_name"),
-            group_fields=group_fields
+            group_fields=group_fields,
+            additional_data=additional_data,
+            use_additional_data=use_additional_data
         )
     except ValueError as e:
         # 参数验证错误或页面不存在
@@ -661,14 +666,6 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     query = params.get("query", "")
     if not query:
         raise HTTPException(status_code=400, detail="query is required")
-
-    # 处理附加数据
-    additional_data = params.get("additional_data", {}) or {}
-    use_additional_data = params.get("use_additional_data", False)
-    
-    # 如果需要使用附加数据，从schema中移除已有字段，避免LLM重复提取
-    if use_additional_data and additional_data:
-        unified_function_schema = _filter_schema_fields(unified_function_schema, additional_data.keys())
 
     config = await llm_config_controller.get_default_config(
         tenant_id=tenant_id,
@@ -716,11 +713,10 @@ async def llm_fill_handler(request: Request, auth_info: dict):
         # 注意：多选字段的后处理已经下沉到 structured_output 层
         # llm_proxy_service.process_request 内部会自动处理字符串到数组的转换
 
-        # 如果使用附加数据，将additional_data组装为enriched格式并合并到extracted_data
+        # 合并附加数据：additional_data优先级更高（覆盖LLM提取的结果）
+        # 注意：附加数据中的字段已在fetch_field_groups中过滤，不会发给LLM
         if use_additional_data and additional_data:
-            additional_enriched = _build_additional_data_enriched(additional_data, field_specs)
-            # 合并：additional_data优先级更高（覆盖LLM提取的结果）
-            extracted_data = {**extracted_data, **additional_enriched}
+            extracted_data = {**extracted_data, **additional_data}
 
         # 构建完整的返回数据：将label映射为包含value、label、type的完整结构
         enriched_result = _enrich_extracted_data(extracted_data, field_specs)
