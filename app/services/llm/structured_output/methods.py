@@ -22,7 +22,15 @@ from app.services.llm.structured_output.utils import (
 )
 
 
-def log_llm_call(method_name: str, model_name: str, input_data: Dict, output_data: Dict, latency_ms: float):
+def log_llm_call(
+    method_name: str,
+    model_name: str,
+    input_data: Dict,
+    output_data: Dict,
+    latency_ms: float,
+    raw_request: Dict = None,
+    raw_response: Any = None
+):
     """
     记录LLM调用日志
 
@@ -32,14 +40,33 @@ def log_llm_call(method_name: str, model_name: str, input_data: Dict, output_dat
         input_data: 输入数据（包含query, tools, system_prompt等）
         output_data: 输出数据（包含success, data, error等）
         latency_ms: 响应时间（毫秒）
+        raw_request: 原始请求参数（发送给大模型的完整参数）
+        raw_response: 原始响应（大模型返回的完整响应对象）
     """
+    # 处理原始响应，转换为可序列化的格式
+    raw_response_dict = None
+    if raw_response is not None:
+        try:
+            if hasattr(raw_response, 'model_dump'):
+                raw_response_dict = raw_response.model_dump()
+            elif hasattr(raw_response, 'dict'):
+                raw_response_dict = raw_response.dict()
+            elif hasattr(raw_response, '__dict__'):
+                raw_response_dict = raw_response.__dict__
+            else:
+                raw_response_dict = str(raw_response)
+        except Exception as e:
+            raw_response_dict = f"<无法序列化: {e}>"
+
     log_entry = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "method": method_name,
         "model": model_name,
         "latency_ms": round(latency_ms, 2),
         "input": input_data,
-        "output": output_data
+        "output": output_data,
+        "raw_request": raw_request,
+        "raw_response": raw_response_dict
     }
 
     # 记录到结构化日志
@@ -51,7 +78,9 @@ def log_llm_call(method_name: str, model_name: str, input_data: Dict, output_dat
             "llm_model": model_name,
             "llm_latency_ms": latency_ms,
             "llm_input": input_data,
-            "llm_output": output_data
+            "llm_output": output_data,
+            "llm_raw_request": raw_request,
+            "llm_raw_response": raw_response_dict
         }
     )
 
@@ -148,6 +177,16 @@ class StructuredOutputMethods:
             messages = self._build_messages_with_history(
                 query, system_prompt, session_id, memory_rounds, history_manager
             )
+
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
+                "tools": tools,
+                "tool_choice": tool_choice,
+                "temperature": 0.0
+            }
+
             result_data = await structured_llm.ainvoke(messages)
 
             latency_ms = (time.time() - start_time) * 1000
@@ -165,7 +204,7 @@ class StructuredOutputMethods:
                 "data": result_data.model_dump(),
                 "method": method_name
             }
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, result_data)
 
             self._save_exchange_to_history(session_id, query, result, history_manager)
             return result
@@ -186,7 +225,7 @@ class StructuredOutputMethods:
                 "error": f"{type(e).__name__}: {e}",
                 "method": method_name
             }
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
 
             return result
 
@@ -221,6 +260,16 @@ class StructuredOutputMethods:
             messages = self._build_messages_with_history(
                 query, system_prompt, session_id, memory_rounds, history_manager
             )
+
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
+                "tools": lc_tools,
+                "tool_choice": "auto",
+                "temperature": 0.0
+            }
+
             response = await llm_with_tools.ainvoke(messages)
 
             latency_ms = (time.time() - start_time) * 1000
@@ -236,7 +285,7 @@ class StructuredOutputMethods:
                 )
 
                 output_data = {"success": True, "data": args, "method": method_name}
-                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, response)
 
                 self._save_exchange_to_history(session_id, query, result, history_manager)
                 return result
@@ -252,7 +301,7 @@ class StructuredOutputMethods:
                     )
 
                     output_data = {"success": True, "data": parsed_args, "method": method_name}
-                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, response)
 
                     self._save_exchange_to_history(session_id, query, result, history_manager)
                     return result
@@ -265,7 +314,7 @@ class StructuredOutputMethods:
                 )
 
                 output_data = {"success": False, "error": "No tool calls in response", "method": method_name}
-                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, response)
 
                 return result
 
@@ -280,7 +329,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
 
             return result
 
@@ -316,6 +365,16 @@ class StructuredOutputMethods:
                 query, system_prompt, session_id, memory_rounds, history_manager
             )
 
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
+                "tools": lc_tools,
+                "tool_choice": "auto",
+                "temperature": 0.0,
+                "stream": True
+            }
+
             full_response = None
             async for chunk in llm_with_tools.astream(messages):
                 full_response = chunk
@@ -333,7 +392,7 @@ class StructuredOutputMethods:
                 )
 
                 output_data = {"success": True, "data": args, "method": method_name}
-                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, full_response)
 
                 self._save_exchange_to_history(session_id, query, result, history_manager)
                 return result
@@ -346,7 +405,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": "No tool calls in stream response", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, full_response)
 
             return result
 
@@ -361,7 +420,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
 
             return result
 
@@ -405,12 +464,21 @@ class StructuredOutputMethods:
             from openai import AsyncOpenAI
             client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
 
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": [{"role": "system", "content": system_prompt or ""}] +
+                            [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
+                "tools": [{"type": "function", "function": t} for t in tool_definitions],
+                "tool_choice": "auto" if tool_choice == "auto" else {"type": "function", "function": {"name": tool_choice}},
+                "temperature": 0.0
+            }
+
             response = await client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "system", "content": system_prompt or ""}] +
-                        [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
-                tools=[{"type": "function", "function": t} for t in tool_definitions],
-                tool_choice="auto" if tool_choice == "auto" else {"type": "function", "function": {"name": tool_choice}},
+                messages=raw_request["messages"],
+                tools=raw_request["tools"],
+                tool_choice=raw_request["tool_choice"],
                 temperature=0.0
             )
 
@@ -428,7 +496,7 @@ class StructuredOutputMethods:
                 )
 
                 output_data = {"success": True, "data": args, "method": method_name}
-                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, response)
 
                 self._save_exchange_to_history(session_id, query, result, history_manager)
                 return result
@@ -441,7 +509,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": "No tool calls in response", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, response)
 
             return result
 
@@ -456,7 +524,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
 
             return result
 
@@ -506,6 +574,16 @@ class StructuredOutputMethods:
                         messages.append({"role": "assistant", "content": msg.content})
             messages.append({"role": "user", "content": query})
 
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": messages,
+                "tools": [{"type": "function", "function": t} for t in tool_definitions],
+                "tool_choice": "auto" if tool_choice == "auto" else {"type": "function", "function": {"name": tool_choice}},
+                "temperature": 0.0,
+                "stream": True
+            }
+
             response = await client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
@@ -538,6 +616,12 @@ class StructuredOutputMethods:
 
             latency_ms = (time.time() - start_time) * 1000
 
+            # 构建原始响应数据（流式响应的聚合结果）
+            raw_response_data = {
+                "tool_calls": tool_calls_data,
+                "stream": True
+            }
+
             # 解析第一个 tool_call 的参数
             if tool_calls_data:
                 first_tool_call = tool_calls_data[0]
@@ -551,7 +635,7 @@ class StructuredOutputMethods:
                     )
 
                     output_data = {"success": True, "data": args, "method": method_name}
-                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
 
                     self._save_exchange_to_history(session_id, query, result, history_manager)
                     return result
@@ -564,7 +648,7 @@ class StructuredOutputMethods:
                     )
 
                     output_data = {"success": False, "error": f"Failed to parse tool call arguments: {e}", "method": method_name}
-                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
 
                     return result
 
@@ -576,7 +660,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": "No tool calls in stream response", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
 
             return result
 
@@ -591,7 +675,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
 
             return result
 
@@ -676,6 +760,13 @@ class StructuredOutputMethods:
             # 添加强制JSON输出的用户提示
             messages.append({"role": "user", "content": "请只返回JSON格式的字段数据，确保包含所有字段，不要添加任何其他文本。"})
 
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
+                "temperature": 0.0
+            }
+
             response = await llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
 
@@ -697,6 +788,12 @@ class StructuredOutputMethods:
 
             latency_ms = (time.time() - start_time) * 1000
 
+            # 构建原始响应数据
+            raw_response_data = {
+                "content": content,
+                "tool_calls": None
+            }
+
             if parsed_data is None:
                 result = StructuredOutputResult(
                     success=False,
@@ -706,7 +803,7 @@ class StructuredOutputMethods:
                 )
 
                 output_data = {"success": False, "error": "Failed to parse JSON from response", "method": method_name}
-                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
 
                 return result
 
@@ -723,7 +820,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": True, "data": parsed_data, "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
 
             self._save_exchange_to_history(session_id, query, result, history_manager)
             return result
@@ -739,7 +836,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
 
             return result
 
@@ -810,6 +907,13 @@ class StructuredOutputMethods:
             # 添加强制JSON输出的用户提示
             messages.append({"role": "user", "content": "请直接返回JSON格式的字段数据，不要嵌套在fill_form中，不要添加任何其他文本。"})
 
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
+                "temperature": 0.0
+            }
+
             response = await llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
 
@@ -831,6 +935,12 @@ class StructuredOutputMethods:
 
             latency_ms = (time.time() - start_time) * 1000
 
+            # 构建原始响应数据
+            raw_response_data = {
+                "content": content,
+                "tool_calls": None
+            }
+
             # 处理嵌套结构：如果包含 fill_form 键，提取其值
             if isinstance(parsed_data, dict) and "fill_form" in parsed_data:
                 parsed_data = parsed_data["fill_form"]
@@ -843,7 +953,7 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": True, "data": parsed_data, "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
 
             self._save_exchange_to_history(session_id, query, result, history_manager)
             return result
@@ -859,6 +969,6 @@ class StructuredOutputMethods:
             )
 
             output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
-            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
 
             return result
