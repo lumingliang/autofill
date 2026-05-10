@@ -81,17 +81,18 @@ async def fetch_field_groups(
     tenant_id: int,
     app_name: str,
     page_name: str,
-    group_names: List[str] = None,
-    field_names: List[str] = None,
     group_fields: Dict[str, List[str]] = None
 ) -> Dict[str, Any]:
     """
-    查询字段组配置核心业务逻辑
-    - 支持通过 page_name + group_names 查询多个字段组
-    - 支持通过 field_names 筛选指定字段（全局过滤）
-    - 支持通过 group_fields 按字段组分别指定字段（优先级更高）
-    - 返回统一的 Function Calling Schema（可直接用于 LLM 调用）
-
+    查询字段组配置核心业务逻辑（优化版本）
+    
+    设计说明：
+    - 字段的唯一索引是 field_name + tenant_id + app_name
+    - FieldGroupFieldSpec 仅用于管理字段组和字段的映射关系
+    - 查询策略分为两种情况：
+      1. 指定了字段名：直接用 field_name + tenant_id + app_name 查询字段明细
+      2. 未指定字段名：通过 field_group_id 查中间表获取 field_spec_id，再查字段明细
+    
     Args:
         group_fields: 字段组与字段的映射关系，如 {"default": ["field1"], "group2": []}
                      空列表表示查询该组所有字段
@@ -105,9 +106,8 @@ async def fetch_field_groups(
             "combined_prompt": str,  # 合并后的 Prompt
         }
     """
-    group_names = group_names or []
-    field_names = field_names or []
     group_fields = group_fields or {}
+    group_names = list(group_fields.keys())
 
     # 参数验证
     if not page_name:
@@ -125,12 +125,115 @@ async def fetch_field_groups(
     if not page:
         raise ValueError(f"页面 '{page_name}' 不存在 (tenant_id={tenant_id}, app_name={app_name})")
 
+    # 1. 查询字段组（通过 group_name in 查询）
     q = Q(tenant_id=tenant_id, app_name=app_name, page_id=page.id)
     if group_names:
         q &= Q(group_name__in=group_names)
 
     field_groups = await field_group_config_controller.model.filter(q).all()
-    field_names_filter = set(field_names)
+    
+    if not field_groups:
+        return {
+            "page_name": page_name,
+            "field_groups": [],
+            "all_field_specs": [],
+            "unified_function_schema": None,
+            "combined_prompt": "",
+        }
+
+    # 构建字段组ID到对象的映射
+    field_group_map = {fg.id: fg for fg in field_groups}
+    field_group_ids = list(field_group_map.keys())
+
+    # 2. 分析每个字段组的查询策略，避免后续重复判断
+    # group_query_strategies: {group_name: {"type": "specified"|"full", "field_names": [...]}}
+    group_query_strategies = {}
+    specified_field_names = set()  # 所有指定了字段名的集合（用于批量查询）
+    full_fetch_group_ids = []  # 需要查全量的字段组ID
+
+    for fg in field_groups:
+        if group_fields and fg.group_name in group_fields:
+            group_field_names = group_fields[fg.group_name]
+            if group_field_names:  # 指定了具体字段名
+                group_query_strategies[fg.group_name] = {
+                    "type": "specified",
+                    "field_names": set(group_field_names),
+                    "group_id": fg.id
+                }
+                specified_field_names.update(group_field_names)
+            else:  # 空列表，需要查该组所有字段
+                group_query_strategies[fg.group_name] = {
+                    "type": "full",
+                    "field_names": set(),
+                    "group_id": fg.id
+                }
+                full_fetch_group_ids.append(fg.id)
+        else:  # 没有指定字段，查所有字段组的所有字段
+            group_query_strategies[fg.group_name] = {
+                "type": "full",
+                "field_names": set(),
+                "group_id": fg.id
+            }
+            full_fetch_group_ids.append(fg.id)
+
+    # 3. 查询字段明细（两种策略合并）
+    all_field_specs_map = {}  # field_name -> field_spec
+
+    # 策略1：通过 field_name + tenant_id + app_name 查询指定字段
+    if specified_field_names:
+        specified_field_list = list(specified_field_names)
+        specified_fields = await field_spec_controller.model.filter(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            field_name__in=specified_field_list,
+            is_active=True
+        ).all()
+        
+        for fs in specified_fields:
+            all_field_specs_map[fs.field_name] = fs
+
+    # 策略2：通过 field_group_id 查中间表，再查字段明细
+    if full_fetch_group_ids:
+        # 查询中间表获取所有 field_spec_id
+        relations = await FieldGroupFieldSpec.filter(
+            field_group_id__in=full_fetch_group_ids,
+            tenant_id=tenant_id,
+            app_name=app_name
+        ).all()
+        
+        field_spec_ids = [r.field_spec_id for r in relations]
+        
+        if field_spec_ids:
+            # 查询这些字段明细（通过 id in 查询）
+            full_fetch_fields = await field_spec_controller.model.filter(
+                id__in=field_spec_ids,
+                tenant_id=tenant_id,
+                app_name=app_name,
+                is_active=True
+            ).all()
+            
+            for fs in full_fetch_fields:
+                # 避免重复添加（如果策略1已经查到了）
+                if fs.field_name not in all_field_specs_map:
+                    all_field_specs_map[fs.field_name] = fs
+
+    # 4. 构建字段组与字段的映射关系（用于校验和分组）
+    # 查询所有相关的中间表记录
+    all_relations = await FieldGroupFieldSpec.filter(
+        field_group_id__in=field_group_ids,
+        tenant_id=tenant_id,
+        app_name=app_name
+    ).all()
+    
+    # 构建 field_group_id -> [field_spec_id] 的映射
+    group_to_spec_ids = {}
+    for r in all_relations:
+        if r.field_group_id not in group_to_spec_ids:
+            group_to_spec_ids[r.field_group_id] = []
+        group_to_spec_ids[r.field_group_id].append(r.field_spec_id)
+
+    # 构建 field_spec_id -> field_name 的映射
+    spec_id_to_name = {fs.id: name for name, fs in all_field_specs_map.items()}
 
     field_groups_result = []
     all_field_specs = []
@@ -138,40 +241,30 @@ async def fetch_field_groups(
     system_prompts = []
 
     for fg in field_groups:
-        relations = await FieldGroupFieldSpec.filter(
-            field_group_id=fg.id,
-            tenant_id=tenant_id,
-            app_name=app_name
-        ).all()
-        field_spec_ids = [r.field_spec_id for r in relations]
+        # 使用预计算的查询策略，避免重复判断
+        strategy = group_query_strategies.get(fg.group_name, {})
+        strategy_type = strategy.get("type", "full")
+        
+        # 确定该组需要哪些字段
+        if strategy_type == "specified":
+            # 指定了具体字段名
+            target_field_names = strategy.get("field_names", set())
+        else:
+            # 需要该组所有字段（通过中间表关联）
+            spec_ids = group_to_spec_ids.get(fg.id, [])
+            target_field_names = {spec_id_to_name.get(sid) for sid in spec_ids}
+            target_field_names = {name for name in target_field_names if name}
 
+        # 从 all_field_specs_map 中获取该组的字段
         field_specs = []
-        if field_spec_ids:
-            field_q = Q(id__in=field_spec_ids, is_active=True)
-            
-            # 优先使用 group_fields 按字段组分别过滤
-            if group_fields and fg.group_name in group_fields:
-                group_field_names = group_fields[fg.group_name]
-                if group_field_names:  # 如果指定了字段列表，则过滤
-                    field_q &= Q(field_name__in=group_field_names)
-                # 如果 group_field_names 是空列表，则不添加字段过滤，查询该组所有字段
-            elif field_names_filter:
-                # 使用全局 field_names 过滤
-                field_q &= Q(field_name__in=list(field_names_filter))
-            
-            field_specs = await field_spec_controller.model.filter(field_q).all()
+        for field_name in target_field_names:
+            fs = all_field_specs_map.get(field_name)
+            if fs:
+                field_specs.append(fs)
 
         # 检查是否需要跳过该字段组
-        # 如果使用了 group_fields 且该组没有字段，则跳过
-        # 如果使用了全局 field_names_filter 且没有匹配字段，则跳过
-        if group_fields and fg.group_name in group_fields:
-            # 使用 group_fields 模式
-            group_field_names = group_fields[fg.group_name]
-            if group_field_names and not field_specs:  # 指定了字段但没找到
-                continue
-            # 如果 group_field_names 是空列表，即使没有 field_specs 也不跳过（可能该组确实没有字段）
-        elif field_names_filter and not field_specs:
-            # 全局 field_names 模式
+        if strategy_type == "specified" and not field_specs:
+            # 指定了字段但没找到，跳过该组
             continue
 
         # 收集所有字段
@@ -241,23 +334,22 @@ async def fetch_field_groups(
     if all_properties:
         # 智能确定 required 字段
         # 策略：
-        # 1. 如果使用了 group_fields（分步填单场景），所有字段都设为 required
-        #    因为用户明确指定了要查询的字段组，期望这些字段都有值
-        # 2. 如果使用了 field_names（字段过滤场景），只将指定的字段设为 required
-        #    其他字段虽然返回schema，但设为可选，允许LLM不返回
+        # 1. 如果使用了 group_fields 并指定了具体字段名，只将这些字段设为 required
+        # 2. 如果使用了 group_fields 但未指定字段名（查全量），所有字段设为 required
         # 3. 默认情况（查询所有字段），所有字段设为 required
         
-        if group_fields:
-            # 分步填单场景：使用 group_fields 时，all_properties 已经只包含需要的字段
+        # 收集所有明确指定的字段名
+        specified_field_names = set()
+        for strategy in group_query_strategies.values():
+            if strategy.get("type") == "specified":
+                specified_field_names.update(strategy.get("field_names", set()))
+        
+        if specified_field_names:
+            # 指定了具体字段名：只将这些字段设为 required
             filtered_properties = all_properties
-            required_fields = list(all_properties.keys())
-        elif field_names_filter:
-            # 字段过滤场景：只将明确指定的字段设为 required
-            # 但保留其他字段的schema，设为可选
-            filtered_properties = all_properties
-            required_fields = list(field_names_filter & set(all_properties.keys()))
+            required_fields = list(specified_field_names & set(all_properties.keys()))
         else:
-            # 默认场景：所有字段设为 required
+            # 查全量场景：所有字段设为 required
             filtered_properties = all_properties
             required_fields = list(all_properties.keys())
         
@@ -299,8 +391,7 @@ async def get_field_group_handler(request: Request, auth_info: dict):
         tenant_id=tenant_id,
         app_name=app_name,
         page_name=params.get("page_name"),
-        group_names=params.get("group_names", []),
-        field_names=params.get("field_names", [])
+        group_fields=params.get("group_fields", {})
     )
 
     # HTTP 接口返回字段组列表

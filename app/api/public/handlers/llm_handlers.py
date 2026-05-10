@@ -635,21 +635,8 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
 
-    # 处理 group_fields 参数（新的传参格式）
-    group_fields = params.get("group_fields")
-    if group_fields:
-        # 使用新的传参格式：group_fields = {"default": ["field1", "field2"], "group2": []}
-        group_names = list(group_fields.keys())
-        # 收集所有指定的字段名（用于过滤）
-        all_field_names = []
-        for fields in group_fields.values():
-            if fields:  # 如果不是空列表，则添加这些字段
-                all_field_names.extend(fields)
-        field_names = all_field_names if all_field_names else []
-    else:
-        # 使用旧的传参格式
-        group_names = params.get("group_names", [])
-        field_names = params.get("field_names", [])
+    # 处理 group_fields 参数
+    group_fields = params.get("group_fields", {}) or {}
 
     # 调用 fetch_field_groups 获取字段组配置（返回可直接使用的统一 schema）
     try:
@@ -657,9 +644,7 @@ async def llm_fill_handler(request: Request, auth_info: dict):
             tenant_id=tenant_id,
             app_name=app_name,
             page_name=params.get("page_name"),
-            group_names=group_names,
-            field_names=field_names,
-            group_fields=group_fields  # 传递 group_fields 以支持按字段组分别过滤
+            group_fields=group_fields
         )
     except ValueError as e:
         # 参数验证错误或页面不存在
