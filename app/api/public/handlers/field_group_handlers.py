@@ -176,6 +176,8 @@ async def fetch_field_groups(
             all_field_specs_map[fs.field_name] = fs
 
     # 策略2：通过 field_group_id 批量查询全量字段
+    # group_to_spec_ids: {group_id: [field_spec_id, ...]} - 用于后续字段分配
+    group_to_spec_ids = {}
     if all_full_fetch_group_ids:
         # 批量查询中间表
         relations = await FieldGroupFieldSpec.filter(
@@ -185,7 +187,6 @@ async def fetch_field_groups(
         ).all()
         
         # 按字段组分组
-        group_to_spec_ids = {}
         for r in relations:
             if r.field_group_id not in group_to_spec_ids:
                 group_to_spec_ids[r.field_group_id] = []
@@ -203,7 +204,7 @@ async def fetch_field_groups(
             for fs in full_fetch_fields:
                 all_field_specs_map[fs.field_name] = fs
 
-    # 3. 为每个字段组分配字段
+    # 3. 为每个字段组分配字段（使用已查询的数据，不再查询数据库）
     group_field_specs_map = {}
     for fg in field_groups:
         query_info = group_query_info.get(fg.id, {})
@@ -215,14 +216,9 @@ async def fetch_field_groups(
             field_specs = [all_field_specs_map[name] for name in target_names if name in all_field_specs_map]
             group_field_specs_map[fg.id] = {"type": "specified", "field_specs": field_specs}
         else:
-            # 从 all_field_specs_map 中筛选该组的字段（通过中间表关联）
-            relations = await FieldGroupFieldSpec.filter(
-                field_group_id=fg.id,
-                tenant_id=tenant_id,
-                app_name=app_name
-            ).all()
-            field_spec_ids = {r.field_spec_id for r in relations}
-            field_specs = [fs for fs in all_field_specs_map.values() if fs.id in field_spec_ids]
+            # 使用已查询的 group_to_spec_ids 分配字段
+            spec_ids = set(group_to_spec_ids.get(fg.id, []))
+            field_specs = [fs for fs in all_field_specs_map.values() if fs.id in spec_ids]
             group_field_specs_map[fg.id] = {"type": "full", "field_specs": field_specs}
 
     # 4. 组装字段组结果
