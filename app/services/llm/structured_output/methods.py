@@ -2,6 +2,7 @@
 结构化输出方法实现
 """
 import json
+import time
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
@@ -19,6 +20,43 @@ from app.services.llm.structured_output.utils import (
     create_dynamic_model,
     parse_text_function_call,
 )
+
+
+def log_llm_call(method_name: str, model_name: str, input_data: Dict, output_data: Dict, latency_ms: float):
+    """
+    记录LLM调用日志
+
+    Args:
+        method_name: 方法名称
+        model_name: 模型名称
+        input_data: 输入数据（包含query, tools, system_prompt等）
+        output_data: 输出数据（包含success, data, error等）
+        latency_ms: 响应时间（毫秒）
+    """
+    log_entry = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "method": method_name,
+        "model": model_name,
+        "latency_ms": round(latency_ms, 2),
+        "input": input_data,
+        "output": output_data
+    }
+
+    # 记录到结构化日志
+    logger.info(
+        f"[LLM_CALL] {method_name} | model={model_name} | latency={latency_ms:.2f}ms | "
+        f"success={output_data.get('success', False)}",
+        extra={
+            "llm_method": method_name,
+            "llm_model": model_name,
+            "llm_latency_ms": latency_ms,
+            "llm_input": input_data,
+            "llm_output": output_data
+        }
+    )
+
+    # 同时记录详细JSON到debug日志
+    logger.debug(f"[LLM_CALL_DETAIL] {json.dumps(log_entry, ensure_ascii=False, default=str)}")
 
 
 class StructuredOutputMethods:
@@ -89,6 +127,20 @@ class StructuredOutputMethods:
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
         """方法1: with_structured_output - LangChain 官方结构化输出"""
+        start_time = time.time()
+        method_name = "with_structured_output"
+
+        # 记录输入参数
+        input_data = {
+            "query": query,
+            "tools_count": len(tools),
+            "tools": tools,
+            "system_prompt": system_prompt,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "tool_choice": tool_choice
+        }
+
         try:
             llm = self._create_llm()
             DynamicModel = create_dynamic_model(tools)
@@ -98,20 +150,45 @@ class StructuredOutputMethods:
             )
             result_data = await structured_llm.ainvoke(messages)
 
+            latency_ms = (time.time() - start_time) * 1000
+
             result = StructuredOutputResult(
                 success=True,
                 data=result_data.model_dump(),
-                method="with_structured_output"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            # 记录输出
+            output_data = {
+                "success": True,
+                "data": result_data.model_dump(),
+                "method": method_name
+            }
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
             self._save_exchange_to_history(session_id, query, result, history_manager)
             return result
 
         except Exception as e:
-            return StructuredOutputResult(
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
                 success=False,
                 error=f"{type(e).__name__}: {e}",
-                method="with_structured_output"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            # 记录错误输出
+            output_data = {
+                "success": False,
+                "error": f"{type(e).__name__}: {e}",
+                "method": method_name
+            }
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
 
     async def method_bind_tools_non_stream(
         self,
@@ -124,6 +201,19 @@ class StructuredOutputMethods:
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
         """方法2: bind_tools + 非流式调用"""
+        start_time = time.time()
+        method_name = "bind_tools_non_stream"
+
+        input_data = {
+            "query": query,
+            "tools_count": len(tools),
+            "tools": tools,
+            "system_prompt": system_prompt,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "tool_choice": tool_choice
+        }
+
         try:
             llm = self._create_llm()
             lc_tools = [convert_to_openai_tool(t) for t in tools]
@@ -133,14 +223,21 @@ class StructuredOutputMethods:
             )
             response = await llm_with_tools.ainvoke(messages)
 
+            latency_ms = (time.time() - start_time) * 1000
+
             if hasattr(response, 'tool_calls') and response.tool_calls:
                 tool_call = response.tool_calls[0]
                 args = tool_call.get("args", {})
                 result = StructuredOutputResult(
                     success=True,
                     data=args,
-                    method="bind_tools_non_stream"
+                    method=method_name,
+                    latency_ms=latency_ms
                 )
+
+                output_data = {"success": True, "data": args, "method": method_name}
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
                 self._save_exchange_to_history(session_id, query, result, history_manager)
                 return result
             else:
@@ -150,23 +247,42 @@ class StructuredOutputMethods:
                     result = StructuredOutputResult(
                         success=True,
                         data=parsed_args,
-                        method="bind_tools_non_stream"
+                        method=method_name,
+                        latency_ms=latency_ms
                     )
+
+                    output_data = {"success": True, "data": parsed_args, "method": method_name}
+                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
                     self._save_exchange_to_history(session_id, query, result, history_manager)
                     return result
 
-                return StructuredOutputResult(
+                result = StructuredOutputResult(
                     success=False,
                     error="No tool calls in response",
-                    method="bind_tools_non_stream"
+                    method=method_name,
+                    latency_ms=latency_ms
                 )
 
+                output_data = {"success": False, "error": "No tool calls in response", "method": method_name}
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+                return result
+
         except Exception as e:
-            return StructuredOutputResult(
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
                 success=False,
                 error=f"{type(e).__name__}: {e}",
-                method="bind_tools_non_stream"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
 
     async def method_bind_tools_stream(
         self,
@@ -179,6 +295,19 @@ class StructuredOutputMethods:
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
         """方法3: bind_tools + 流式调用"""
+        start_time = time.time()
+        method_name = "bind_tools_stream"
+
+        input_data = {
+            "query": query,
+            "tools_count": len(tools),
+            "tools": tools,
+            "system_prompt": system_prompt,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "tool_choice": tool_choice
+        }
+
         try:
             llm = self._create_llm()
             lc_tools = [convert_to_openai_tool(t) for t in tools]
@@ -191,29 +320,50 @@ class StructuredOutputMethods:
             async for chunk in llm_with_tools.astream(messages):
                 full_response = chunk
 
+            latency_ms = (time.time() - start_time) * 1000
+
             if full_response and hasattr(full_response, 'tool_calls') and full_response.tool_calls:
                 tool_call = full_response.tool_calls[0]
                 args = tool_call.get("args", {})
                 result = StructuredOutputResult(
                     success=True,
                     data=args,
-                    method="bind_tools_stream"
+                    method=method_name,
+                    latency_ms=latency_ms
                 )
+
+                output_data = {"success": True, "data": args, "method": method_name}
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
                 self._save_exchange_to_history(session_id, query, result, history_manager)
                 return result
 
-            return StructuredOutputResult(
+            result = StructuredOutputResult(
                 success=False,
                 error="No tool calls in stream response",
-                method="bind_tools_stream"
+                method=method_name,
+                latency_ms=latency_ms
             )
 
+            output_data = {"success": False, "error": "No tool calls in stream response", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
+
         except Exception as e:
-            return StructuredOutputResult(
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
                 success=False,
                 error=f"{type(e).__name__}: {e}",
-                method="bind_tools_stream"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
 
     async def method_custom_fc_non_stream(
         self,
@@ -226,6 +376,19 @@ class StructuredOutputMethods:
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
         """方法4: 自定义 Function Calling + 非流式"""
+        start_time = time.time()
+        method_name = "custom_fc_non_stream"
+
+        input_data = {
+            "query": query,
+            "tools_count": len(tools),
+            "tools": tools,
+            "system_prompt": system_prompt,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "tool_choice": tool_choice
+        }
+
         try:
             llm = self._create_llm()
             messages = self._build_messages_with_history(
@@ -251,6 +414,8 @@ class StructuredOutputMethods:
                 temperature=0.0
             )
 
+            latency_ms = (time.time() - start_time) * 1000
+
             if response.choices[0].message.tool_calls:
                 tool_call = response.choices[0].message.tool_calls[0]
                 import json
@@ -258,23 +423,42 @@ class StructuredOutputMethods:
                 result = StructuredOutputResult(
                     success=True,
                     data=args,
-                    method="custom_fc_non_stream"
+                    method=method_name,
+                    latency_ms=latency_ms
                 )
+
+                output_data = {"success": True, "data": args, "method": method_name}
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
                 self._save_exchange_to_history(session_id, query, result, history_manager)
                 return result
 
-            return StructuredOutputResult(
+            result = StructuredOutputResult(
                 success=False,
                 error="No tool calls in response",
-                method="custom_fc_non_stream"
+                method=method_name,
+                latency_ms=latency_ms
             )
 
+            output_data = {"success": False, "error": "No tool calls in response", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
+
         except Exception as e:
-            return StructuredOutputResult(
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
                 success=False,
                 error=f"{type(e).__name__}: {e}",
-                method="custom_fc_non_stream"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
 
     async def method_custom_fc_stream(
         self,
@@ -287,6 +471,19 @@ class StructuredOutputMethods:
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
         """方法5: 自定义 Function Calling + 流式"""
+        start_time = time.time()
+        method_name = "custom_fc_stream"
+
+        input_data = {
+            "query": query,
+            "tools_count": len(tools),
+            "tools": tools,
+            "system_prompt": system_prompt,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "tool_choice": tool_choice
+        }
+
         try:
             tool_definitions = []
             for tool in tools:
@@ -339,6 +536,8 @@ class StructuredOutputMethods:
                             if tool_call.function.arguments:
                                 tool_calls_data[index]["function"]["arguments"] += tool_call.function.arguments
 
+            latency_ms = (time.time() - start_time) * 1000
+
             # 解析第一个 tool_call 的参数
             if tool_calls_data:
                 first_tool_call = tool_calls_data[0]
@@ -347,29 +546,54 @@ class StructuredOutputMethods:
                     result = StructuredOutputResult(
                         success=True,
                         data=args,
-                        method="custom_fc_stream"
+                        method=method_name,
+                        latency_ms=latency_ms
                     )
+
+                    output_data = {"success": True, "data": args, "method": method_name}
+                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
                     self._save_exchange_to_history(session_id, query, result, history_manager)
                     return result
                 except json.JSONDecodeError as e:
-                    return StructuredOutputResult(
+                    result = StructuredOutputResult(
                         success=False,
                         error=f"Failed to parse tool call arguments: {e}",
-                        method="custom_fc_stream"
+                        method=method_name,
+                        latency_ms=latency_ms
                     )
 
-            return StructuredOutputResult(
+                    output_data = {"success": False, "error": f"Failed to parse tool call arguments: {e}", "method": method_name}
+                    log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+                    return result
+
+            result = StructuredOutputResult(
                 success=False,
                 error="No tool calls in stream response",
-                method="custom_fc_stream"
+                method=method_name,
+                latency_ms=latency_ms
             )
 
+            output_data = {"success": False, "error": "No tool calls in stream response", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
+
         except Exception as e:
-            return StructuredOutputResult(
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
                 success=False,
                 error=f"{type(e).__name__}: {e}",
-                method="custom_fc_stream"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
 
     async def method_pydantic_parser(
         self,
@@ -382,6 +606,19 @@ class StructuredOutputMethods:
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
         """方法6: PydanticOutputParser - 增强版，确保提取所有字段"""
+        start_time = time.time()
+        method_name = "pydantic_parser"
+
+        input_data = {
+            "query": query,
+            "tools_count": len(tools),
+            "tools": tools,
+            "system_prompt": system_prompt,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "tool_choice": tool_choice
+        }
+
         try:
             llm = self._create_llm()
             DynamicModel = create_dynamic_model(tools)
@@ -458,12 +695,20 @@ class StructuredOutputMethods:
                     except:
                         pass
 
+            latency_ms = (time.time() - start_time) * 1000
+
             if parsed_data is None:
-                return StructuredOutputResult(
+                result = StructuredOutputResult(
                     success=False,
                     error=f"Failed to parse JSON from response",
-                    method="pydantic_parser"
+                    method=method_name,
+                    latency_ms=latency_ms
                 )
+
+                output_data = {"success": False, "error": "Failed to parse JSON from response", "method": method_name}
+                log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+                return result
 
             # 确保所有字段都存在（补全缺失字段为null）
             for field_name in properties.keys():
@@ -473,17 +718,30 @@ class StructuredOutputMethods:
             result = StructuredOutputResult(
                 success=True,
                 data=parsed_data,
-                method="pydantic_parser"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            output_data = {"success": True, "data": parsed_data, "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
             self._save_exchange_to_history(session_id, query, result, history_manager)
             return result
 
         except Exception as e:
-            return StructuredOutputResult(
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
                 success=False,
                 error=f"{type(e).__name__}: {e}",
-                method="pydantic_parser"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
 
     async def method_json_parser(
         self,
@@ -496,6 +754,19 @@ class StructuredOutputMethods:
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
         """方法7: JsonOutputParser - 增强版，确保返回扁平结构"""
+        start_time = time.time()
+        method_name = "json_parser"
+
+        input_data = {
+            "query": query,
+            "tools_count": len(tools),
+            "tools": tools,
+            "system_prompt": system_prompt,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "tool_choice": tool_choice
+        }
+
         try:
             llm = self._create_llm()
             parser = JsonOutputParser()
@@ -558,6 +829,8 @@ class StructuredOutputMethods:
 
                 parsed_data = json.loads(json_content.strip())
 
+            latency_ms = (time.time() - start_time) * 1000
+
             # 处理嵌套结构：如果包含 fill_form 键，提取其值
             if isinstance(parsed_data, dict) and "fill_form" in parsed_data:
                 parsed_data = parsed_data["fill_form"]
@@ -565,14 +838,27 @@ class StructuredOutputMethods:
             result = StructuredOutputResult(
                 success=True,
                 data=parsed_data,
-                method="json_parser"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            output_data = {"success": True, "data": parsed_data, "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
             self._save_exchange_to_history(session_id, query, result, history_manager)
             return result
 
         except Exception as e:
-            return StructuredOutputResult(
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
                 success=False,
                 error=f"{type(e).__name__}: {e}",
-                method="json_parser"
+                method=method_name,
+                latency_ms=latency_ms
             )
+
+            output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms)
+
+            return result
