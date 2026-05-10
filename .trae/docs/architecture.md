@@ -346,6 +346,58 @@ app/
 - **下拉选项 (Dropdown)**: 表单中的选择字段配置
 - **填单记录 (Record)**: 用户填写的数据记录
 
+#### 4.3.1a 字段模型设计
+
+**唯一索引设计**
+
+字段表 (`FieldSpec`) 的唯一索引为 `field_name + tenant_id + app_name`，这意味着：
+- 在同一租户、同一应用内，字段名不能重复
+- 不同租户或不同应用可以有相同的字段名
+- `FieldGroupFieldSpec` 中间表仅用于管理字段组和字段的映射关系，不做唯一性约束
+
+```python
+# FieldSpec 模型核心字段
+class FieldSpec:
+    field_name: str      # 字段英文名（唯一索引部分）
+    field_label: str     # 字段显示名称
+    tenant_id: int       # 租户ID（唯一索引部分）
+    app_name: str        # 应用名称（唯一索引部分）
+    # ... 其他字段
+```
+
+**查询策略优化**
+
+基于上述设计，字段查询分为两种情况：
+
+1. **指定字段名查询**（情况1）
+   - 适用场景：`group_fields = {"default": ["field1", "field2"]}`
+   - 查询方式：直接用 `field_name + tenant_id + app_name` IN 查询
+   - SQL示例：`SELECT * FROM field_spec WHERE tenant_id=? AND app_name=? AND field_name IN (?, ?)`
+
+2. **通过字段组查询全量**（情况2）
+   - 适用场景：`group_fields = {"default": []}`（空列表表示查该组所有字段）
+   - 查询方式：
+     - 步骤1：通过 `field_group_id` 查询 `FieldGroupFieldSpec` 获取所有 `field_spec_id`
+     - 步骤2：通过 `field_spec_id` IN 查询 `FieldSpec` 获取字段明细
+   - SQL示例：
+     ```sql
+     -- 步骤1
+     SELECT field_spec_id FROM field_group_field_spec WHERE field_group_id IN (?)
+     -- 步骤2
+     SELECT * FROM field_spec WHERE id IN (?, ?, ...)
+     ```
+
+3. **混合查询**（情况1 + 情况2同时存在）
+   - 适用场景：多个字段组，部分指定字段名，部分查全量
+   - 查询方式：分别执行情况1和情况2的查询，然后合并结果
+   - 合并策略：使用字典去重，以 `field_name` 为 key
+
+**性能优势**
+
+- 指定字段名查询直接命中唯一索引，性能最优
+- 避免 N+1 查询问题，使用 IN 查询批量获取数据
+- 中间表仅用于关系校验，不承载字段明细数据
+
 #### 4.3.2 数据流
 
 ```
