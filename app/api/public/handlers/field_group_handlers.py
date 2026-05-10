@@ -141,10 +141,6 @@ async def fetch_field_groups(
             "combined_prompt": "",
         }
 
-    # 构建字段组ID到对象的映射
-    field_group_map = {fg.id: fg for fg in field_groups}
-    field_group_ids = list(field_group_map.keys())
-
     # 2. 收集查询条件，批量查询字段
     # group_query_info: {group_id: {"type": "specified"|"full", "field_names": set()|"field_spec_ids": set()}}
     group_query_info = {}
