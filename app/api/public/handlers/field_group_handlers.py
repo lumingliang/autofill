@@ -204,35 +204,25 @@ async def fetch_field_groups(
             for fs in full_fetch_fields:
                 all_field_specs_map[fs.field_name] = fs
 
-    # 3. 为每个字段组分配字段（使用已查询的数据，不再查询数据库）
-    group_field_specs_map = {}
-    for fg in field_groups:
-        query_info = group_query_info.get(fg.id, {})
-        query_type = query_info.get("type", "full")
-        
-        if query_type == "specified":
-            # 从 all_field_specs_map 中筛选该组指定的字段
-            target_names = query_info.get("field_names", set())
-            field_specs = [all_field_specs_map[name] for name in target_names if name in all_field_specs_map]
-            group_field_specs_map[fg.id] = {"type": "specified", "field_specs": field_specs}
-        else:
-            # 使用已查询的 group_to_spec_ids 分配字段
-            spec_ids = set(group_to_spec_ids.get(fg.id, []))
-            field_specs = [fs for fs in all_field_specs_map.values() if fs.id in spec_ids]
-            group_field_specs_map[fg.id] = {"type": "full", "field_specs": field_specs}
-
-    # 4. 组装字段组结果
+    # 3. 组装字段组结果（直接使用已查询的数据）
     field_groups_result = []
     all_properties = {}
     system_prompts = []
 
     for fg in field_groups:
-        group_info = group_field_specs_map.get(fg.id, {})
-        field_specs = group_info.get("field_specs", [])
+        query_info = group_query_info.get(fg.id, {})
+        query_type = query_info.get("type", "full")
         
-        # 如果指定了字段但没找到任何字段，跳过该组
-        if group_info.get("type") == "specified" and not field_specs:
-            continue
+        # 根据查询类型获取字段
+        if query_type == "specified":
+            target_names = query_info.get("field_names", set())
+            field_specs = [all_field_specs_map[name] for name in target_names if name in all_field_specs_map]
+            # 如果指定了字段但没找到任何字段，跳过该组
+            if not field_specs:
+                continue
+        else:
+            spec_ids = set(group_to_spec_ids.get(fg.id, []))
+            field_specs = [fs for fs in all_field_specs_map.values() if fs.id in spec_ids]
 
         fields_instructions = build_fields_instructions(field_specs)
         function_schema = build_function_schema(fg, field_specs)
@@ -303,26 +293,23 @@ async def fetch_field_groups(
     if all_properties:
         # 智能确定 required 字段
         # 策略：
-        # 1. 如果指定了具体字段名，只将这些字段设为 required
-        # 2. 查全量场景，所有字段设为 required
-        
-        # 确定 required 字段
-        # 策略：
         # 1. 如果字段组是指定字段名类型，将该组的字段设为 required
         # 2. 查全量场景，所有字段设为 required
         
         has_specified = any(
-            group_info.get("type") == "specified" 
-            for group_info in group_field_specs_map.values()
+            query_info.get("type") == "specified"
+            for query_info in group_query_info.values()
         )
         
         if has_specified:
             # 有指定字段的组：只将指定字段设为 required
             specified_field_names = set()
-            for group_info in group_field_specs_map.values():
-                if group_info.get("type") == "specified":
-                    for fs in group_info.get("field_specs", []):
-                        specified_field_names.add(fs.field_name)
+            for fg_id, query_info in group_query_info.items():
+                if query_info.get("type") == "specified":
+                    target_names = query_info.get("field_names", set())
+                    for name in target_names:
+                        if name in all_field_specs_map:
+                            specified_field_names.add(name)
             required_fields = list(specified_field_names & set(all_properties.keys()))
         else:
             # 查全量场景：所有字段设为 required
