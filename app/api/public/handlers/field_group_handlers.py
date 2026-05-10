@@ -145,46 +145,87 @@ async def fetch_field_groups(
     field_group_map = {fg.id: fg for fg in field_groups}
     field_group_ids = list(field_group_map.keys())
 
-    # 2. 为每个字段组查询其字段，直接建立字段组->字段的映射
-    # group_field_specs_map: {group_id: {"type": "specified"|"full", "field_specs": [...]}}
-    group_field_specs_map = {}
-    all_field_specs_map = {}  # 用于去重和统一返回
+    # 2. 收集查询条件，批量查询字段
+    # group_query_info: {group_id: {"type": "specified"|"full", "field_names": set()|"field_spec_ids": set()}}
+    group_query_info = {}
+    all_specified_field_names = set()  # 所有指定字段名（用于批量查询）
+    all_full_fetch_group_ids = []  # 需要查全量的字段组ID
 
     for fg in field_groups:
         group_field_names = group_fields.get(fg.group_name) if group_fields else None
         
-        if group_field_names:  # 指定了具体字段名：直接查询
-            field_specs = await field_spec_controller.model.filter(
+        if group_field_names:  # 指定了具体字段名
+            all_specified_field_names.update(group_field_names)
+            group_query_info[fg.id] = {"type": "specified", "field_names": set(group_field_names)}
+        else:  # 查全量
+            all_full_fetch_group_ids.append(fg.id)
+            group_query_info[fg.id] = {"type": "full"}
+
+    # 批量查询所有字段（两种策略合并）
+    all_field_specs_map = {}  # field_name -> field_spec
+
+    # 策略1：通过 field_name 批量查询指定字段
+    if all_specified_field_names:
+        specified_fields = await field_spec_controller.model.filter(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            field_name__in=list(all_specified_field_names),
+            is_active=True
+        ).all()
+        for fs in specified_fields:
+            all_field_specs_map[fs.field_name] = fs
+
+    # 策略2：通过 field_group_id 批量查询全量字段
+    if all_full_fetch_group_ids:
+        # 批量查询中间表
+        relations = await FieldGroupFieldSpec.filter(
+            field_group_id__in=all_full_fetch_group_ids,
+            tenant_id=tenant_id,
+            app_name=app_name
+        ).all()
+        
+        # 按字段组分组
+        group_to_spec_ids = {}
+        for r in relations:
+            if r.field_group_id not in group_to_spec_ids:
+                group_to_spec_ids[r.field_group_id] = []
+            group_to_spec_ids[r.field_group_id].append(r.field_spec_id)
+        
+        # 批量查询所有字段明细
+        all_spec_ids = [sid for ids in group_to_spec_ids.values() for sid in ids]
+        if all_spec_ids:
+            full_fetch_fields = await field_spec_controller.model.filter(
+                id__in=all_spec_ids,
                 tenant_id=tenant_id,
                 app_name=app_name,
-                field_name__in=list(group_field_names),
                 is_active=True
             ).all()
+            for fs in full_fetch_fields:
+                all_field_specs_map[fs.field_name] = fs
+
+    # 3. 为每个字段组分配字段
+    group_field_specs_map = {}
+    for fg in field_groups:
+        query_info = group_query_info.get(fg.id, {})
+        query_type = query_info.get("type", "full")
+        
+        if query_type == "specified":
+            # 从 all_field_specs_map 中筛选该组指定的字段
+            target_names = query_info.get("field_names", set())
+            field_specs = [all_field_specs_map[name] for name in target_names if name in all_field_specs_map]
             group_field_specs_map[fg.id] = {"type": "specified", "field_specs": field_specs}
-        else:  # 查全量：通过中间表关联查询
+        else:
+            # 从 all_field_specs_map 中筛选该组的字段（通过中间表关联）
             relations = await FieldGroupFieldSpec.filter(
                 field_group_id=fg.id,
                 tenant_id=tenant_id,
                 app_name=app_name
             ).all()
-            field_spec_ids = [r.field_spec_id for r in relations]
-            
-            if field_spec_ids:
-                field_specs = await field_spec_controller.model.filter(
-                    id__in=field_spec_ids,
-                    tenant_id=tenant_id,
-                    app_name=app_name,
-                    is_active=True
-                ).all()
-                group_field_specs_map[fg.id] = {"type": "full", "field_specs": field_specs}
-            else:
-                group_field_specs_map[fg.id] = {"type": "full", "field_specs": []}
-        
-        # 收集到统一的字段map（去重）
-        for fs in group_field_specs_map[fg.id]["field_specs"]:
-            all_field_specs_map[fs.field_name] = fs
+            field_spec_ids = {r.field_spec_id for r in relations}
+            field_specs = [fs for fs in all_field_specs_map.values() if fs.id in field_spec_ids]
+            group_field_specs_map[fg.id] = {"type": "full", "field_specs": field_specs}
 
-    # 3. 组装字段组结果
+    # 4. 组装字段组结果
     field_groups_result = []
     all_properties = {}
     system_prompts = []
