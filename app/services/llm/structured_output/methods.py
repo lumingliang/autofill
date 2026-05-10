@@ -318,14 +318,49 @@ class StructuredOutputMethods:
                 stream=True
             )
 
-            full_content = ""
+            # 收集 tool_calls
+            tool_calls_data = {}
             async for chunk in response:
-                if chunk.choices[0].delta.content:
-                    full_content += chunk.choices[0].delta.content
+                delta = chunk.choices[0].delta
+                # 处理 content
+                if delta.content:
+                    pass  # 忽略 content，只关注 tool_calls
+                # 处理 tool_calls
+                if delta.tool_calls:
+                    for tool_call in delta.tool_calls:
+                        index = tool_call.index
+                        if index not in tool_calls_data:
+                            tool_calls_data[index] = {"id": "", "function": {"name": "", "arguments": ""}}
+                        if tool_call.id:
+                            tool_calls_data[index]["id"] = tool_call.id
+                        if tool_call.function:
+                            if tool_call.function.name:
+                                tool_calls_data[index]["function"]["name"] = tool_call.function.name
+                            if tool_call.function.arguments:
+                                tool_calls_data[index]["function"]["arguments"] += tool_call.function.arguments
+
+            # 解析第一个 tool_call 的参数
+            if tool_calls_data:
+                first_tool_call = tool_calls_data[0]
+                try:
+                    args = json.loads(first_tool_call["function"]["arguments"])
+                    result = StructuredOutputResult(
+                        success=True,
+                        data=args,
+                        method="custom_fc_stream"
+                    )
+                    self._save_exchange_to_history(session_id, query, result, history_manager)
+                    return result
+                except json.JSONDecodeError as e:
+                    return StructuredOutputResult(
+                        success=False,
+                        error=f"Failed to parse tool call arguments: {e}",
+                        method="custom_fc_stream"
+                    )
 
             return StructuredOutputResult(
-                success=True,
-                data={"content": full_content},
+                success=False,
+                error="No tool calls in stream response",
                 method="custom_fc_stream"
             )
 
@@ -346,27 +381,40 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法6: PydanticOutputParser"""
+        """方法6: PydanticOutputParser - 增强版提示词"""
         try:
             llm = self._create_llm()
             DynamicModel = create_dynamic_model(tools)
             parser = PydanticOutputParser(pydantic_object=DynamicModel)
 
             tools_desc = build_tools_description(tools)
+            format_instructions = parser.get_format_instructions()
+
+            # 增强版系统提示词，强制要求JSON输出
             full_system_prompt = f"""{system_prompt or ''}
 
-你需要提取以下信息:
+你需要从对话中提取以下信息，并以JSON格式返回：
 {tools_desc}
 
-{parser.get_format_instructions()}
+{format_instructions}
+
+重要提示：
+1. 你必须只返回JSON格式的数据，不要返回任何其他文本
+2. 不要添加解释、问候或任何其他内容
+3. 如果某个字段在对话中没有明确信息，设置为null
+4. 确保返回的是有效的JSON格式
 """
             messages = self._build_messages_with_history(
                 query, full_system_prompt, session_id, memory_rounds, history_manager
             )
 
+            # 添加用户提示，强制JSON输出
+            messages.append({"role": "user", "content": "请只返回JSON格式的数据，不要添加任何其他文本。"})
+
             response = await llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
 
+            # 尝试解析JSON
             try:
                 parsed = parser.parse(content)
                 result = StructuredOutputResult(
@@ -377,6 +425,23 @@ class StructuredOutputMethods:
                 self._save_exchange_to_history(session_id, query, result, history_manager)
                 return result
             except Exception as parse_error:
+                # 尝试从内容中提取JSON
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', content)
+                if json_match:
+                    try:
+                        json_str = json_match.group(0)
+                        parsed_json = json.loads(json_str)
+                        result = StructuredOutputResult(
+                            success=True,
+                            data=parsed_json,
+                            method="pydantic_parser"
+                        )
+                        self._save_exchange_to_history(session_id, query, result, history_manager)
+                        return result
+                    except:
+                        pass
+
                 return StructuredOutputResult(
                     success=False,
                     error=f"Parse error: {parse_error}",
