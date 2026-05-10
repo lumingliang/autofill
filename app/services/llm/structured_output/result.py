@@ -13,7 +13,8 @@ class StructuredOutputResult:
         method: str = "",
         error: str = None,
         prompt_tokens: int = 0,
-        completion_tokens: int = 0
+        completion_tokens: int = 0,
+        latency_ms: float = 0
     ):
         self.success = success
         self.data = data or {}
@@ -21,4 +22,4 @@ class StructuredOutputResult:
         self.error = error
         self.prompt_tokens = prompt_tokens
         self.completion_tokens = completion_tokens
-        self.latency_ms = 0
+        self.latency_ms = latency_ms
