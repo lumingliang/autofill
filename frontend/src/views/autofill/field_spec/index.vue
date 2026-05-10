@@ -227,7 +227,7 @@
     </CrudTable>
 
     <!-- curl 解析弹窗 -->
-    <a-modal v-model:visible="curlModalVisible" title="从 curl 命令导入 OpenAPI Schema" :confirm-loading="curlModalLoading"
+    <a-modal v-model:open="curlModalVisible" title="从 curl 命令导入 OpenAPI Schema" :confirm-loading="curlModalLoading"
       @ok="handleParseCurl" @cancel="handleCancelCurlModal" width="800px">
       <a-form layout="vertical">
         <a-form-item label="curl 命令" required>

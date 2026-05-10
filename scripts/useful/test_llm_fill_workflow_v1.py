@@ -281,14 +281,8 @@ def step1_get_basic_fields(
             result = response.get("data", {}).get("result", {})
             print("\n✓ 步骤1成功")
             
-            # 打印接口返回的完整原始内容
-            print("\n【步骤1接口返回的完整原始内容】")
-            print("=" * 80)
-            print(json.dumps(response, ensure_ascii=False, indent=2))
-            print("=" * 80)
-            
-            # 打印提取的result数据
-            print("\n【步骤1提取的result数据】")
+            # 打印原始响应数据
+            print("\n【步骤1原始响应数据】")
             print("-" * 80)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             print("-" * 80)
@@ -371,31 +365,13 @@ def step2_get_detailed_fields(
         
         if response.get("code") == 200 or response.get("success"):
             result = response.get("data", {}).get("result", {})
-            output_templates = response.get("data", {}).get("output_templates", {})
-            
             print("\n✓ 步骤2成功")
             
-            # 打印接口返回的完整原始内容
-            print("\n【步骤2接口返回的完整原始内容】")
-            print("=" * 80)
-            print(json.dumps(response, ensure_ascii=False, indent=2))
-            print("=" * 80)
-            
-            # 打印提取的result数据
-            print("\n【步骤2提取的result数据】")
+            # 打印原始响应数据
+            print("\n【步骤2原始响应数据】")
             print("-" * 80)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             print("-" * 80)
-            
-            # 打印输出模板
-            if output_templates:
-                print("\n【输出模板（已替换字段值）】")
-                print("-" * 80)
-                for template_name, template_data in output_templates.items():
-                    print(f"\n模板名称: {template_name}")
-                    print(f"描述: {template_data.get('description', '')}")
-                    print(f"内容:\n{template_data.get('template', '')}")
-                print("-" * 80)
             
             print(f"\n提取到 {len(result)} 个字段:")
             
