@@ -146,19 +146,22 @@ async def fetch_field_groups(
     field_group_ids = list(field_group_map.keys())
 
     # 2. 为每个字段组查询其字段，直接建立字段组->字段的映射
-    # group_field_specs_map: {group_id: [field_spec, ...]}
+    # group_field_specs_map: {group_id: {"type": "specified"|"full", "field_specs": [...]}}
     group_field_specs_map = {}
     all_field_specs_map = {}  # 用于去重和统一返回
-    specified_field_names = set()  # 收集所有指定字段名用于批量查询
 
     for fg in field_groups:
         group_field_names = group_fields.get(fg.group_name) if group_fields else None
         
-        if group_field_names:  # 指定了具体字段名
-            specified_field_names.update(group_field_names)
-            # 先记录下来，等批量查询后再填充
-            group_field_specs_map[fg.id] = {"type": "specified", "field_names": set(group_field_names)}
-        else:  # 查全量：查询中间表获取字段ID，再查字段明细
+        if group_field_names:  # 指定了具体字段名：直接查询
+            field_specs = await field_spec_controller.model.filter(
+                tenant_id=tenant_id,
+                app_name=app_name,
+                field_name__in=list(group_field_names),
+                is_active=True
+            ).all()
+            group_field_specs_map[fg.id] = {"type": "specified", "field_specs": field_specs}
+        else:  # 查全量：通过中间表关联查询
             relations = await FieldGroupFieldSpec.filter(
                 field_group_id=fg.id,
                 tenant_id=tenant_id,
@@ -174,31 +177,14 @@ async def fetch_field_groups(
                     is_active=True
                 ).all()
                 group_field_specs_map[fg.id] = {"type": "full", "field_specs": field_specs}
-                for fs in field_specs:
-                    all_field_specs_map[fs.field_name] = fs
             else:
                 group_field_specs_map[fg.id] = {"type": "full", "field_specs": []}
-
-    # 3. 批量查询指定字段名的字段明细
-    if specified_field_names:
-        specified_fields = await field_spec_controller.model.filter(
-            tenant_id=tenant_id,
-            app_name=app_name,
-            field_name__in=list(specified_field_names),
-            is_active=True
-        ).all()
         
-        # 填充到对应的字段组
-        for fg in field_groups:
-            group_info = group_field_specs_map.get(fg.id, {})
-            if group_info.get("type") == "specified":
-                target_names = group_info.get("field_names", set())
-                field_specs = [fs for fs in specified_fields if fs.field_name in target_names]
-                group_field_specs_map[fg.id]["field_specs"] = field_specs
-                for fs in field_specs:
-                    all_field_specs_map[fs.field_name] = fs
+        # 收集到统一的字段map（去重）
+        for fs in group_field_specs_map[fg.id]["field_specs"]:
+            all_field_specs_map[fs.field_name] = fs
 
-    # 4. 组装字段组结果
+    # 3. 组装字段组结果
     field_groups_result = []
     all_properties = {}
     system_prompts = []
@@ -283,14 +269,23 @@ async def fetch_field_groups(
         # 1. 如果指定了具体字段名，只将这些字段设为 required
         # 2. 查全量场景，所有字段设为 required
         
-        # 收集所有明确指定的字段名
-        specified_field_names = set()
-        for group_info in group_field_specs_map.values():
-            if group_info.get("type") == "specified":
-                specified_field_names.update(group_info.get("field_names", set()))
+        # 确定 required 字段
+        # 策略：
+        # 1. 如果字段组是指定字段名类型，将该组的字段设为 required
+        # 2. 查全量场景，所有字段设为 required
         
-        if specified_field_names:
-            # 指定了具体字段名：只将这些字段设为 required
+        has_specified = any(
+            group_info.get("type") == "specified" 
+            for group_info in group_field_specs_map.values()
+        )
+        
+        if has_specified:
+            # 有指定字段的组：只将指定字段设为 required
+            specified_field_names = set()
+            for group_info in group_field_specs_map.values():
+                if group_info.get("type") == "specified":
+                    for fs in group_info.get("field_specs", []):
+                        specified_field_names.add(fs.field_name)
             required_fields = list(specified_field_names & set(all_properties.keys()))
         else:
             # 查全量场景：所有字段设为 required
