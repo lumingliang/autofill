@@ -381,72 +381,102 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法6: PydanticOutputParser - 增强版提示词"""
+        """方法6: PydanticOutputParser - 增强版，确保提取所有字段"""
         try:
             llm = self._create_llm()
             DynamicModel = create_dynamic_model(tools)
             parser = PydanticOutputParser(pydantic_object=DynamicModel)
 
-            tools_desc = build_tools_description(tools)
+            # 获取字段定义
+            first_tool = tools[0] if tools else {}
+            if "function" in first_tool:
+                function_def = first_tool.get("function", {})
+            else:
+                function_def = first_tool
+            parameters = function_def.get("parameters", {})
+            properties = parameters.get("properties", {})
+            required_fields = parameters.get("required", [])
+
+            # 构建详细的字段描述
+            fields_desc = []
+            for field_name, field_info in properties.items():
+                desc = field_info.get("description", "")
+                enum = field_info.get("enum", [])
+                is_required = field_name in required_fields
+                required_mark = " (必填)" if is_required else ""
+                if enum:
+                    fields_desc.append(f"  - {field_name}{required_mark}: {desc} (可选值: {', '.join(enum)})")
+                else:
+                    fields_desc.append(f"  - {field_name}{required_mark}: {desc}")
+
             format_instructions = parser.get_format_instructions()
 
-            # 增强版系统提示词，强制要求JSON输出
+            # 增强版系统提示词
             full_system_prompt = f"""{system_prompt or ''}
 
-你需要从对话中提取以下信息，并以JSON格式返回：
-{tools_desc}
+你需要从对话中提取以下字段信息：
+{chr(10).join(fields_desc)}
 
+提取要求：
+1. 仔细阅读对话内容，提取每个字段的具体值
+2. 对于下拉选择字段，从可选值中选择最匹配的
+3. 如果某个字段在对话中没有明确信息，设置为null
+4. 必须返回所有字段，不能遗漏
+
+输出格式要求：
 {format_instructions}
 
 重要提示：
-1. 你必须只返回JSON格式的数据，不要返回任何其他文本
+1. 只返回JSON格式的数据，不要返回任何其他文本
 2. 不要添加解释、问候或任何其他内容
-3. 如果某个字段在对话中没有明确信息，设置为null
-4. 确保返回的是有效的JSON格式
+3. 确保返回的是有效的JSON格式
+4. 必须包含所有字段，即使没有明确信息也要设置为null
 """
             messages = self._build_messages_with_history(
                 query, full_system_prompt, session_id, memory_rounds, history_manager
             )
 
-            # 添加用户提示，强制JSON输出
-            messages.append({"role": "user", "content": "请只返回JSON格式的数据，不要添加任何其他文本。"})
+            # 添加强制JSON输出的用户提示
+            messages.append({"role": "user", "content": "请只返回JSON格式的字段数据，确保包含所有字段，不要添加任何其他文本。"})
 
             response = await llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
 
             # 尝试解析JSON
+            parsed_data = None
             try:
                 parsed = parser.parse(content)
-                result = StructuredOutputResult(
-                    success=True,
-                    data=parsed.model_dump(),
-                    method="pydantic_parser"
-                )
-                self._save_exchange_to_history(session_id, query, result, history_manager)
-                return result
-            except Exception as parse_error:
+                parsed_data = parsed.model_dump()
+            except Exception:
                 # 尝试从内容中提取JSON
                 import re
                 json_match = re.search(r'\{[\s\S]*\}', content)
                 if json_match:
                     try:
                         json_str = json_match.group(0)
-                        parsed_json = json.loads(json_str)
-                        result = StructuredOutputResult(
-                            success=True,
-                            data=parsed_json,
-                            method="pydantic_parser"
-                        )
-                        self._save_exchange_to_history(session_id, query, result, history_manager)
-                        return result
+                        parsed_data = json.loads(json_str)
                     except:
                         pass
 
+            if parsed_data is None:
                 return StructuredOutputResult(
                     success=False,
-                    error=f"Parse error: {parse_error}",
+                    error=f"Failed to parse JSON from response",
                     method="pydantic_parser"
                 )
+
+            # 确保所有字段都存在（补全缺失字段为null）
+            for field_name in properties.keys():
+                if field_name not in parsed_data:
+                    parsed_data[field_name] = None
+
+            result = StructuredOutputResult(
+                success=True,
+                data=parsed_data,
+                method="pydantic_parser"
+            )
+            self._save_exchange_to_history(session_id, query, result, history_manager)
+            return result
 
         except Exception as e:
             return StructuredOutputResult(
@@ -465,51 +495,80 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法7: JsonOutputParser"""
+        """方法7: JsonOutputParser - 增强版，确保返回扁平结构"""
         try:
             llm = self._create_llm()
             parser = JsonOutputParser()
 
-            tools_desc = build_tools_description(tools)
+            # 获取第一个工具的参数定义
+            first_tool = tools[0] if tools else {}
+            if "function" in first_tool:
+                function_def = first_tool.get("function", {})
+            else:
+                function_def = first_tool
+            parameters = function_def.get("parameters", {})
+            properties = parameters.get("properties", {})
+
+            # 构建字段描述
+            fields_desc = []
+            for field_name, field_info in properties.items():
+                desc = field_info.get("description", "")
+                enum = field_info.get("enum", [])
+                if enum:
+                    fields_desc.append(f"  - {field_name}: {desc} (可选值: {', '.join(enum)})")
+                else:
+                    fields_desc.append(f"  - {field_name}: {desc}")
+
             full_system_prompt = f"""{system_prompt or ''}
 
-你需要提取以下信息:
-{tools_desc}
+你需要从对话中提取以下字段信息，并以JSON格式返回：
+{chr(10).join(fields_desc)}
 
-请以JSON格式返回结果。
+重要要求：
+1. 直接返回包含字段的JSON对象，不要嵌套在"fill_form"或其他键下
+2. 示例格式：{{"字段名1": "值1", "字段名2": "值2"}}
+3. 只返回JSON，不要添加任何解释或markdown格式
+4. 如果某个字段没有明确信息，设置为null
+
 {parser.get_format_instructions()}
 """
             messages = self._build_messages_with_history(
                 query, full_system_prompt, session_id, memory_rounds, history_manager
             )
 
+            # 添加强制JSON输出的用户提示
+            messages.append({"role": "user", "content": "请直接返回JSON格式的字段数据，不要嵌套在fill_form中，不要添加任何其他文本。"})
+
             response = await llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
 
+            # 解析JSON数据
+            parsed_data = None
+
             try:
                 parsed = parser.parse(content)
-                result = StructuredOutputResult(
-                    success=True,
-                    data=parsed,
-                    method="json_parser"
-                )
-                self._save_exchange_to_history(session_id, query, result, history_manager)
-                return result
-            except Exception as parse_error:
+                parsed_data = parsed
+            except Exception:
                 # 尝试直接解析 JSON
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
+                json_content = content
+                if "```json" in json_content:
+                    json_content = json_content.split("```json")[1].split("```")[0]
+                elif "```" in json_content:
+                    json_content = json_content.split("```")[1].split("```")[0]
 
-                data = json.loads(content.strip())
-                result = StructuredOutputResult(
-                    success=True,
-                    data=data,
-                    method="json_parser"
-                )
-                self._save_exchange_to_history(session_id, query, result, history_manager)
-                return result
+                parsed_data = json.loads(json_content.strip())
+
+            # 处理嵌套结构：如果包含 fill_form 键，提取其值
+            if isinstance(parsed_data, dict) and "fill_form" in parsed_data:
+                parsed_data = parsed_data["fill_form"]
+
+            result = StructuredOutputResult(
+                success=True,
+                data=parsed_data,
+                method="json_parser"
+            )
+            self._save_exchange_to_history(session_id, query, result, history_manager)
+            return result
 
         except Exception as e:
             return StructuredOutputResult(
