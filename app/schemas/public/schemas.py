@@ -152,6 +152,8 @@ class LLMFillRequest(PageBaseRequest):
     field_names: List[str] = Field(default_factory=list, description="字段名称列表")
     group_fields: Optional[Dict[str, List[str]]] = Field(default=None, description="字段组与字段的映射关系")
     query: str = Field(..., description="用户输入的查询内容")
+    additional_data: Optional[Dict[str, Any]] = Field(default=None, description="附加数据，包含预填充的字段值")
+    use_additional_data: bool = Field(default=False, description="是否使用附加数据，为true时跳过additional_data中已有字段的LLM提取")
 
 
 class FieldGroupsSchemaRequest(PageBaseRequest):

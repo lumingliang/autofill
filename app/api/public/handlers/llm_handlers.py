@@ -214,6 +214,105 @@ def _extract_display_value(field_data: Any) -> Any:
         return field_data.get("value", field_data)
 
 
+def _filter_schema_fields(function_schema: Dict, exclude_fields: set) -> Dict:
+    """
+    从Function Schema中移除指定的字段
+    
+    Args:
+        function_schema: 原始的Function Calling Schema
+        exclude_fields: 需要排除的字段名集合
+    
+    Returns:
+        过滤后的Function Schema
+    """
+    if not function_schema or not exclude_fields:
+        return function_schema
+    
+    # 深拷贝避免修改原始数据
+    import copy
+    filtered_schema = copy.deepcopy(function_schema)
+    
+    # 获取properties和required
+    parameters = filtered_schema.get("function", {}).get("parameters", {})
+    properties = parameters.get("properties", {})
+    required = parameters.get("required", [])
+    
+    # 移除exclude_fields中的字段
+    for field_name in exclude_fields:
+        if field_name in properties:
+            del properties[field_name]
+        if field_name in required:
+            required.remove(field_name)
+    
+    return filtered_schema
+
+
+def _build_additional_data_enriched(additional_data: Dict[str, Any], field_specs: List) -> Dict[str, Any]:
+    """
+    将additional_data组装为enriched格式（模拟LLM返回的格式）
+    
+    Args:
+        additional_data: 附加数据，格式为 {field_name: field_value}
+        field_specs: 字段规格列表
+    
+    Returns:
+        组装后的数据，格式与LLM返回的一致
+    """
+    # 构建字段名到字段配置的映射
+    field_spec_map = {}
+    for fs in field_specs:
+        if isinstance(fs, dict):
+            field_spec_map[fs.get("field_name")] = fs
+        else:
+            field_spec_map[fs.field_name] = fs
+    
+    enriched = {}
+    
+    for field_name, field_value in additional_data.items():
+        field_spec = field_spec_map.get(field_name)
+        if not field_spec:
+            # 如果找不到字段配置，作为文本类型处理
+            enriched[field_name] = field_value
+            continue
+        
+        # 兼容模型对象和dict两种格式
+        if isinstance(field_spec, dict):
+            field_type = field_spec.get("field_type", "")
+            options = field_spec.get("options", {})
+        else:
+            field_type = field_spec.field_type.value if hasattr(field_spec.field_type, 'value') else str(field_spec.field_type)
+            options = field_spec.options
+        
+        if field_type == 'text':
+            enriched[field_name] = field_value
+        
+        elif field_type in ['select_single', 'select_multi']:
+            # 下拉类型：value就是label，需要找到对应的value
+            items = [opt for opt in (options or {}).get('items', []) 
+                    if not opt.get('is_deleted', False)]
+            
+            # 构建label到value的映射
+            label_to_value = {opt['label']: opt.get('value', opt['label']) for opt in items}
+            
+            if field_type == 'select_single':
+                # 单选
+                label = field_value
+                value = label_to_value.get(label, label)
+                enriched[field_name] = value
+            else:
+                # 多选
+                if isinstance(field_value, list):
+                    values = [label_to_value.get(v, v) for v in field_value]
+                    enriched[field_name] = values
+                else:
+                    enriched[field_name] = [label_to_value.get(field_value, field_value)]
+        else:
+            # 其他类型，保持原样
+            enriched[field_name] = field_value
+    
+    return enriched
+
+
 async def get_ai_fill_data_handler(request: Request, auth_info: dict):
     """获取AI填单数据处理逻辑，支持同步(sync)和异步(async)两种模式"""
     params = await parse_request_params(request, AIFillDataRequest)
@@ -578,6 +677,14 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     if not query:
         raise HTTPException(status_code=400, detail="query is required")
 
+    # 处理附加数据
+    additional_data = params.get("additional_data", {}) or {}
+    use_additional_data = params.get("use_additional_data", False)
+    
+    # 如果需要使用附加数据，从schema中移除已有字段，避免LLM重复提取
+    if use_additional_data and additional_data:
+        unified_function_schema = _filter_schema_fields(unified_function_schema, additional_data.keys())
+
     config = await llm_config_controller.get_default_config(
         tenant_id=tenant_id,
         app_name=app_name
@@ -623,6 +730,12 @@ async def llm_fill_handler(request: Request, auth_info: dict):
 
         # 注意：多选字段的后处理已经下沉到 structured_output 层
         # llm_proxy_service.process_request 内部会自动处理字符串到数组的转换
+
+        # 如果使用附加数据，将additional_data组装为enriched格式并合并到extracted_data
+        if use_additional_data and additional_data:
+            additional_enriched = _build_additional_data_enriched(additional_data, field_specs)
+            # 合并：additional_data优先级更高（覆盖LLM提取的结果）
+            extracted_data = {**extracted_data, **additional_enriched}
 
         # 构建完整的返回数据：将label映射为包含value、label、type的完整结构
         enriched_result = _enrich_extracted_data(extracted_data, field_specs)
