@@ -165,7 +165,8 @@ def send_llm_fill_request(
     query: str,
     method: str = None,
     additional_data: Dict[str, Any] = None,
-    use_additional_data: bool = False
+    use_additional_data: bool = False,
+    system_prompt: str = None
 ) -> Dict:
     """
     发送LLM填单请求
@@ -181,6 +182,7 @@ def send_llm_fill_request(
                 "pydantic_parser", "json_parser"
         additional_data: 附加数据，包含预填充的字段值
         use_additional_data: 是否使用附加数据
+        system_prompt: 系统提示词（可选），优先级高于字段组的prompt_template_base
 
     Returns:
         API响应结果
@@ -203,6 +205,9 @@ def send_llm_fill_request(
     if use_additional_data and additional_data:
         payload["additional_data"] = additional_data
         payload["use_additional_data"] = True
+
+    if system_prompt:
+        payload["system_prompt"] = system_prompt
 
     response = requests.post(url, json=payload, headers=headers, timeout=60)
     response.raise_for_status()
@@ -272,7 +277,8 @@ def step1_get_basic_fields(
     query: str,
     method: str = None,
     additional_data: Dict[str, Any] = None,
-    use_additional_data: bool = False
+    use_additional_data: bool = False,
+    system_prompt: str = None
 ) -> Dict:
     """第一步：获取一级事件类型和服务记录类型"""
     print("\n" + "=" * 80)
@@ -281,6 +287,8 @@ def step1_get_basic_fields(
         print(f"使用方法: {method}")
     if use_additional_data and additional_data:
         print(f"使用附加数据: {list(additional_data.keys())}")
+    if system_prompt:
+        print(f"使用自定义系统提示词: {system_prompt[:50]}...")
     print("=" * 80)
 
     group_fields = {
@@ -299,7 +307,8 @@ def step1_get_basic_fields(
             query=query,
             method=method,
             additional_data=additional_data,
-            use_additional_data=use_additional_data
+            use_additional_data=use_additional_data,
+            system_prompt=system_prompt
         )
         
         if response.get("code") == 200 or response.get("success"):
@@ -350,7 +359,8 @@ def step2_get_detailed_fields(
     step1_result: Dict,
     method: str = None,
     additional_data: Dict[str, Any] = None,
-    use_additional_data: bool = False
+    use_additional_data: bool = False,
+    system_prompt: str = None
 ) -> Dict:
     """第二步：获取详细字段信息"""
     print("\n" + "=" * 80)
@@ -359,6 +369,8 @@ def step2_get_detailed_fields(
         print(f"使用方法: {method}")
     if use_additional_data and additional_data:
         print(f"使用附加数据: {list(additional_data.keys())}")
+    if system_prompt:
+        print(f"使用自定义系统提示词: {system_prompt[:50]}...")
     print("=" * 80)
 
     # 提取显示值（用于构建字段组名称）
@@ -401,7 +413,8 @@ def step2_get_detailed_fields(
             query=query,
             method=method,
             additional_data=additional_data,
-            use_additional_data=use_additional_data
+            use_additional_data=use_additional_data,
+            system_prompt=system_prompt
         )
         
         if response.get("code") == 200 or response.get("success"):
@@ -527,6 +540,7 @@ def main():
     parser.add_argument("--additional-data", help="附加数据JSON文件路径")
     parser.add_argument("--use-additional-data", action="store_true",
                         help="使用附加数据")
+    parser.add_argument("--system-prompt", help="系统提示词（可选），优先级高于字段组的prompt_template_base")
     parser.add_argument("--output", help="输出结果到JSON文件")
     args = parser.parse_args()
 
@@ -573,7 +587,8 @@ def main():
                 query=conversation,
                 method=method,
                 additional_data=additional_data,
-                use_additional_data=args.use_additional_data
+                use_additional_data=args.use_additional_data,
+                system_prompt=args.system_prompt
             )
 
             if step1_result:
@@ -585,7 +600,8 @@ def main():
                     step1_result=step1_result,
                     method=method,
                     additional_data=additional_data,
-                    use_additional_data=args.use_additional_data
+                    use_additional_data=args.use_additional_data,
+                    system_prompt=args.system_prompt
                 )
                 results[method] = {
                     "step1": step1_result,
@@ -633,7 +649,8 @@ def main():
         query=conversation,
         method=args.method,
         additional_data=additional_data,
-        use_additional_data=args.use_additional_data
+        use_additional_data=args.use_additional_data,
+        system_prompt=args.system_prompt
     )
 
     if not step1_result:
@@ -649,7 +666,8 @@ def main():
         step1_result=step1_result,
         method=args.method,
         additional_data=additional_data,
-        use_additional_data=args.use_additional_data
+        use_additional_data=args.use_additional_data,
+        system_prompt=args.system_prompt
     )
 
     # 合并结果
