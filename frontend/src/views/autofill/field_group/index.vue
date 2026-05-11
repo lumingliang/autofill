@@ -160,11 +160,7 @@
                 <pre class="code-block">{{ detailData.prompt_info?.template_base }}</pre>
               </a-typography-paragraph>
             </a-tab-pane>
-            <a-tab-pane key="instructions" tab="字段指令">
-              <a-typography-paragraph>
-                <pre class="code-block">{{ detailData.prompt_info?.fields_instructions }}</pre>
-              </a-typography-paragraph>
-            </a-tab-pane>
+
           </a-tabs>
         </a-card>
 

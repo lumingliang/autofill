@@ -73,13 +73,15 @@ def build_fields_instructions(fields: List) -> str:
     return "\n".join(lines)
 
 
-def build_function_schema(field_group: FieldGroupConfig, fields: List[FieldSpec]) -> Dict[str, Any]:
+def build_function_schema(field_group: FieldGroupConfig, fields: List[FieldSpec], include_reason: bool = False) -> Dict[str, Any]:
     """
     动态生成 Function Calling Schema
+    可选择为每个字段添加对应的理由字段
 
     Args:
         field_group: 字段组配置
         fields: 字段明细列表
+        include_reason: 是否包含理由字段
 
     Returns:
         OpenAI Function Calling Schema
@@ -87,15 +89,25 @@ def build_function_schema(field_group: FieldGroupConfig, fields: List[FieldSpec]
     properties = {}
 
     for field in fields:
+        field_name = field.field_name
+        field_label = field.field_label
+        reason_field_name = f"{field_name}_reason"
+
         if field.field_type.value == 'text':
             desc = field.fill_instruction or ""
             if field.corrections:
                 corrections_text = "；".join([c['text'] for c in field.corrections])
                 desc += f"；人工补充规则：{corrections_text}"
-            properties[field.field_name] = {
+            properties[field_name] = {
                 "type": "string",
                 "description": desc
             }
+            # 添加理由字段（仅在 include_reason=True 时）
+            if include_reason:
+                properties[reason_field_name] = {
+                    "type": "string",
+                    "description": f"填写'{field_label}'字段的理由，说明从对话中哪个部分提取的信息"
+                }
 
         elif field.field_type.value in ['select_single', 'select_multi']:
             items = [opt for opt in (field.options or {}).get('items', []) if not opt.get('is_deleted', False)]
@@ -134,7 +146,7 @@ def build_function_schema(field_group: FieldGroupConfig, fields: List[FieldSpec]
                 description_parts.append(f"【多选】{count_desc}，以字符串数组形式返回选中的值。")
 
                 # 多选使用数组类型
-                properties[field.field_name] = {
+                properties[field_name] = {
                     "type": "array",
                     "description": "\n".join(description_parts),
                     "items": {
@@ -145,24 +157,36 @@ def build_function_schema(field_group: FieldGroupConfig, fields: List[FieldSpec]
                     "maxItems": max_selections if max_selections > 0 else None
                 }
                 # 移除 None 值
-                if properties[field.field_name]["maxItems"] is None:
-                    del properties[field.field_name]["maxItems"]
+                if properties[field_name]["maxItems"] is None:
+                    del properties[field_name]["maxItems"]
             else:
                 # 单选模式
                 description_parts.append("【单选】必须从上述选项中选择一个值。")
                 description = "\n".join(description_parts)
 
-                properties[field.field_name] = {
+                properties[field_name] = {
                     "type": "string",
                     "description": description,
                     "enum": enum_values
                 }
+            
+            # 添加理由字段（单选和多选都添加，仅在 include_reason=True 时）
+            if include_reason:
+                properties[reason_field_name] = {
+                    "type": "string",
+                    "description": f"选择'{field_label}'字段值的理由，说明从对话中哪个部分提取的信息"
+                }
+
+    # 根据 include_reason 设置描述
+    description = field_group.description or "从对话中提取表单数据"
+    if include_reason:
+        description += "，每个字段都需要提供填写理由"
 
     return {
         "type": "function",
         "function": {
             "name": "extract_form_data",
-            "description": field_group.description or "从对话中提取表单数据",
+            "description": description,
             "parameters": {
                 "type": "object",
                 "properties": properties,
@@ -170,35 +194,6 @@ def build_function_schema(field_group: FieldGroupConfig, fields: List[FieldSpec]
             }
         }
     }
-
-
-def assemble_prompt(field_group: FieldGroupConfig, fields: List[FieldSpec], query: str) -> str:
-    """
-    组装纯文本Prompt
-
-    Args:
-        field_group: 字段组配置
-        fields: 字段明细列表
-        query: 用户查询内容
-
-    Returns:
-        组装后的Prompt字符串
-    """
-    template = field_group.prompt_template_base or """你是一个智能填单助手。请根据以下对话内容，提取指定字段的信息。
-
-需要提取的字段：
-{{fields_instructions}}
-
-对话内容：
-{{query}}
-
-请严格按照字段要求提取信息，并以JSON格式返回结果。"""
-
-    fields_instructions = build_fields_instructions(fields)
-    prompt = template.replace("{{fields_instructions}}", fields_instructions)
-    prompt = prompt.replace("{{query}}", query)
-
-    return prompt
 
 
 def assemble_output_prompts(field_group: FieldGroupConfig, fields: List[FieldSpec], extracted_data: Dict[str, Any]) -> Dict[str, str]:

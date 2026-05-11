@@ -166,7 +166,8 @@ def send_llm_fill_request(
     method: str = None,
     additional_data: Dict[str, Any] = None,
     use_additional_data: bool = False,
-    system_prompt: str = None
+    system_prompt: str = None,
+    include_reason: bool = False
 ) -> Dict:
     """
     发送LLM填单请求
@@ -183,6 +184,7 @@ def send_llm_fill_request(
         additional_data: 附加数据，包含预填充的字段值
         use_additional_data: 是否使用附加数据
         system_prompt: 系统提示词（可选），优先级高于字段组的prompt_template_base
+        include_reason: 是否返回字段填写理由，默认False
 
     Returns:
         API响应结果
@@ -208,6 +210,9 @@ def send_llm_fill_request(
 
     if system_prompt:
         payload["system_prompt"] = system_prompt
+
+    if include_reason:
+        payload["include_reason"] = True
 
     response = requests.post(url, json=payload, headers=headers, timeout=60)
     response.raise_for_status()
@@ -278,7 +283,8 @@ def step1_get_basic_fields(
     method: str = None,
     additional_data: Dict[str, Any] = None,
     use_additional_data: bool = False,
-    system_prompt: str = None
+    system_prompt: str = None,
+    include_reason: bool = False
 ) -> Dict:
     """第一步：获取一级事件类型和服务记录类型"""
     print("\n" + "=" * 80)
@@ -289,6 +295,8 @@ def step1_get_basic_fields(
         print(f"使用附加数据: {list(additional_data.keys())}")
     if system_prompt:
         print(f"使用自定义系统提示词: {system_prompt[:50]}...")
+    if include_reason:
+        print("包含理由字段: True")
     print("=" * 80)
 
     group_fields = {
@@ -308,11 +316,24 @@ def step1_get_basic_fields(
             method=method,
             additional_data=additional_data,
             use_additional_data=use_additional_data,
-            system_prompt=system_prompt
+            system_prompt=system_prompt,
+            include_reason=include_reason
         )
-        
+
         if response.get("code") == 200 or response.get("success"):
             result = response.get("data", {}).get("result", {})
+            response_method = response.get("data", {}).get("method", "")
+
+            # plain 模式：直接显示原始响应
+            if method == "plain" or response_method == "plain":
+                print("\n✓ 步骤1成功 (plain模式)")
+                print("\n【大模型原始响应】")
+                print("=" * 80)
+                raw_response = result.get("raw_response", "")
+                print(raw_response)
+                print("=" * 80)
+                return {"raw_response": raw_response}
+            
             print("\n✓ 步骤1成功")
             
             # 打印接口返回的完整原始内容
@@ -360,7 +381,8 @@ def step2_get_detailed_fields(
     method: str = None,
     additional_data: Dict[str, Any] = None,
     use_additional_data: bool = False,
-    system_prompt: str = None
+    system_prompt: str = None,
+    include_reason: bool = False
 ) -> Dict:
     """第二步：获取详细字段信息"""
     print("\n" + "=" * 80)
@@ -371,6 +393,8 @@ def step2_get_detailed_fields(
         print(f"使用附加数据: {list(additional_data.keys())}")
     if system_prompt:
         print(f"使用自定义系统提示词: {system_prompt[:50]}...")
+    if include_reason:
+        print("包含理由字段: True")
     print("=" * 80)
 
     # 提取显示值（用于构建字段组名称）
@@ -414,9 +438,10 @@ def step2_get_detailed_fields(
             method=method,
             additional_data=additional_data,
             use_additional_data=use_additional_data,
-            system_prompt=system_prompt
+            system_prompt=system_prompt,
+            include_reason=include_reason
         )
-        
+
         if response.get("code") == 200 or response.get("success"):
             result = response.get("data", {}).get("result", {})
             output_templates = response.get("data", {}).get("output_templates", {})
@@ -533,14 +558,16 @@ def main():
                         default="rescue", help="测试场景")
     parser.add_argument("--method", choices=[
         "with_structured_output", "bind_tools_non_stream", "bind_tools_stream",
-        "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser"
-    ], help="LLM调用方法")
+        "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser", "plain"
+    ], help="LLM调用方法 (plain模式直接返回原始响应)")
     parser.add_argument("--test-all-methods", action="store_true",
                         help="测试所有可用的LLM方法")
     parser.add_argument("--additional-data", help="附加数据JSON文件路径")
     parser.add_argument("--use-additional-data", action="store_true",
                         help="使用附加数据")
     parser.add_argument("--system-prompt", help="系统提示词（可选），优先级高于字段组的prompt_template_base")
+    parser.add_argument("--include-reason", action="store_true",
+                        help="返回字段填写理由（可选），开启后会为每个字段返回填写理由")
     parser.add_argument("--output", help="输出结果到JSON文件")
     args = parser.parse_args()
 
@@ -588,7 +615,8 @@ def main():
                 method=method,
                 additional_data=additional_data,
                 use_additional_data=args.use_additional_data,
-                system_prompt=args.system_prompt
+                system_prompt=args.system_prompt,
+                include_reason=args.include_reason
             )
 
             if step1_result:
@@ -601,7 +629,8 @@ def main():
                     method=method,
                     additional_data=additional_data,
                     use_additional_data=args.use_additional_data,
-                    system_prompt=args.system_prompt
+                    system_prompt=args.system_prompt,
+                    include_reason=args.include_reason
                 )
                 results[method] = {
                     "step1": step1_result,
@@ -650,7 +679,8 @@ def main():
         method=args.method,
         additional_data=additional_data,
         use_additional_data=args.use_additional_data,
-        system_prompt=args.system_prompt
+        system_prompt=args.system_prompt,
+        include_reason=args.include_reason
     )
 
     if not step1_result:
@@ -667,7 +697,8 @@ def main():
         method=args.method,
         additional_data=additional_data,
         use_additional_data=args.use_additional_data,
-        system_prompt=args.system_prompt
+        system_prompt=args.system_prompt,
+        include_reason=args.include_reason
     )
 
     # 合并结果

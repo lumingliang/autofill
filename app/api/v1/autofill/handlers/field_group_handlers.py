@@ -14,11 +14,7 @@ from app.controllers.autofill import (
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import FieldGroupConfigCreate, FieldGroupConfigUpdate
-from app.services.autofill.prompt_service import (
-    assemble_prompt,
-    build_fields_instructions,
-    build_function_schema,
-)
+from app.services.autofill.prompt_service import build_function_schema
 
 router = APIRouter()
 
@@ -180,10 +176,25 @@ async def get_field_group_detail(
             return Fail(code=403, msg="无权查看其他租户的字段组")
 
     fields = await field_spec_controller.get_by_field_group(id)
-    fields_instructions = build_fields_instructions(fields)
     function_schema = build_function_schema(group, fields)
-    example_query = "[用户对话内容将在这里插入]"
-    assembled_prompt = assemble_prompt(group, fields, example_query)
+
+    # 构建字段指引并生成组装后的Prompt
+    from app.services.autofill.prompt_service import build_fields_instructions
+    fields_instructions = build_fields_instructions(fields)
+    template_base = group.prompt_template_base or "你是一个智能填单助手。请根据对话内容提取指定字段的信息。"
+
+    # 替换 {fields_instructions} 占位符
+    if "{fields_instructions}" in template_base:
+        assembled_prompt = template_base.replace("{fields_instructions}", fields_instructions)
+    else:
+        # 如果没有占位符，默认追加字段指引
+        assembled_prompt = f"""{template_base}
+
+请根据以下字段指引从对话中提取信息：
+
+{fields_instructions}
+
+请严格按照字段要求提取信息。"""
 
     result = {
         "basic_info": {
@@ -201,7 +212,6 @@ async def get_field_group_detail(
         "field_specs": [await obj.to_dict() for obj in fields],
         "prompt_info": {
             "template_base": group.prompt_template_base,
-            "fields_instructions": fields_instructions,
             "assembled_prompt": assembled_prompt,
         },
         "function_calling": {
@@ -299,14 +309,6 @@ def _build_field_group_markdown(group, fields) -> str:
     lines.append("")
     lines.append("```text")
     lines.append(group.prompt_template_base or "未配置")
-    lines.append("```")
-    lines.append("")
-
-    fields_instructions = build_fields_instructions(fields)
-    lines.append("### 字段指令")
-    lines.append("")
-    lines.append("```text")
-    lines.append(fields_instructions)
     lines.append("```")
     lines.append("")
 

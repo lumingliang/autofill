@@ -23,6 +23,7 @@ class LLMFillRequest(BasePublicRequest):
     query: str = Field(..., description="用户输入的查询内容")
     method: Optional[str] = Field(default=None, description="LLM调用方法（可选），可选值：with_structured_output、bind_tools、custom_fc_non_stream，不传则使用系统默认策略")
     system_prompt: Optional[str] = Field(default=None, description="系统提示词（可选），优先级高于字段组的prompt_template_base")
+    include_reason: bool = Field(default=False, description="是否返回字段填写理由（可选，默认false），开启后会为每个字段返回填写理由")
 
 
 class OptimizeFieldInstructionRequest(BasePublicRequest):
