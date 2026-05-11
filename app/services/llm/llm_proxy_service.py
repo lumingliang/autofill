@@ -77,6 +77,11 @@ class LLMProxyService:
         # 构建响应
         response_data = result.data.copy()
 
+        # 将 None 值转换为空字符串
+        for key, value in response_data.items():
+            if value is None:
+                response_data[key] = ""
+
         # 添加元信息
         response_data["_meta"] = {
             "method_used": result.method,

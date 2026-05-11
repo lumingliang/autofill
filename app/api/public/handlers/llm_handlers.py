@@ -27,6 +27,8 @@ from app.schemas.public import (
     LLMFillRequest,
     FieldGroupsSchemaRequest,
     OptimizeFieldInstructionRequest,
+    StepLLMFillRequest,
+    StepLLMFillResultRequest,
 )
 from app.services.autofill.ai_fill_service import get_ai_fill_service
 from app.services.autofill.prompt_service import (
@@ -35,9 +37,37 @@ from app.services.autofill.prompt_service import (
 )
 from app.services.llm.llm_proxy_service import llm_proxy_service
 from app.services.llm.structured_output import StructuredOutputService
+from app.services.autofill.step_llm_fill_service import step_llm_fill_service
 from app.api.public.handlers.field_group_handlers import fetch_field_groups
 
 router = APIRouter()
+
+
+def _extract_field_value(field_data: Any) -> Any:
+    """
+    从enriched字段数据中提取值
+    支持多种格式：字符串、字典、包含value的字典等
+    """
+    if field_data is None:
+        return ""
+
+    if isinstance(field_data, str):
+        return field_data
+
+    if isinstance(field_data, dict):
+        # 如果是 enriched 格式，提取 value
+        if "value" in field_data:
+            value = field_data["value"]
+            # 处理 select_single 格式 {"value": "xxx", "label": "yyy"}
+            if isinstance(value, dict):
+                return value.get("value", "")
+            # 处理 select_multi 格式 [{"value": "xxx", "label": "yyy"}, ...]
+            if isinstance(value, list):
+                return [v.get("value", v) if isinstance(v, dict) else v for v in value]
+            return value
+        return field_data
+
+    return str(field_data)
 
 
 def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) -> Dict[str, Any]:
@@ -216,105 +246,6 @@ def _extract_display_value(field_data: Any) -> Any:
     else:
         # 其他类型，直接返回
         return field_data.get("value", field_data)
-
-
-def _filter_schema_fields(function_schema: Dict, exclude_fields: set) -> Dict:
-    """
-    从Function Schema中移除指定的字段
-    
-    Args:
-        function_schema: 原始的Function Calling Schema
-        exclude_fields: 需要排除的字段名集合
-    
-    Returns:
-        过滤后的Function Schema
-    """
-    if not function_schema or not exclude_fields:
-        return function_schema
-    
-    # 深拷贝避免修改原始数据
-    import copy
-    filtered_schema = copy.deepcopy(function_schema)
-    
-    # 获取properties和required
-    parameters = filtered_schema.get("function", {}).get("parameters", {})
-    properties = parameters.get("properties", {})
-    required = parameters.get("required", [])
-    
-    # 移除exclude_fields中的字段
-    for field_name in exclude_fields:
-        if field_name in properties:
-            del properties[field_name]
-        if field_name in required:
-            required.remove(field_name)
-    
-    return filtered_schema
-
-
-def _build_additional_data_enriched(additional_data: Dict[str, Any], field_specs: List) -> Dict[str, Any]:
-    """
-    将additional_data组装为enriched格式（模拟LLM返回的格式）
-    
-    Args:
-        additional_data: 附加数据，格式为 {field_name: field_value}
-        field_specs: 字段规格列表
-    
-    Returns:
-        组装后的数据，格式与LLM返回的一致
-    """
-    # 构建字段名到字段配置的映射
-    field_spec_map = {}
-    for fs in field_specs:
-        if isinstance(fs, dict):
-            field_spec_map[fs.get("field_name")] = fs
-        else:
-            field_spec_map[fs.field_name] = fs
-    
-    enriched = {}
-    
-    for field_name, field_value in additional_data.items():
-        field_spec = field_spec_map.get(field_name)
-        if not field_spec:
-            # 如果找不到字段配置，作为文本类型处理
-            enriched[field_name] = field_value
-            continue
-        
-        # 兼容模型对象和dict两种格式
-        if isinstance(field_spec, dict):
-            field_type = field_spec.get("field_type", "")
-            options = field_spec.get("options", {})
-        else:
-            field_type = field_spec.field_type.value if hasattr(field_spec.field_type, 'value') else str(field_spec.field_type)
-            options = field_spec.options
-        
-        if field_type == 'text':
-            enriched[field_name] = field_value
-        
-        elif field_type in ['select_single', 'select_multi']:
-            # 下拉类型：value就是label，需要找到对应的value
-            items = [opt for opt in (options or {}).get('items', []) 
-                    if not opt.get('is_deleted', False)]
-            
-            # 构建label到value的映射
-            label_to_value = {opt['label']: opt.get('value', opt['label']) for opt in items}
-            
-            if field_type == 'select_single':
-                # 单选
-                label = field_value
-                value = label_to_value.get(label, label)
-                enriched[field_name] = value
-            else:
-                # 多选
-                if isinstance(field_value, list):
-                    values = [label_to_value.get(v, v) for v in field_value]
-                    enriched[field_name] = values
-                else:
-                    enriched[field_name] = [label_to_value.get(field_value, field_value)]
-        else:
-            # 其他类型，保持原样
-            enriched[field_name] = field_value
-    
-    return enriched
 
 
 async def get_ai_fill_data_handler(request: Request, auth_info: dict):
@@ -624,21 +555,23 @@ async def get_field_groups_schema(
     return await get_field_groups_schema_handler(request, auth_info)
 
 
-async def llm_fill_handler(request: Request, auth_info: dict):
-    """直接LLM填单处理逻辑"""
-    params = await parse_request_params(request, LLMFillRequest)
+async def _prepare_llm_fill_context(
+    tenant_id: int,
+    app_name: str,
+    params: dict
+) -> tuple:
+    """
+    准备LLM填单的上下文数据
 
-    tenant_id = auth_info["tenant_id"]
-    app_name = auth_info["app_name"]
-
-    # 处理参数
+    Returns:
+        tuple: (result_data, config, system_prompt, field_specs, unified_function_schema, query)
+    """
     group_fields = params.get("group_fields", {}) or {}
     additional_data = params.get("additional_data", {}) or {}
     use_additional_data = params.get("use_additional_data", False)
-
-    # 调用 fetch_field_groups 获取字段组配置（返回可直接使用的统一 schema）
-    # 如果 use_additional_data=true，附加数据中已有的字段会被过滤掉，不会发给LLM
     include_reason = params.get("include_reason", False)
+
+    # 调用 fetch_field_groups 获取字段组配置
     try:
         result_data = await fetch_field_groups(
             tenant_id=tenant_id,
@@ -650,7 +583,6 @@ async def llm_fill_handler(request: Request, auth_info: dict):
             include_reason=include_reason
         )
     except ValueError as e:
-        # 参数验证错误或页面不存在
         logger.warning(f"fetch_field_groups validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -673,20 +605,16 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     if not config:
         raise HTTPException(status_code=500, detail="No LLM configuration found")
 
-    # 从数据库查询字段模型对象用于构建指引和 enriched 处理
-    # 使用 result_data 中的 all_field_specs（包含所有字段的完整配置）
     field_specs = result_data.get("all_field_specs", [])
 
-    # 构建 system_prompt：优先级 1. 请求中的 system_prompt > 2. 字段组的 prompt_template_base
+    # 构建 system_prompt
     base_prompt = params.get("system_prompt") or result_data.get("combined_prompt", "你是一个智能填单助手。")
 
-    # 生成字段指引并替换占位符
     if field_specs:
         fields_instructions = build_fields_instructions(field_specs)
         if "{fields_instructions}" in base_prompt:
             system_prompt = base_prompt.replace("{fields_instructions}", fields_instructions)
         else:
-            # 如果没有占位符，默认追加字段指引
             system_prompt = f"""{base_prompt}
 
 请根据以下字段指引从对话中提取信息：
@@ -697,70 +625,139 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     else:
         system_prompt = base_prompt
 
-    # 获取用户指定的调用方法（如果提供）
+    return result_data, config, system_prompt, field_specs, unified_function_schema, query
+
+
+async def _execute_llm_fill(
+    query: str,
+    system_prompt: str,
+    unified_function_schema: dict,
+    config,
+    field_specs: list,
+    params: dict
+) -> dict:
+    """
+    执行LLM填单调用
+
+    Returns:
+        dict: LLM结果
+    """
     method = params.get("method")
     include_reason = params.get("include_reason", False)
+    memory_rounds = params.get("memory_rounds", 0)
+    session_id = params.get("session_id")
 
-    try:
-        # 统一调用 llm_proxy_service，plain 模式也会正确处理
-        llm_result = await llm_proxy_service.process_request(
-            query=query,
-            tools=[unified_function_schema] if method != "plain" else None,
-            system_prompt=system_prompt,
-            tool_choice={"type": "function", "function": {"name": "fill_form"}},
-            config=config,
-            method=method,
-            field_specs=field_specs,
-            include_reason=include_reason
-        )
+    llm_result = await llm_proxy_service.process_request(
+        query=query,
+        tools=[unified_function_schema] if method != "plain" else None,
+        system_prompt=system_prompt,
+        tool_choice={"type": "function", "function": {"name": "fill_form"}},
+        config=config,
+        method=method,
+        field_specs=field_specs,
+        include_reason=include_reason,
+        memory_rounds=memory_rounds,
+        session_id=session_id
+    )
 
-        extracted_data = {k: v for k, v in llm_result.items() if not k.startswith('_')}
+    return llm_result
 
-        # 注意：多选字段的后处理已经下沉到 structured_output 层
-        # llm_proxy_service.process_request 内部会自动处理字符串到数组的转换
 
-        # plain 模式直接返回原始响应
-        if method == "plain":
-            return Success(data={
-                "page_name": params.get("page_name"),
-                "group_names": params.get("group_names", []),
-                "result": llm_result,
-                "method": "plain",
-                "_meta": llm_result.get("_meta", {}),
-                "_debug": {
-                    "system_prompt": system_prompt,
-                    "query": query
-                }
-            })
+async def _process_llm_result(
+    llm_result: dict,
+    field_specs: list,
+    result_data: dict,
+    params: dict
+) -> dict:
+    """
+    处理LLM结果，构建返回数据
 
-        # 合并附加数据：additional_data优先级更高（覆盖LLM提取的结果）
-        # 注意：附加数据中的字段已在fetch_field_groups中过滤，不会发给LLM
-        if use_additional_data and additional_data:
-            extracted_data = {**extracted_data, **additional_data}
+    Returns:
+        dict: 处理后的结果
+    """
+    method = params.get("method")
+    extracted_data = {k: v for k, v in llm_result.items() if not k.startswith('_')}
 
-        # 构建完整的返回数据：将label映射为包含value、label、type的完整结构
-        enriched_result = _enrich_extracted_data(extracted_data, field_specs)
-
-        # 处理输出模板：替换模板中的字段占位符
-        field_groups = result_data.get("field_groups", [])
-        output_templates_result = _process_output_templates(field_groups, enriched_result)
-
-        # 调试信息：打印给大模型的参数
-        debug_info = {
-            "system_prompt": system_prompt,
-            "tools": [unified_function_schema],
-            "tool_choice": {"type": "function", "function": {"name": "fill_form"}},
-            "query": query
+    # plain 模式直接返回
+    if method == "plain":
+        return {
+            "result": llm_result,
+            "method": "plain",
+            "_meta": llm_result.get("_meta", {})
         }
 
-        return Success(data={
+    # 合并附加数据
+    additional_data = params.get("additional_data", {}) or {}
+    use_additional_data = params.get("use_additional_data", False)
+    if use_additional_data and additional_data:
+        extracted_data = {**extracted_data, **additional_data}
+
+    # enrich 数据
+    enriched_result = _enrich_extracted_data(extracted_data, field_specs)
+
+    # 处理输出模板
+    field_groups = result_data.get("field_groups", [])
+    output_templates_result = _process_output_templates(field_groups, enriched_result)
+
+    return {
+        "result": enriched_result,
+        "output_templates": output_templates_result,
+        "_meta": llm_result.get("_meta", {})
+    }
+
+
+async def llm_fill_handler(request: Request, auth_info: dict):
+    """直接LLM填单处理逻辑"""
+    params = await parse_request_params(request, LLMFillRequest)
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+
+    # 准备上下文
+    result_data, config, system_prompt, field_specs, unified_function_schema, query = \
+        await _prepare_llm_fill_context(tenant_id, app_name, params)
+
+    try:
+        # 执行LLM调用
+        llm_result = await _execute_llm_fill(
+            query=query,
+            system_prompt=system_prompt,
+            unified_function_schema=unified_function_schema,
+            config=config,
+            field_specs=field_specs,
+            params=params
+        )
+
+        # 处理结果
+        processed_result = await _process_llm_result(
+            llm_result=llm_result,
+            field_specs=field_specs,
+            result_data=result_data,
+            params=params
+        )
+
+        # 构建最终响应
+        response_data = {
             "page_name": params.get("page_name"),
             "group_names": params.get("group_names", []),
-            "result": enriched_result,
-            "output_templates": output_templates_result,
-            "_meta": llm_result.get("_meta", {}),
-            "_debug": debug_info
-        })
+            **processed_result
+        }
+
+        # plain 模式添加调试信息
+        if processed_result.get("method") == "plain":
+            response_data["_debug"] = {
+                "system_prompt": system_prompt,
+                "query": query
+            }
+        else:
+            response_data["_debug"] = {
+                "system_prompt": system_prompt,
+                "tools": [unified_function_schema],
+                "tool_choice": {"type": "function", "function": {"name": "fill_form"}},
+                "query": query
+            }
+
+        return Success(data=response_data)
 
     except ValueError as e:
         logger.error(f"LLM fill validation error: {e}")
@@ -781,6 +778,255 @@ async def llm_fill(
     支持参数传递方式: JSON Body
     """
     return await llm_fill_handler(request, auth_info)
+
+
+async def _save_step_result(
+    session_id: str,
+    tenant_id: int,
+    app_name: str,
+    page_name: str,
+    params: dict,
+    llm_result: dict,
+    enriched_result: dict,
+    output_templates: dict,
+    is_last: bool,
+    elapsed_time: float = 0.0
+):
+    """保存步骤结果"""
+    method = params.get("method")
+    group_fields = params.get("group_fields", {}) or {}
+    query = params.get("query", "")
+
+    # 获取LLM元数据
+    llm_meta = llm_result.get("_meta", {})
+
+    # 构建步骤结果 - 简化存储，避免溢出
+    step_result = {
+        "request": {
+            "page_name": page_name,
+            "group_fields": group_fields,
+            "query": query[:200] + "..." if len(query) > 200 else query,  # 限制query长度
+            "method": method
+        },
+        "response": {
+            # 只保存字段名称列表，不保存完整富化结果
+            "fields": list(enriched_result.keys()) if enriched_result else [],
+            "fields_count": len(enriched_result) if enriched_result else 0
+        },
+        # 保存原始格式（包含type和value的完整格式）
+        "raw_result": enriched_result if method != "plain" else llm_result,
+        # 保存提取的字段值（简化格式）
+        "extracted_fields": {k: _extract_field_value(v) for k, v in enriched_result.items()},
+        # 保存用时信息
+        "timing": {
+            "elapsed_time": elapsed_time,
+            "llm_elapsed_time": llm_meta.get("elapsed_time"),
+            "total_tokens": llm_meta.get("total_tokens"),
+            "prompt_tokens": llm_meta.get("prompt_tokens"),
+            "completion_tokens": llm_meta.get("completion_tokens")
+        }
+    }
+
+    await step_llm_fill_service.save_step_result(
+        session_id=session_id,
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_name=page_name,
+        step_result=step_result,
+        is_last=is_last
+    )
+
+    await step_llm_fill_service.update_session_info(
+        session_id=session_id,
+        step_data={
+            "method": method,
+            "fields_count": len(enriched_result) if enriched_result else 0,
+            "elapsed_time": elapsed_time
+        },
+        is_last=is_last
+    )
+
+
+async def step_llm_fill_handler(request: Request, auth_info: dict):
+    """分步LLM填单处理逻辑"""
+    import time
+
+    params = await parse_request_params(request, StepLLMFillResultRequest)
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+    session_id = params.get("session_id")
+    is_last = params.get("is_last", False)
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    # 获取session信息
+    session_info = await step_llm_fill_service.get_session_info(session_id)
+    current_step = session_info["call_count"] + 1
+
+    logger.info(f"Step LLM fill: session_id={session_id}, step={current_step}, is_last={is_last}")
+
+    # 记录开始时间
+    step_start_time = time.time()
+
+    # 准备上下文
+    result_data, config, system_prompt, field_specs, unified_function_schema, query = \
+        await _prepare_llm_fill_context(tenant_id, app_name, params)
+
+    method = params.get("method")
+    page_name = params.get("page_name")
+    group_fields = params.get("group_fields", {}) or {}
+
+    # 立即记录请求数据（在LLM调用之前）
+    await step_llm_fill_service.save_step_request(
+        session_id=session_id,
+        tenant_id=tenant_id,
+        app_name=app_name,
+        page_name=page_name,
+        request_data={
+            "page_name": page_name,
+            "group_fields": group_fields,
+            "query": query[:200] + "..." if len(query) > 200 else query,
+            "method": method
+        }
+    )
+
+    try:
+        # 执行LLM调用
+        llm_result = await _execute_llm_fill(
+            query=query,
+            system_prompt=system_prompt,
+            unified_function_schema=unified_function_schema,
+            config=config,
+            field_specs=field_specs,
+            params=params
+        )
+
+        # 处理结果
+        processed_result = await _process_llm_result(
+            llm_result=llm_result,
+            field_specs=field_specs,
+            result_data=result_data,
+            params=params
+        )
+
+        # 计算用时
+        elapsed_time = time.time() - step_start_time
+
+        enriched_result = processed_result.get("result", {})
+        output_templates = processed_result.get("output_templates", {})
+
+        # 保存步骤结果（更新结果数据）
+        await _save_step_result(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            app_name=app_name,
+            page_name=page_name,
+            params=params,
+            llm_result=llm_result,
+            enriched_result=enriched_result if method != "plain" else {},
+            output_templates=output_templates if method != "plain" else {},
+            is_last=is_last,
+            elapsed_time=elapsed_time
+        )
+
+        # 构建响应
+        response_data = {
+            "session_id": session_id,
+            "step": current_step,
+            "is_last": is_last,
+            "status": "completed" if is_last else "processing",
+            "page_name": page_name,
+            "group_names": params.get("group_names", []),
+            "elapsed_time": elapsed_time,
+            **processed_result
+        }
+
+        # 最后一步返回合并后的字段
+        if is_last and method != "plain":
+            final_result = await step_llm_fill_service.get_step_result(
+                session_id=session_id,
+                tenant_id=tenant_id,
+                app_name=app_name
+            )
+            response_data["merged_fields"] = final_result.get("merged_fields", {}) if final_result else {}
+
+        return Success(data=response_data)
+
+    except ValueError as e:
+        logger.error(f"Step LLM fill validation error: {e}")
+        # 记录错误状态
+        await step_llm_fill_service.save_step_error(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            app_name=app_name,
+            error_msg=str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Step LLM fill error: {e}")
+        # 记录错误状态
+        await step_llm_fill_service.save_step_error(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            app_name=app_name,
+            error_msg=str(e)
+        )
+        raise HTTPException(status_code=500, detail=f"LLM processing failed: {str(e)}")
+
+
+@router.post("/autofill/llm/fill/step", summary="分步LLM填单")
+async def step_llm_fill(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    分步调用LLM填单，支持session管理和多轮数据存储
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
+
+    特点：
+    - 通过 session_id 标识同一轮填单流程
+    - 自动记录调用次数和每轮结果
+    - is_last=true 时结束填单流程并返回完整结果
+    - 所有步骤的数据和结果都保存到数据库
+    """
+    return await step_llm_fill_handler(request, auth_info)
+
+
+@router.post("/autofill/llm/fill/step/result", summary="获取分步填单结果")
+async def get_step_llm_fill_result(
+    request: Request,
+    auth_info: dict = Depends(APIKeyAuth.authenticate)
+):
+    """
+    获取分步填单的完整结果
+    只支持 POST 方法
+    支持参数传递方式: JSON Body
+
+    请求参数：
+    - session_id: 会话ID（必填）
+    """
+    params = await parse_request_params(request, StepLLMFillResultRequest)
+
+    tenant_id = auth_info["tenant_id"]
+    app_name = auth_info["app_name"]
+    session_id = params.get("session_id")
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    result = await step_llm_fill_service.get_step_result(
+        session_id=session_id,
+        tenant_id=tenant_id,
+        app_name=app_name
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    return Success(data=result)
 
 
 async def optimize_field_instructions_handler(request: Request, auth_info: dict):
