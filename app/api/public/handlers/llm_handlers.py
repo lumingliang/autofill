@@ -675,17 +675,21 @@ async def llm_fill_handler(request: Request, auth_info: dict):
     if not config:
         raise HTTPException(status_code=500, detail="No LLM configuration found")
 
-    # 构建包含字段指引的 system_prompt
-    base_prompt = result_data.get("combined_prompt", "你是一个智能填单助手。")
-
     # 从数据库查询字段模型对象用于构建指引和 enriched 处理
     # 使用 result_data 中的 all_field_specs（包含所有字段的完整配置）
     field_specs = result_data.get("all_field_specs", [])
 
-    # 添加字段指引到 system_prompt
+    # 构建 system_prompt：优先级 1. 请求中的 system_prompt > 2. 字段组的 prompt_template_base
+    base_prompt = params.get("system_prompt") or result_data.get("combined_prompt", "你是一个智能填单助手。")
+
+    # 生成字段指引并替换占位符
     if field_specs:
         fields_instructions = build_fields_instructions(field_specs)
-        system_prompt = f"""{base_prompt}
+        if "{fields_instructions}" in base_prompt:
+            system_prompt = base_prompt.replace("{fields_instructions}", fields_instructions)
+        else:
+            # 如果没有占位符，默认追加字段指引
+            system_prompt = f"""{base_prompt}
 
 请根据以下字段指引从对话中提取信息：
 
