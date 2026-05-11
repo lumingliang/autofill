@@ -212,6 +212,8 @@ watch(() => props.data, () => {
 
     &.is-scrollable {
       overflow: auto;
+      overflow-x: auto;
+      overflow-y: auto;
     }
 
     &.is-wrap {
@@ -233,6 +235,8 @@ watch(() => props.data, () => {
       color: #333;
       white-space: pre;
       word-wrap: normal;
+      min-width: 100%;
+      display: inline-block;
     }
 
     .json-empty {

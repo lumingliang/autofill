@@ -34,6 +34,8 @@
 
 ### 使用方法
 
+#### 基础用法
+
 ```bash
 # 使用默认测试用例（道路救援场景）
 python test_llm_fill_workflow_v2.py
@@ -52,12 +54,149 @@ python test_llm_fill_workflow_v2.py --conversation "用户：我的车无法启�
 
 # 保存结果到文件
 python test_llm_fill_workflow_v2.py --output result.json
+```
 
-# 自定义API配置
+#### 指定LLM调用方法
+
+```bash
+# 使用结构化输出模式（推荐，最稳定）
+python test_llm_fill_workflow_v2.py --method with_structured_output
+
+# 使用工具绑定模式（非流式）
+python test_llm_fill_workflow_v2.py --method bind_tools_non_stream
+
+# 使用工具绑定模式（流式）
+python test_llm_fill_workflow_v2.py --method bind_tools_stream
+
+# 使用Pydantic解析器
+python test_llm_fill_workflow_v2.py --method pydantic_parser
+
+# 使用JSON解析器
+python test_llm_fill_workflow_v2.py --method json_parser
+
+# 使用纯文本模式（直接返回原始LLM响应）
+python test_llm_fill_workflow_v2.py --method plain
+
+# 测试所有可用的方法（对比不同方法的效果）
+python test_llm_fill_workflow_v2.py --test-all-methods
+```
+
+#### 使用附加数据（预填充字段）
+
+```bash
+# 使用附加数据（需要先创建 additional_data.json 文件）
+python test_llm_fill_workflow_v2.py \
+    --use-additional-data \
+    --additional-data additional_data.json
+
+# 附加数据 + 指定场景
+python test_llm_fill_workflow_v2.py \
+    --scenario rescue \
+    --use-additional-data \
+    --additional-data additional_data.json
+```
+
+创建 `additional_data.json` 文件示例：
+```json
+{
+  "customer_name": "张三",
+  "contact_phone": "13800138000",
+  "vehicle_system": "比亚迪汉EV",
+  "vin_code": "LGXC14EAXN1234567"
+}
+```
+
+#### 使用自定义系统提示词
+
+```bash
+# 使用自定义系统提示词覆盖字段组默认模板
+python test_llm_fill_workflow_v2.py \
+    --system-prompt "你是一个专业的汽车客服助手，擅长处理道路救援请求。请仔细分析对话内容，提取关键信息。"
+
+# 结合场景和方法使用
+python test_llm_fill_workflow_v2.py \
+    --scenario maintenance \
+    --method with_structured_output \
+    --system-prompt "你是一个专业的汽车保养顾问，请从对话中提取保养相关信息。"
+```
+
+#### 返回字段填写理由
+
+```bash
+# 获取字段填写理由（了解每个字段值的提取依据）
+python test_llm_fill_workflow_v2.py --include-reason
+
+# 结合其他参数使用
+python test_llm_fill_workflow_v2.py \
+    --scenario quality \
+    --method with_structured_output \
+    --include-reason \
+    --output result_with_reason.json
+```
+
+#### 组合使用多个参数
+
+```bash
+# 完整示例：指定场景 + 方法 + 附加数据 + 系统提示词 + 理由 + 输出文件
+python test_llm_fill_workflow_v2.py \
+    --scenario rescue \
+    --method with_structured_output \
+    --use-additional-data \
+    --additional-data additional_data.json \
+    --system-prompt "你是一个专业的道路救援客服助手。" \
+    --include-reason \
+    --output complete_result.json
+
+# 简洁示例：指定场景 + 方法 + 输出
+python test_llm_fill_workflow_v2.py \
+    --scenario maintenance \
+    --method with_structured_output \
+    --output maintenance_result.json
+
+# 对比测试：同一对话使用不同方法
+python test_llm_fill_workflow_v2.py \
+    --conversation "用户：我的车发动机故障灯亮了，怎么办？" \
+    --test-all-methods
+```
+
+#### 自定义API配置
+
+```bash
+# 使用自定义API配置
 python test_llm_fill_workflow_v2.py \
     --api-key YOUR_API_KEY \
     --base-url http://localhost:9999 \
     --page-name 用户信息页
+
+# 指定特定页面进行测试
+python test_llm_fill_workflow_v2.py \
+    --page-name "客户信息页" \
+    --scenario rescue
+
+# 使用 plain 模式（直接返回原始响应）
+python test_llm_fill_workflow_v2.py --method plain
+
+# 测试所有可用的LLM方法
+python test_llm_fill_workflow_v2.py --test-all-methods
+
+# 使用附加数据（预填充字段值）
+python test_llm_fill_workflow_v2.py \
+    --use-additional-data \
+    --additional-data additional_data.json
+
+# 使用自定义系统提示词
+python test_llm_fill_workflow_v2.py \
+    --system-prompt "你是一个专业的客服助手，擅长处理客户咨询..."
+
+# 返回字段填写理由
+python test_llm_fill_workflow_v2.py --include-reason
+
+# 组合使用多个参数
+python test_llm_fill_workflow_v2.py \
+    --scenario rescue \
+    --method with_structured_output \
+    --include-reason \
+    --output result.json
 ```
 
 ### 参数说明
@@ -70,7 +209,42 @@ python test_llm_fill_workflow_v2.py \
 | `--scenario` | 测试场景 (rescue/maintenance/quality) | rescue |
 | `--conversation-file` | 对话内容文件路径 | - |
 | `--conversation` | 直接传入对话内容 | - |
+| `--method` | LLM调用方法（见下方说明） | - |
+| `--test-all-methods` | 测试所有可用的LLM方法 | False |
+| `--additional-data` | 附加数据JSON文件路径 | - |
+| `--use-additional-data` | 是否使用附加数据 | False |
+| `--system-prompt` | 自定义系统提示词 | - |
+| `--include-reason` | 返回字段填写理由 | False |
 | `--output` | 结果保存路径 | - |
+
+### LLM调用方法说明
+
+`--method` 参数支持以下值：
+
+| 方法名 | 说明 |
+|--------|------|
+| `with_structured_output` | 使用结构化输出模式（推荐） |
+| `bind_tools_non_stream` | 使用工具绑定模式（非流式） |
+| `bind_tools_stream` | 使用工具绑定模式（流式） |
+| `custom_fc_non_stream` | 自定义函数调用（非流式） |
+| `custom_fc_stream` | 自定义函数调用（流式） |
+| `pydantic_parser` | 使用Pydantic解析器 |
+| `json_parser` | 使用JSON解析器 |
+| `plain` | 纯文本模式，直接返回原始响应 |
+
+### 附加数据格式
+
+当使用 `--use-additional-data` 时，JSON文件格式如下：
+
+```json
+{
+  "customer_name": "张三",
+  "contact_phone": "13800138000",
+  "vehicle_system": "比亚迪汉EV"
+}
+```
+
+附加数据中的字段值会在LLM填单时作为预填充值使用。
 
 ### 输出说明
 

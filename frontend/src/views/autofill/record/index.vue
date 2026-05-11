@@ -88,12 +88,26 @@
     </CrudTable>
 
     <!-- 查看数据弹窗 -->
-    <a-modal v-model:open="viewModalVisible" title="填单数据" width="800px" :footer="null">
-      <JsonViewer :data="currentRecord?.data" title="填单数据" :max-height="500" />
+    <a-modal v-model:open="viewModalVisible" title="填单数据（请求记录）" width="800px" :footer="null">
+      <div v-if="currentRecord?.data && currentRecord.data.length > 0">
+        <a-tabs v-model:activeKey="activeDataTab" size="small">
+          <a-tab-pane v-for="(item, index) in currentRecord.data" :key="String(index)" :tab="`步骤 ${item.step || index + 1}`">
+            <a-descriptions :column="1" bordered size="small">
+              <a-descriptions-item label="步骤">{{ item.step || index + 1 }}</a-descriptions-item>
+              <a-descriptions-item label="时间">{{ formatDateTime(item.timestamp) }}</a-descriptions-item>
+            </a-descriptions>
+            <a-divider />
+            <JsonViewer :data="item.request" title="请求数据" :max-height="300" />
+          </a-tab-pane>
+        </a-tabs>
+      </div>
+      <div v-else>
+        <a-empty description="暂无填单数据" />
+      </div>
     </a-modal>
 
     <!-- 查看AI结果弹窗 -->
-    <a-modal v-model:open="resultModalVisible" title="AI填单结果" width="800px" :footer="null">
+    <a-modal v-model:open="resultModalVisible" title="AI填单结果" width="900px" :footer="null">
       <div v-if="currentRecord?.result">
         <a-descriptions :column="1" bordered>
           <a-descriptions-item label="处理状态">
@@ -107,10 +121,41 @@
           <a-descriptions-item label="错误信息" v-if="currentRecord.error_msg">
             <span style="color: red">{{ currentRecord.error_msg }}</span>
           </a-descriptions-item>
-          <a-descriptions-item label="AI结果数据">
-            <JsonViewer :data="currentRecord.result" title="AI结果" :max-height="400" />
-          </a-descriptions-item>
         </a-descriptions>
+
+        <!-- 分步结果展示 -->
+        <div v-if="isStepResult(currentRecord.result)" style="margin-top: 16px;">
+          <a-tabs v-model:activeKey="activeResultTab">
+            <a-tab-pane v-for="(step, index) in currentRecord.result" :key="String(index)" :tab="`步骤 ${step.step || index + 1}`">
+              <a-descriptions :column="1" bordered size="small">
+                <a-descriptions-item label="步骤">{{ step.step || index + 1 }}</a-descriptions-item>
+                <a-descriptions-item label="时间">{{ formatDateTime(step.timestamp) }}</a-descriptions-item>
+                <a-descriptions-item label="用时" v-if="step.timing?.elapsed_time">
+                  {{ step.timing.elapsed_time.toFixed(2) }}s
+                </a-descriptions-item>
+                <a-descriptions-item label="Token" v-if="step.timing?.total_tokens">
+                  {{ step.timing.total_tokens }}
+                </a-descriptions-item>
+              </a-descriptions>
+
+              <a-divider />
+
+              <a-tabs v-model:activeKey="activeStepTab[String(index)]" size="small">
+                <a-tab-pane tab="原始格式" key="fields">
+                  <JsonViewer :data="step.fields" title="原始返回格式（含type和value）" :max-height="400" />
+                </a-tab-pane>
+                <a-tab-pane tab="提取值" key="extracted">
+                  <JsonViewer :data="extractFieldValues(step.fields)" title="提取的字段值" :max-height="400" />
+                </a-tab-pane>
+              </a-tabs>
+            </a-tab-pane>
+          </a-tabs>
+        </div>
+
+        <!-- 普通结果展示 -->
+        <div v-else style="margin-top: 16px;">
+          <JsonViewer :data="currentRecord.result" title="AI结果" :max-height="400" />
+        </div>
       </div>
       <div v-else>
         <a-empty description="暂无AI结果数据" />
@@ -169,6 +214,9 @@ const currentRecord = ref<any>(null)
 const viewModalVisible = ref(false)
 const resultModalVisible = ref(false)
 const dataJsonStr = ref('')
+const activeResultTab = ref('0')
+const activeStepTab = ref<Record<string, string>>({})
+const activeDataTab = ref('0')
 
 watch(dataJsonStr, (val) => {
   try {
@@ -194,6 +242,35 @@ const getStatusText = (status?: string) => {
 
 const getStatusColor = (status?: string) => {
   return statusMap[status || 'pending']?.color || 'default'
+}
+
+// 判断是否为分步结果
+const isStepResult = (result: any): boolean => {
+  if (!result || !Array.isArray(result)) return false
+  if (result.length === 0) return false
+  // 检查第一个元素是否有step字段
+  return result[0] && typeof result[0] === 'object' && 'step' in result[0]
+}
+
+// 从原始格式中提取字段值
+const extractFieldValues = (fields: any): Record<string, any> => {
+  if (!fields || typeof fields !== 'object') return {}
+
+  const result: Record<string, any> = {}
+  for (const [key, value] of Object.entries(fields)) {
+    if (value && typeof value === 'object') {
+      const fieldValue = (value as any).value
+      if (fieldValue && typeof fieldValue === 'object' && 'value' in fieldValue) {
+        // select_single 类型: {label, value}
+        result[key] = fieldValue.value
+      } else {
+        result[key] = fieldValue
+      }
+    } else {
+      result[key] = value
+    }
+  }
+  return result
 }
 
 // 计算属性
@@ -285,11 +362,20 @@ const handleTableChange = (pag: any) => {
 const viewData = (record: any) => {
   currentRecord.value = record
   viewModalVisible.value = true
+  activeDataTab.value = '0'
 }
 
 const viewResult = (record: any) => {
   currentRecord.value = record
   resultModalVisible.value = true
+  activeResultTab.value = '0'
+  // 初始化每个步骤的tab为fields
+  activeStepTab.value = {}
+  if (record.result && Array.isArray(record.result)) {
+    record.result.forEach((_: any, index: number) => {
+      activeStepTab.value[String(index)] = 'fields'
+    })
+  }
 }
 
 const handleEdit = (record: any) => {

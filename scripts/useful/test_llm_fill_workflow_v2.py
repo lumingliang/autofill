@@ -219,6 +219,108 @@ def send_llm_fill_request(
     return response.json()
 
 
+def send_step_llm_fill_request(
+    api_base_url: str,
+    api_key: str,
+    session_id: str,
+    page_name: str,
+    group_fields: Dict[str, List[str]],
+    query: str,
+    method: str = None,
+    additional_data: Dict[str, Any] = None,
+    use_additional_data: bool = False,
+    system_prompt: str = None,
+    include_reason: bool = False,
+    memory_rounds: int = 0,
+    is_last: bool = False
+) -> Dict:
+    """
+    发送分步LLM填单请求
+
+    Args:
+        api_base_url: API基础URL
+        api_key: API密钥
+        session_id: 会话ID，用于标识同一轮填单流程
+        page_name: 页面名称
+        group_fields: 字段组与字段的映射关系
+        query: 用户对话内容
+        method: LLM调用方法
+        additional_data: 附加数据
+        use_additional_data: 是否使用附加数据
+        system_prompt: 系统提示词
+        include_reason: 是否返回字段填写理由
+        memory_rounds: 保留历史消息的轮数
+        is_last: 是否为最后一步
+
+    Returns:
+        API响应结果
+    """
+    url = f"{api_base_url}/api/autofill/llm/fill/step"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+
+    payload = {
+        "session_id": session_id,
+        "page_name": page_name,
+        "group_fields": group_fields,
+        "query": query,
+        "is_last": is_last
+    }
+
+    if method:
+        payload["method"] = method
+
+    if use_additional_data and additional_data:
+        payload["additional_data"] = additional_data
+        payload["use_additional_data"] = True
+
+    if system_prompt:
+        payload["system_prompt"] = system_prompt
+
+    if include_reason:
+        payload["include_reason"] = True
+
+    if memory_rounds > 0:
+        payload["memory_rounds"] = memory_rounds
+
+    response = requests.post(url, json=payload, headers=headers, timeout=60)
+    response.raise_for_status()
+    return response.json()
+
+
+def get_step_llm_fill_result(
+    api_base_url: str,
+    api_key: str,
+    session_id: str
+) -> Dict:
+    """
+    获取分步填单的完整结果
+
+    Args:
+        api_base_url: API基础URL
+        api_key: API密钥
+        session_id: 会话ID
+
+    Returns:
+        API响应结果
+    """
+    url = f"{api_base_url}/api/autofill/llm/fill/step/result"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+
+    payload = {
+        "session_id": session_id
+    }
+
+    response = requests.post(url, json=payload, headers=headers, timeout=60)
+    response.raise_for_status()
+    return response.json()
+
+
 def extract_field_value(field_data: Any) -> Any:
     """从字段数据中提取值（value字段）
     

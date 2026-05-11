@@ -3,7 +3,7 @@ Public API schemas
 用于公开接口的请求/响应模型
 """
 from .base import BasePublicRequest
-from .field_group import FieldGroupRequest, LLMFillRequest, OptimizeFieldInstructionRequest
+from .field_group import FieldGroupRequest, LLMFillRequest, OptimizeFieldInstructionRequest, StepLLMFillRequest, StepLLMFillResultRequest
 from .schemas import (
     # 基础请求类
     BasePublicRequest as BaseRequest,
@@ -56,6 +56,7 @@ __all__ = [
     "FieldGroupDetailRequest",
     "LLMFillRequest",
     "OptimizeFieldInstructionRequest",
+    "StepLLMFillRequest",
     # 填单数据相关
     "RecordFillDataRequest",
     # 下拉选项相关
