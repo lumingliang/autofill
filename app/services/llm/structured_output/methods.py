@@ -333,6 +333,114 @@ class StructuredOutputMethods:
 
             return result
 
+    async def method_plain(
+        self,
+        query: str,
+        system_prompt: str = None,
+        field_specs: List[Dict[str, Any]] = None,
+        include_reason: bool = False,
+        session_id: str = None,
+        memory_rounds: int = None,
+        history_manager: SessionHistoryManager = None
+    ) -> StructuredOutputResult:
+        """方法7: plain 模式 - 直接返回大模型的原始消息，不需要结构化输出
+
+        Args:
+            query: 用户查询内容
+            system_prompt: 系统提示词
+            field_specs: 字段规格列表，用于构建理由要求
+            include_reason: 是否包含理由说明
+            session_id: 会话ID
+            memory_rounds: 记忆轮数
+            history_manager: 历史记录管理器
+
+        Returns:
+            StructuredOutputResult，data中包含 raw_response 字段
+        """
+        start_time = time.time()
+        method_name = "plain"
+
+        input_data = {
+            "query": query,
+            "system_prompt": system_prompt,
+            "include_reason": include_reason,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds
+        }
+
+        try:
+            llm = self._create_llm()
+
+            # 为 plain 模式添加理由要求（仅在 include_reason=True 时）
+            plain_system_prompt = system_prompt
+            if include_reason and field_specs:
+                reason_instruction = "\n\n【重要】对于每个提取的字段，请在回答中说明：\n"
+                for field in field_specs:
+                    field_label = field.get('field_label', field.get('field_name', ''))
+                    reason_instruction += f"- 为什么填写'{field_label}'这个值（引用对话中的具体依据）\n"
+                plain_system_prompt = f"{system_prompt}{reason_instruction}"
+
+            messages = []
+            if plain_system_prompt:
+                messages.append({"role": "system", "content": plain_system_prompt})
+
+            # 添加历史对话
+            if session_id and history_manager:
+                history_manager.trim_history(session_id, memory_rounds)
+                history = history_manager.get_history(session_id)
+                for msg in history.messages:
+                    if isinstance(msg, HumanMessage):
+                        messages.append({"role": "user", "content": msg.content})
+                    elif isinstance(msg, AIMessage):
+                        messages.append({"role": "assistant", "content": msg.content})
+
+            messages.append({"role": "user", "content": query})
+
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": messages,
+                "temperature": 0.0
+            }
+
+            response = await llm.ainvoke(messages)
+            raw_content = response.content
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            # 构建原始响应数据
+            raw_response_data = {
+                "content": raw_content
+            }
+
+            result = StructuredOutputResult(
+                success=True,
+                data={"raw_response": raw_content},
+                method=method_name,
+                latency_ms=latency_ms
+            )
+
+            output_data = {"success": True, "data": {"raw_response": raw_content}, "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
+
+            self._save_exchange_to_history(session_id, query, result, history_manager)
+            return result
+
+        except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
+                success=False,
+                error=f"{type(e).__name__}: {e}",
+                method=method_name,
+                latency_ms=latency_ms
+            )
+
+            output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
+
+            return result
+
     async def method_bind_tools_stream(
         self,
         query: str,

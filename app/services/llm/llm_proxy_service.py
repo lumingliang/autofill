@@ -16,7 +16,7 @@ class LLMProxyService:
     async def process_request(
         self,
         query: str,
-        tools: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]] = None,
         system_prompt: str = None,
         config: LLMConfig = None,
         session_id: str = None,
@@ -24,23 +24,27 @@ class LLMProxyService:
         tool_choice: str = "auto",
         method: str = None,
         tenant_id: int = 0,
-        app_name: str = None
+        app_name: str = None,
+        field_specs: List[Dict[str, Any]] = None,
+        include_reason: bool = False
     ) -> Dict[str, Any]:
         """
         处理 LLM 代理请求
 
         Args:
             query: 用户查询
-            tools: 工具/函数定义列表
+            tools: 工具/函数定义列表（plain模式可为空）
             system_prompt: 系统提示词
             config: LLM 配置，如果为 None 则使用默认配置
             session_id: 会话ID，用于多轮对话记忆
             memory_rounds: 记忆轮数限制
             tool_choice: 工具选择模式，可选 "auto", "none", "required" 或指定工具名
             method: 指定使用的方法，可选 "with_structured_output", "bind_tools_stream",
-                   "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser"
+                   "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser", "plain"
             tenant_id: 租户ID
             app_name: 应用名称
+            field_specs: 字段规格列表（用于plain模式）
+            include_reason: 是否包含理由（用于plain模式）
 
         Returns:
             Dict: 包含结构化输出结果和元信息
@@ -57,12 +61,14 @@ class LLMProxyService:
         # 生成结构化输出（支持多轮对话记忆）
         result = await service.generate(
             query=query,
-            tools=tools,
+            tools=tools or [],
             system_prompt=system_prompt,
             session_id=session_id,
             memory_rounds=memory_rounds,
             tool_choice=tool_choice,
-            method=method
+            method=method,
+            field_specs=field_specs,
+            include_reason=include_reason
         )
 
         if not result.success:

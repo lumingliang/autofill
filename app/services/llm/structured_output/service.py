@@ -3,7 +3,7 @@
 """
 import time
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.log import logger
 from app.models.llm_config import LLMConfig
@@ -86,7 +86,9 @@ class StructuredOutputService:
         session_id: str = None,
         memory_rounds: int = None,
         tool_choice: str = "auto",
-        method: str = None
+        method: str = None,
+        field_specs: List[Dict[str, Any]] = None,
+        include_reason: bool = False
     ) -> StructuredOutputResult:
         """
         生成结构化输出，支持多轮对话记忆
@@ -103,7 +105,9 @@ class StructuredOutputService:
                     system_prompt=system_prompt,
                     session_id=session_id,
                     memory_rounds=memory_rounds,
-                    tool_choice=tool_choice
+                    tool_choice=tool_choice,
+                    field_specs=field_specs,
+                    include_reason=include_reason
                 )
                 if result.success:
                     result.latency_ms = int((time.time() - start_time) * 1000)
@@ -164,9 +168,23 @@ class StructuredOutputService:
         system_prompt: str = None,
         session_id: str = None,
         memory_rounds: int = None,
-        tool_choice: str = "auto"
+        tool_choice: str = "auto",
+        field_specs: List[Dict[str, Any]] = None,
+        include_reason: bool = False
     ) -> StructuredOutputResult:
         """尝试使用指定方法"""
+        # plain 模式特殊处理（参数签名不同）
+        if method == "plain":
+            return await self.methods.method_plain(
+                query=query,
+                system_prompt=system_prompt,
+                field_specs=field_specs,
+                include_reason=include_reason,
+                session_id=session_id,
+                memory_rounds=memory_rounds,
+                history_manager=self._history_manager
+            )
+
         method_map = {
             "with_structured_output": self.methods.method_with_structured_output,
             "bind_tools_non_stream": self.methods.method_bind_tools_non_stream,

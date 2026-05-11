@@ -30,7 +30,6 @@ from app.schemas.public import (
 )
 from app.services.autofill.ai_fill_service import get_ai_fill_service
 from app.services.autofill.prompt_service import (
-    assemble_prompt,
     build_fields_instructions,
     build_function_schema,
 )
@@ -69,6 +68,11 @@ def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) ->
     enriched = {}
     
     for field_name, extracted_value in extracted_data.items():
+        # 处理理由字段（以 _reason 结尾）
+        if field_name.endswith('_reason'):
+            enriched[field_name] = extracted_value
+            continue
+        
         field_spec = field_spec_map.get(field_name)
         if not field_spec:
             # 如果找不到字段配置，保持原样
@@ -580,12 +584,6 @@ async def get_field_groups_schema_handler(request: Request, auth_info: dict):
 
 请严格按照字段要求提取信息，并以JSON格式返回结果。"""
 
-    fields_instructions = build_fields_instructions(field_specs)
-    assembled_prompt = assemble_prompt(
-        type('obj', (object,), {'prompt_template_base': template_base})(),
-        field_specs,
-        "[用户对话内容将在这里插入]"
-    )
     function_schema = _build_function_schema(field_specs)
 
     return Success(data={
@@ -605,8 +603,6 @@ async def get_field_groups_schema_handler(request: Request, auth_info: dict):
         "merged_config": merged_config,
         "prompt_info": {
             "template_base": template_base,
-            "fields_instructions": fields_instructions,
-            "assembled_prompt": assembled_prompt,
         },
         "function_calling": {
             "schema": function_schema,
@@ -642,6 +638,7 @@ async def llm_fill_handler(request: Request, auth_info: dict):
 
     # 调用 fetch_field_groups 获取字段组配置（返回可直接使用的统一 schema）
     # 如果 use_additional_data=true，附加数据中已有的字段会被过滤掉，不会发给LLM
+    include_reason = params.get("include_reason", False)
     try:
         result_data = await fetch_field_groups(
             tenant_id=tenant_id,
@@ -649,7 +646,8 @@ async def llm_fill_handler(request: Request, auth_info: dict):
             page_name=params.get("page_name"),
             group_fields=group_fields,
             additional_data=additional_data,
-            use_additional_data=use_additional_data
+            use_additional_data=use_additional_data,
+            include_reason=include_reason
         )
     except ValueError as e:
         # 参数验证错误或页面不存在
@@ -701,21 +699,39 @@ async def llm_fill_handler(request: Request, auth_info: dict):
 
     # 获取用户指定的调用方法（如果提供）
     method = params.get("method")
+    include_reason = params.get("include_reason", False)
 
     try:
+        # 统一调用 llm_proxy_service，plain 模式也会正确处理
         llm_result = await llm_proxy_service.process_request(
             query=query,
-            tools=[unified_function_schema],
+            tools=[unified_function_schema] if method != "plain" else None,
             system_prompt=system_prompt,
             tool_choice={"type": "function", "function": {"name": "fill_form"}},
             config=config,
-            method=method
+            method=method,
+            field_specs=field_specs,
+            include_reason=include_reason
         )
 
         extracted_data = {k: v for k, v in llm_result.items() if not k.startswith('_')}
 
         # 注意：多选字段的后处理已经下沉到 structured_output 层
         # llm_proxy_service.process_request 内部会自动处理字符串到数组的转换
+
+        # plain 模式直接返回原始响应
+        if method == "plain":
+            return Success(data={
+                "page_name": params.get("page_name"),
+                "group_names": params.get("group_names", []),
+                "result": llm_result,
+                "method": "plain",
+                "_meta": llm_result.get("_meta", {}),
+                "_debug": {
+                    "system_prompt": system_prompt,
+                    "query": query
+                }
+            })
 
         # 合并附加数据：additional_data优先级更高（覆盖LLM提取的结果）
         # 注意：附加数据中的字段已在fetch_field_groups中过滤，不会发给LLM

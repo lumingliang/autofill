@@ -19,62 +19,9 @@ from app.core.request_parser import parse_request_params
 from app.models.autofill import FieldGroupFieldSpec
 from app.schemas.base import Success
 from app.schemas.public import FieldGroupRequest
-from app.services.autofill.prompt_service import (
-    assemble_prompt,
-    build_fields_instructions,
-    build_function_schema,
-)
+from app.services.autofill.prompt_service import build_function_schema
 
 router = APIRouter()
-
-
-def _merge_system_prompts(system_prompts: List[str]) -> str:
-    """
-    智能合并多个字段组的 system prompt
-    - 去重：移除重复的提示语
-    - 优先级：保留最详细的提示
-    - 格式化：统一格式，避免冲突
-    """
-    if not system_prompts:
-        return "你是一个智能填单助手。"
-    
-    # 如果只有一个prompt，直接返回
-    if len(system_prompts) == 1:
-        return system_prompts[0]
-    
-    # 去重并保留顺序
-    seen = set()
-    unique_prompts = []
-    for prompt in system_prompts:
-        # 标准化：去除多余空白，用于比较
-        normalized = " ".join(prompt.split())
-        if normalized not in seen and prompt.strip():
-            seen.add(normalized)
-            unique_prompts.append(prompt)
-    
-    # 如果去重后只有一个，直接返回
-    if len(unique_prompts) == 1:
-        return unique_prompts[0]
-    
-    # 智能合并：提取共同部分，保留特殊要求
-    # 策略：使用第一个作为主要prompt，其他的作为补充
-    base_prompt = unique_prompts[0]
-    additional_prompts = unique_prompts[1:]
-    
-    # 检查是否有冲突的指令，并合并
-    merged_sections = []
-    
-    # 添加基础prompt
-    merged_sections.append(base_prompt)
-    
-    # 添加其他prompt的补充说明
-    for prompt in additional_prompts:
-        # 提取prompt中的特殊要求（如果有）
-        # 简化处理：直接添加，但标记来源
-        if prompt not in base_prompt:  # 避免完全重复
-            merged_sections.append(f"【补充要求】{prompt}")
-    
-    return "\n\n".join(merged_sections)
 
 
 async def fetch_field_groups(
@@ -83,7 +30,8 @@ async def fetch_field_groups(
     page_name: str,
     group_fields: Dict[str, List[str]] = None,
     additional_data: Dict[str, Any] = None,
-    use_additional_data: bool = False
+    use_additional_data: bool = False,
+    include_reason: bool = False
 ) -> Dict[str, Any]:
     """
     查询字段组配置核心业务逻辑（优化版本）
@@ -100,6 +48,7 @@ async def fetch_field_groups(
                      空列表表示查询该组所有字段
         additional_data: 附加数据，包含预填充的字段值
         use_additional_data: 是否使用附加数据，为true时跳过additional_data中已有字段的查询
+        include_reason: 是否包含理由字段，默认False
 
     Returns:
         {
@@ -233,18 +182,15 @@ async def fetch_field_groups(
             if not field_specs:
                 continue
 
-        fields_instructions = build_fields_instructions(field_specs)
-        function_schema = build_function_schema(fg, field_specs)
-        example_query = "[用户对话内容将在这里插入]"
-        assembled_prompt = assemble_prompt(fg, field_specs, example_query)
+        function_schema = build_function_schema(fg, field_specs, include_reason)
 
         # 合并 properties
         if function_schema:
             props = function_schema.get("function", {}).get("parameters", {}).get("properties", {})
             all_properties.update(props)
 
-        # 收集 prompt
-        if fg.prompt_template_base:
+        # 收集 prompt（简化：直接使用第一个字段组的 prompt）
+        if fg.prompt_template_base and not system_prompts:
             system_prompts.append(fg.prompt_template_base)
 
         field_groups_result.append({
@@ -273,8 +219,6 @@ async def fetch_field_groups(
             ],
             "prompt_info": {
                 "template_base": fg.prompt_template_base,
-                "fields_instructions": fields_instructions,
-                "assembled_prompt": assembled_prompt,
             },
             "function_calling": {
                 "schema": function_schema,
@@ -319,7 +263,15 @@ async def fetch_field_groups(
                     for name in target_names:
                         if name in all_field_specs_map:
                             specified_field_names.add(name)
-            required_fields = list(specified_field_names & set(all_properties.keys()))
+            # 同时包含原始字段和对应的 _reason 字段
+            required_fields = []
+            for name in specified_field_names:
+                if name in all_properties:
+                    required_fields.append(name)
+                    # 添加对应的理由字段
+                    reason_field = f"{name}_reason"
+                    if reason_field in all_properties:
+                        required_fields.append(reason_field)
         else:
             # 查全量场景：所有字段设为 required
             required_fields = list(all_properties.keys())
@@ -337,8 +289,8 @@ async def fetch_field_groups(
             }
         }
 
-    # 合并后的 Prompt - 优化：去重并智能合并
-    combined_prompt = _merge_system_prompts(system_prompts)
+    # 简化：直接使用第一个 prompt（系统提示词不需要合并）
+    combined_prompt = system_prompts[0] if system_prompts else ""
 
     return {
         "page_name": page.page_name if page else page_name,
