@@ -28,6 +28,50 @@ DEFAULT_API_KEY = "af_1fzDujUFl7SLg9L3CWMSV5upBT4GU1bR"
 PAGE_NAME = "用户信息页"
 FIELD_GROUP_NAME = "default"
 
+# 主字段配置（一级事件类型字段）
+DEFAULT_MAIN_FIELD_NAME = "一级事件类型"
+DEFAULT_MAIN_FIELD_LABEL = "一级事件类型"
+DEFAULT_MAIN_FIELD_INSTRUCTION = "请选择事件的一级分类"
+
+# 级联字段配置（二三级事件类型字段）
+DEFAULT_CASCADE_FIELD_SUFFIX = "二三级事件类型"  # 级联字段后缀
+DEFAULT_CASCADE_FIELD_INSTRUCTION_TEMPLATE = "请选择{level1_name}下的二级和三级事件类型"  # 级联字段填写说明模板
+
+# CSV字段名配置 - 可自定义从哪个字段读取数据
+DEFAULT_CSV_FIELD_MAPPING = {
+    "level1_name": "一级事件类型",
+    "level1_id": "一级事件类型ID",
+    "level1_instruction": "一级事件类型填写说明",
+    "level2_name": "二级事件类型",
+    "level2_id": "二级事件类型ID",
+    "level2_instruction": "二级事件类型填写说明",
+    "level3_name": "三级事件类型",
+    "level3_id": "三级事件类型ID",
+    "level3_instruction": "三级事件类型填写说明",
+}
+
+# ID生成器计数器
+_id_counters = {"level1": 0, "level2": 0, "level3": 0}
+
+
+def generate_id(level: str, parent_id: str = "") -> str:
+    """
+    自动生成事件类型ID
+    level: "level1", "level2", "level3"
+    parent_id: 父级ID，用于生成子级ID
+    """
+    global _id_counters
+    _id_counters[level] += 1
+    counter = _id_counters[level]
+
+    if level == "level1":
+        return f"EVT{counter:03d}"
+    elif level == "level2":
+        return f"{parent_id}{counter:03d}"
+    elif level == "level3":
+        return f"{parent_id}{counter:03d}"
+    return f"ID{counter}"
+
 
 def read_csv_data(csv_path: str) -> List[Dict[str, str]]:
     """读取CSV文件数据"""
@@ -39,7 +83,15 @@ def read_csv_data(csv_path: str) -> List[Dict[str, str]]:
     return data
 
 
-def organize_hierarchy(data: List[Dict[str, str]]) -> Dict:
+def get_field_value(row: Dict[str, str], field_mapping: Dict[str, str], key: str, default: str = "") -> str:
+    """根据字段映射获取值"""
+    csv_field = field_mapping.get(key, DEFAULT_CSV_FIELD_MAPPING.get(key, ""))
+    if not csv_field:
+        return default
+    return row.get(csv_field, default)
+
+
+def organize_hierarchy(data: List[Dict[str, str]], field_mapping: Dict[str, str] = None) -> Dict:
     """
     组织层级结构
     返回: {
@@ -60,19 +112,30 @@ def organize_hierarchy(data: List[Dict[str, str]]) -> Dict:
         ...
     }
     """
+    if field_mapping is None:
+        field_mapping = {}
+
     hierarchy = {}
+    # 重置ID计数器
+    global _id_counters
+    _id_counters = {"level1": 0, "level2": 0, "level3": 0}
 
     for row in data:
-        level1_name = row["一级事件类型"]
-        level1_id = row["一级事件类型ID"]
-        level1_instruction = row.get("一级事件类型填写说明", "")
+        level1_name = get_field_value(row, field_mapping, "level1_name")
+        level1_id = get_field_value(row, field_mapping, "level1_id")
+        level1_instruction = get_field_value(row, field_mapping, "level1_instruction")
 
-        level2_name = row["二级事件类型"]
-        level2_id = row["二级事件类型ID"]
+        level2_name = get_field_value(row, field_mapping, "level2_name")
+        level2_id = get_field_value(row, field_mapping, "level2_id")
+        level2_instruction = get_field_value(row, field_mapping, "level2_instruction")
 
-        level3_name = row["三级事件类型"]
-        level3_id = row["三级事件类型ID"]
-        level3_instruction = row.get("三级事件类型填写说明", "")
+        level3_name = get_field_value(row, field_mapping, "level3_name")
+        level3_id = get_field_value(row, field_mapping, "level3_id")
+        level3_instruction = get_field_value(row, field_mapping, "level3_instruction")
+
+        # 如果没有ID则自动生成
+        if not level1_id:
+            level1_id = generate_id("level1")
 
         # 初始化一级事件类型
         if level1_name not in hierarchy:
@@ -82,12 +145,21 @@ def organize_hierarchy(data: List[Dict[str, str]]) -> Dict:
                 "二级": {}
             }
 
+        # 如果没有二级ID则自动生成（基于一级ID）
+        if not level2_id:
+            level2_id = generate_id("level2", hierarchy[level1_name]["id"])
+
         # 初始化二级事件类型
         if level2_name not in hierarchy[level1_name]["二级"]:
             hierarchy[level1_name]["二级"][level2_name] = {
                 "id": level2_id,
+                "fill_instruction": level2_instruction,
                 "三级": {}
             }
+
+        # 如果没有三级ID则自动生成（基于二级ID）
+        if not level3_id:
+            level3_id = generate_id("level3", hierarchy[level1_name]["二级"][level2_name]["id"])
 
         # 保存三级事件类型
         hierarchy[level1_name]["二级"][level2_name]["三级"][level3_name] = {
@@ -210,6 +282,22 @@ def test_field_creation(api_base_url: str, api_key: str, page_name: str, field_n
         return False
 
 
+def parse_field_mapping(mapping_str: str) -> Dict[str, str]:
+    """
+    解析字段映射字符串
+    格式: key1=value1,key2=value2
+    例如: level1_name=一级分类,level1_id=一级ID
+    """
+    if not mapping_str:
+        return {}
+    mapping = {}
+    for pair in mapping_str.split(","):
+        if "=" in pair:
+            key, value = pair.split("=", 1)
+            mapping[key.strip()] = value.strip()
+    return mapping
+
+
 def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description="从CSV创建事件类型字段结构")
@@ -219,6 +307,25 @@ def main():
                         help="CSV文件路径")
     parser.add_argument("--page-name", default=PAGE_NAME, help="页面名称")
     parser.add_argument("--group-name", default=FIELD_GROUP_NAME, help="字段组名称")
+    parser.add_argument("--field-mapping", default="",
+                        help="CSV字段映射，格式: key1=value1,key2=value2。支持的key: level1_name,level1_id,level1_instruction,level2_name,level2_id,level2_instruction,level3_name,level3_id,level3_instruction")
+    parser.add_argument("--auto-generate-id", action="store_true",
+                        help="当ID字段为空时自动生成ID")
+    # 主字段配置参数
+    parser.add_argument("--main-field-name", default=DEFAULT_MAIN_FIELD_NAME,
+                        help="主字段名称（一级事件类型字段）")
+    parser.add_argument("--main-field-label", default=DEFAULT_MAIN_FIELD_LABEL,
+                        help="主字段标签（一级事件类型字段）")
+    parser.add_argument("--main-field-instruction", default=DEFAULT_MAIN_FIELD_INSTRUCTION,
+                        help="主字段填写说明")
+    # 级联字段配置参数
+    parser.add_argument("--cascade-field-suffix", default=DEFAULT_CASCADE_FIELD_SUFFIX,
+                        help="级联字段后缀名称")
+    parser.add_argument("--cascade-field-instruction-template", default=DEFAULT_CASCADE_FIELD_INSTRUCTION_TEMPLATE,
+                        help="级联字段填写说明模板，可用{level1_name}作为变量")
+    # 只创建主字段选项
+    parser.add_argument("--main-only", action="store_true",
+                        help="只创建主字段，跳过级联字段创建")
     args = parser.parse_args()
 
     csv_path = args.csv_path
@@ -226,6 +333,15 @@ def main():
     api_key = args.api_key
     page_name = args.page_name
     group_name = args.group_name
+    field_mapping = parse_field_mapping(args.field_mapping)
+    
+    # 字段配置
+    main_field_name = args.main_field_name
+    main_field_label = args.main_field_label
+    main_field_instruction = args.main_field_instruction
+    cascade_field_suffix = args.cascade_field_suffix
+    cascade_field_instruction_template = args.cascade_field_instruction_template
+    main_only = args.main_only
 
     print("=" * 80)
     print("从CSV创建事件类型字段结构")
@@ -234,6 +350,12 @@ def main():
     print(f"页面名称: {page_name}")
     print(f"字段组名称: {group_name}")
     print(f"CSV文件: {csv_path}")
+    if field_mapping:
+        print(f"字段映射: {field_mapping}")
+    print(f"主字段名称: {main_field_name}")
+    print(f"主字段标签: {main_field_label}")
+    print(f"级联字段后缀: {cascade_field_suffix}")
+    print(f"只创建主字段: {'是' if main_only else '否'}")
     print("=" * 80)
 
     # 1. 读取CSV数据
@@ -247,7 +369,7 @@ def main():
 
     # 2. 组织层级结构
     print("\n[2/4] 组织层级结构...")
-    hierarchy = organize_hierarchy(data)
+    hierarchy = organize_hierarchy(data, field_mapping)
     print(f"      ✓ 一级事件类型数量: {len(hierarchy)}")
 
     # 统计二级和三级
@@ -260,16 +382,16 @@ def main():
     print(f"      ✓ 二级事件类型数量: {level2_count}")
     print(f"      ✓ 三级事件类型数量: {level3_count}")
 
-    # 3. 创建一级事件类型字段
-    print("\n[3/4] 创建一级事件类型字段...")
+    # 3. 创建一级事件类型字段（主字段）
+    print(f"\n[3/4] 创建主字段 ({main_field_name})...")
     level1_options = build_level1_options(hierarchy)
-    print(f"      一级事件类型选项数量: {len(level1_options)}")
+    print(f"      主字段选项数量: {len(level1_options)}")
 
     level1_field = create_select_field(
-        field_name="一级事件类型",
-        field_label="一级事件类型",
+        field_name=main_field_name,
+        field_label=main_field_label,
         options_items=level1_options,
-        fill_instruction="请选择事件的一级分类"
+        fill_instruction=main_field_instruction
     )
 
     level1_request = create_field_group_request(
@@ -278,11 +400,11 @@ def main():
         fields=[level1_field]
     )
 
-    print(f"      发送请求创建一级事件类型字段...")
+    print(f"      发送请求创建主字段...")
     try:
         response = send_upsert_request(api_base_url, api_key, level1_request)
         if response.get("code") == 200 or response.get("success"):
-            print(f"      ✓ 一级事件类型字段创建成功")
+            print(f"      ✓ 主字段创建成功")
         else:
             print(f"      ✗ 创建失败: {response.get('message', '未知错误')}")
             sys.exit(1)
@@ -290,71 +412,78 @@ def main():
         print(f"      ✗ 请求失败: {e}")
         sys.exit(1)
 
-    # 验证一级字段创建
+    # 验证主字段创建
     print(f"      验证字段创建...")
-    if test_field_creation(api_base_url, api_key, page_name, "一级事件类型"):
+    if test_field_creation(api_base_url, api_key, page_name, main_field_name):
         print(f"      ✓ 验证通过")
     else:
         print(f"      ✗ 验证失败，字段可能未正确创建")
 
-    # 4. 为每个一级事件类型创建展平的二三级字段
-    print("\n[4/4] 创建二三级事件类型展平字段...")
-
+    # 4. 为每个一级事件类型创建展平的二三级字段（级联字段）
     success_count = 0
     failed_count = 0
 
-    for level1_name, level1_data in sorted(hierarchy.items(), key=lambda x: x[1]["id"]):
-        field_name = f"{level1_name}_二三级事件类型"
-        field_label = f"{level1_name} - 二三级事件类型"
+    if main_only:
+        print("\n[4/4] 跳过级联字段创建（--main-only 模式）")
+    else:
+        print(f"\n[4/4] 创建级联字段（后缀: {cascade_field_suffix}）...")
 
-        print(f"\n      处理: {level1_name}")
-        print(f"      字段名称: {field_name}")
+        for level1_name, level1_data in sorted(hierarchy.items(), key=lambda x: x[1]["id"]):
+            field_name = f"{level1_name}_{cascade_field_suffix}"
+            field_label = f"{level1_name}-的{cascade_field_suffix}"
+            fill_instruction = cascade_field_instruction_template.format(level1_name=level1_name)
 
-        # 构建展平选项
-        flattened_options = build_flattened_options_for_level1(level1_name, level1_data)
-        print(f"      展平选项数量: {len(flattened_options)}")
-        
-        # 显示前3个选项示例
-        if flattened_options:
-            print(f"      选项示例:")
-            for i, opt in enumerate(flattened_options[:3]):
-                print(f"        - {opt['label']} ({opt['value']})")
-            if len(flattened_options) > 3:
-                print(f"        ... 共 {len(flattened_options)} 个选项")
+            print(f"\n      处理: {level1_name}")
+            print(f"      字段名称: {field_name}")
 
-        # 创建字段
-        field = create_select_field(
-            field_name=field_name,
-            field_label=field_label,
-            options_items=flattened_options,
-            fill_instruction=f"请选择{level1_name}下的二级和三级事件类型"
-        )
+            # 构建展平选项
+            flattened_options = build_flattened_options_for_level1(level1_name, level1_data)
+            print(f"      展平选项数量: {len(flattened_options)}")
+            
+            # 显示前3个选项示例
+            if flattened_options:
+                print(f"      选项示例:")
+                for i, opt in enumerate(flattened_options[:3]):
+                    print(f"        - {opt['label']} ({opt['value']})")
+                if len(flattened_options) > 3:
+                    print(f"        ... 共 {len(flattened_options)} 个选项")
 
-        request = create_field_group_request(
-            page_name=page_name,
-            group_name=group_name,
-            fields=[field]
-        )
+            # 创建字段
+            field = create_select_field(
+                field_name=field_name,
+                field_label=field_label,
+                options_items=flattened_options,
+                fill_instruction=fill_instruction
+            )
 
-        print(f"      发送请求创建字段...")
-        try:
-            response = send_upsert_request(api_base_url, api_key, request)
-            if response.get("code") == 200 or response.get("success"):
-                print(f"      ✓ 创建成功")
-                success_count += 1
-            else:
-                print(f"      ✗ 创建失败: {response.get('message', '未知错误')}")
+            request = create_field_group_request(
+                page_name=page_name,
+                group_name=group_name,
+                fields=[field]
+            )
+
+            print(f"      发送请求创建字段...")
+            try:
+                response = send_upsert_request(api_base_url, api_key, request)
+                if response.get("code") == 200 or response.get("success"):
+                    print(f"      ✓ 创建成功")
+                    success_count += 1
+                else:
+                    print(f"      ✗ 创建失败: {response.get('message', '未知错误')}")
+                    failed_count += 1
+            except Exception as e:
+                print(f"      ✗ 请求失败: {e}")
                 failed_count += 1
-        except Exception as e:
-            print(f"      ✗ 请求失败: {e}")
-            failed_count += 1
 
     print("\n" + "=" * 80)
     print("执行结果汇总")
     print("=" * 80)
-    print(f"一级事件类型字段: 1 个 (✓ 成功)")
-    print(f"二三级展平字段: {success_count} 个成功, {failed_count} 个失败")
-    print(f"总计: {success_count + 1} 个字段")
+    print(f"主字段: 1 个 (✓ 成功)")
+    if not main_only:
+        print(f"级联字段: {success_count} 个成功, {failed_count} 个失败")
+        print(f"总计: {success_count + 1} 个字段")
+    else:
+        print(f"级联字段: 已跳过（--main-only 模式）")
     print("=" * 80)
 
     if failed_count > 0:
