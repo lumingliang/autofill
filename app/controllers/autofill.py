@@ -115,13 +115,20 @@ class DropdownOptionController(CRUDBase[DropdownOption, DropdownOptionCreate, Dr
                 raise HTTPException(status_code=400, detail="该父选项下已存在同名选项值")
         return await self.update(id=id, obj_in=obj_in)
 
-    async def get_tree(self, tenant_id: int, app_name: str, parent_id: int = 0, class_name: str = "") -> List[Dict[str, Any]]:
+    async def get_tree(self, tenant_id: int, app_name: str, parent_id: int = 0, class_name: str = "", is_superuser: bool = False) -> List[Dict[str, Any]]:
         """获取树形结构的下拉选项"""
         query = Q(
-            tenant_id=tenant_id,
             app_name=app_name,
             parent_id=parent_id
         )
+        # 非超级用户只能查看指定租户的数据
+        if not is_superuser:
+            query &= Q(tenant_id=tenant_id)
+        elif tenant_id > 0:
+            # 超级用户指定了租户ID，优先使用该租户
+            query &= Q(tenant_id=tenant_id)
+        # 超级用户未指定租户ID，查询所有租户
+
         if class_name:
             query &= Q(class_name=class_name)
 
@@ -131,7 +138,7 @@ class DropdownOptionController(CRUDBase[DropdownOption, DropdownOptionCreate, Dr
         for opt in options:
             opt_dict = await opt.to_dict()
             # 递归获取子选项
-            children = await self.get_tree(tenant_id, app_name, opt.id, class_name)
+            children = await self.get_tree(tenant_id, app_name, opt.id, class_name, is_superuser)
             if children:
                 opt_dict["children"] = children
             result.append(opt_dict)

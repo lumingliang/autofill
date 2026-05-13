@@ -55,7 +55,7 @@ class ApiController(CRUDBase[Api, ApiCreate, ApiUpdate]):
                 tags = list(route.tags)[0] if route.tags else ""
                 api_obj = await Api.filter(method=method, path=path).first()
                 if api_obj:
-                    await api_obj.update_from_dict(dict(method=method, path=path, summary=summary, tags=tags)).save()
+                    await api_obj.update_from_dict(dict(method=method, path=path, summary=summary, tags=tags))
                 else:
                     logger.debug(f"API Created {method} {path}")
                     await Api.create(**dict(method=method, path=path, summary=summary, tags=tags))

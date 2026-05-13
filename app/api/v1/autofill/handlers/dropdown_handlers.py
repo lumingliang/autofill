@@ -58,20 +58,21 @@ async def get_dropdown_tree(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    effective_tenant_id = tenant_id
-    if effective_tenant_id <= 0:
-        effective_tenant_id = current_user.current_tenant_id
-
-    if effective_tenant_id <= 0:
-        first_option = await dropdown_option_controller.model.filter(app_name=app_name).first()
-        if first_option:
-            effective_tenant_id = first_option.tenant_id
-        elif is_superuser(current_user):
-            effective_tenant_id = 1
-        else:
+    # 非超级用户必须指定租户ID
+    if not is_superuser(current_user):
+        effective_tenant_id = tenant_id
+        if effective_tenant_id <= 0:
+            effective_tenant_id = current_user.current_tenant_id
+        if effective_tenant_id <= 0:
             return Fail(code=400, msg="请指定租户ID")
+    else:
+        # 超级用户使用传入的tenant_id（可能为0，表示查询所有）
+        effective_tenant_id = tenant_id
 
-    tree = await dropdown_option_controller.get_tree(effective_tenant_id, app_name, parent_id, class_name)
+    tree = await dropdown_option_controller.get_tree(
+        effective_tenant_id, app_name, parent_id, class_name,
+        is_superuser=is_superuser(current_user)
+    )
     return Success(data=tree)
 
 
@@ -83,22 +84,24 @@ async def get_dropdown_classes(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    effective_tenant_id = tenant_id
-    if effective_tenant_id <= 0:
-        effective_tenant_id = current_user.current_tenant_id
-
-    if effective_tenant_id <= 0:
-        first_option = await dropdown_option_controller.model.filter(app_name=app_name).first()
-        if first_option:
-            effective_tenant_id = first_option.tenant_id
-        elif is_superuser(current_user):
-            effective_tenant_id = 1
-        else:
+    # 构建查询条件
+    query = Q(app_name=app_name)
+    
+    # 非超级用户只能查看自己租户的数据
+    if not is_superuser(current_user):
+        effective_tenant_id = tenant_id
+        if effective_tenant_id <= 0:
+            effective_tenant_id = current_user.current_tenant_id
+        if effective_tenant_id <= 0:
             return Fail(code=400, msg="请指定租户ID")
+        query &= Q(tenant_id=effective_tenant_id)
+    elif tenant_id > 0:
+        # 超级用户明确指定了租户ID，才使用该租户过滤
+        query &= Q(tenant_id=tenant_id)
+    # 超级用户未指定租户ID，查询所有租户
 
     options = await dropdown_option_controller.model.filter(
-        tenant_id=effective_tenant_id,
-        app_name=app_name
+        query
     ).distinct().values("class_name")
 
     class_names = [opt["class_name"] for opt in options if opt["class_name"]]
@@ -313,6 +316,310 @@ async def import_dropdown_from_csv(
             "created": created_count,
             "updated": updated_count,
             "total": len(rows),
+            "errors": errors
+        }
+
+        if errors:
+            return Success(data=result, msg=f"导入完成，但有{len(errors)}个错误")
+        return Success(data=result, msg="导入成功")
+
+    except Exception as e:
+        return Fail(code=500, msg=f"导入失败: {str(e)}")
+
+
+@router.post("/dropdown/preview-csv", summary="预览CSV文件结构")
+async def preview_csv_structure(
+    file: UploadFile = File(..., description="CSV文件"),
+    token: str = Header(..., description="token验证"),
+):
+    """
+    预览CSV文件，返回表头字段列表和样例数据
+    """
+    await AuthControl.is_authed(token)
+
+    if not file.filename.endswith('.csv'):
+        return Fail(code=400, msg="请上传CSV文件")
+
+    try:
+        content = await file.read()
+        content_str = content.decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(content_str))
+
+        if not csv_reader.fieldnames:
+            return Fail(code=400, msg="CSV文件格式错误：无法读取表头")
+
+        fieldnames = list(csv_reader.fieldnames)
+        rows = list(csv_reader)
+
+        # 返回前3行样例数据
+        sample_data = rows[:3] if rows else []
+
+        # 智能识别可能的字段映射
+        suggested_mapping = {
+            "level1_name": None,
+            "level1_id": None,
+            "level1_desc": None,
+            "level2_name": None,
+            "level2_id": None,
+            "level2_desc": None,
+            "level3_name": None,
+            "level3_id": None,
+            "level3_desc": None,
+        }
+
+        for field in fieldnames:
+            field_lower = field.lower()
+            # 一级字段识别
+            if any(k in field_lower for k in ['一级', 'level1', 'level_1']):
+                if any(k in field_lower for k in ['id', '标识', '编码']):
+                    suggested_mapping["level1_id"] = field
+                elif any(k in field_lower for k in ['说明', '描述', 'desc', 'description']):
+                    suggested_mapping["level1_desc"] = field
+                else:
+                    suggested_mapping["level1_name"] = field
+            # 二级字段识别
+            elif any(k in field_lower for k in ['二级', 'level2', 'level_2']):
+                if any(k in field_lower for k in ['id', '标识', '编码']):
+                    suggested_mapping["level2_id"] = field
+                elif any(k in field_lower for k in ['说明', '描述', 'desc', 'description']):
+                    suggested_mapping["level2_desc"] = field
+                else:
+                    suggested_mapping["level2_name"] = field
+            # 三级字段识别
+            elif any(k in field_lower for k in ['三级', 'level3', 'level_3']):
+                if any(k in field_lower for k in ['id', '标识', '编码']):
+                    suggested_mapping["level3_id"] = field
+                elif any(k in field_lower for k in ['说明', '描述', 'desc', 'description']):
+                    suggested_mapping["level3_desc"] = field
+                else:
+                    suggested_mapping["level3_name"] = field
+
+        return Success(data={
+            "fields": fieldnames,
+            "sample_data": sample_data,
+            "suggested_mapping": suggested_mapping,
+            "total_rows": len(rows)
+        })
+
+    except Exception as e:
+        return Fail(code=500, msg=f"解析CSV失败: {str(e)}")
+
+
+@router.post("/dropdown/import-hierarchical", summary="CSV批量导入层级下拉选项")
+async def import_hierarchical_dropdown_from_csv(
+    file: UploadFile = File(..., description="CSV文件"),
+    app_name: str = Query(..., description="应用名称"),
+    class_name: str = Query("事件类型", description="分类名称"),
+    level1_name_field: str = Query(..., description="一级名称字段"),
+    level1_id_field: str = Query(..., description="一级ID字段"),
+    level1_desc_field: str = Query("", description="一级说明字段"),
+    level2_name_field: str = Query("", description="二级名称字段"),
+    level2_id_field: str = Query("", description="二级ID字段"),
+    level2_desc_field: str = Query("", description="二级说明字段"),
+    level3_name_field: str = Query("", description="三级名称字段"),
+    level3_id_field: str = Query("", description="三级ID字段"),
+    level3_desc_field: str = Query("", description="三级说明字段"),
+    tenant_id: int = Query(None, description="租户ID"),
+    token: str = Header(..., description="token验证"),
+):
+    """
+    三级下拉选项CSV导入，支持自定义字段映射
+    """
+    current_user = await AuthControl.is_authed(token)
+
+    target_tenant_id = tenant_id
+    if is_superuser(current_user):
+        if target_tenant_id and target_tenant_id > 0:
+            target_tenant_id = target_tenant_id
+        elif app_name:
+            app = await app_management_controller.model.filter(app_name=app_name).first()
+            if app:
+                target_tenant_id = app.tenant_id
+            else:
+                return Fail(code=400, msg=f"应用 '{app_name}' 不存在")
+        else:
+            return Fail(code=400, msg="请指定租户ID或应用名称")
+    else:
+        target_tenant_id = current_user.current_tenant_id
+        if target_tenant_id <= 0:
+            return Fail(code=400, msg="您当前未选择租户")
+
+    if not file.filename.endswith('.csv'):
+        return Fail(code=400, msg="请上传CSV文件")
+
+    try:
+        content = await file.read()
+        content_str = content.decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(content_str))
+
+        if not csv_reader.fieldnames:
+            return Fail(code=400, msg="CSV文件格式错误：无法读取表头")
+        required_level1_fields = ['一级事件类型', '一级事件类型ID']
+        required_level2_fields = ['二级事件类型', '二级事件类型ID']
+        required_level3_fields = ['三级事件类型', '三级事件类型ID']
+
+        fieldnames = csv_reader.fieldnames
+        has_level1 = all(f in fieldnames for f in required_level1_fields)
+        rows = list(csv_reader)
+        created_count = 0
+        updated_count = 0
+        errors = []
+
+        # 用于存储各级选项的ID映射
+        level1_map = {}  # {option_value: id}
+        level2_map = {}  # {option_value: id}
+        level3_map = {}  # {option_value: id}
+
+        # 第一步：创建/更新所有一级事件类型
+        for idx, row in enumerate(rows, start=2):
+            try:
+                level1_name = row.get(level1_name_field, '').strip()
+                level1_id = row.get(level1_id_field, '').strip()
+                level1_desc = row.get(level1_desc_field, '').strip() if level1_desc_field else ''
+
+                if not level1_name or not level1_id:
+                    continue
+
+                # 使用ID作为option_value，名称作为summary
+                option_value = level1_id
+                summary = level1_name
+                description = level1_desc
+
+                existing = await dropdown_option_controller.model.filter(
+                    tenant_id=target_tenant_id,
+                    app_name=app_name,
+                    class_name=class_name,
+                    option_value=option_value
+                ).first()
+
+                if existing:
+                    existing.summary = summary
+                    existing.description = description
+                    existing.parent_id = 0
+                    await existing.save()
+                    level1_map[option_value] = existing.id
+                    updated_count += 1
+                else:
+                    option = await dropdown_option_controller.model.create(
+                        tenant_id=target_tenant_id,
+                        app_name=app_name,
+                        class_name=class_name,
+                        option_value=option_value,
+                        summary=summary,
+                        description=description,
+                        parent_id=0
+                    )
+                    level1_map[option_value] = option.id
+                    created_count += 1
+
+            except Exception as e:
+                errors.append(f"第{idx}行(一级): {str(e)}")
+
+        # 第二步：创建/更新所有二级事件类型（如果配置了二级字段映射）
+        if level2_name_field and level2_id_field:
+            for idx, row in enumerate(rows, start=2):
+                try:
+                    level1_id = row.get(level1_id_field, '').strip()
+                    level2_name = row.get(level2_name_field, '').strip()
+                    level2_id = row.get(level2_id_field, '').strip()
+                    level2_desc = row.get(level2_desc_field, '').strip() if level2_desc_field else ''
+
+                    if not level2_name or not level2_id or not level1_id:
+                        continue
+
+                    option_value = level2_id
+                    summary = level2_name
+                    description = level2_desc
+
+                    # 查找父级ID
+                    parent_id = level1_map.get(level1_id, 0)
+
+                    existing = await dropdown_option_controller.model.filter(
+                        tenant_id=target_tenant_id,
+                        app_name=app_name,
+                        class_name=class_name,
+                        option_value=option_value
+                    ).first()
+
+                    if existing:
+                        existing.summary = summary
+                        existing.description = description
+                        existing.parent_id = parent_id
+                        await existing.save()
+                        level2_map[option_value] = existing.id
+                        updated_count += 1
+                    else:
+                        option = await dropdown_option_controller.model.create(
+                            tenant_id=target_tenant_id,
+                            app_name=app_name,
+                            class_name=class_name,
+                            option_value=option_value,
+                            summary=summary,
+                            description=description,
+                            parent_id=parent_id
+                        )
+                        level2_map[option_value] = option.id
+                        created_count += 1
+
+                except Exception as e:
+                    errors.append(f"第{idx}行(二级): {str(e)}")
+
+        # 第三步：创建/更新所有三级事件类型（如果配置了三级字段映射且配置了二级字段映射）
+        if level3_name_field and level3_id_field and level2_name_field and level2_id_field:
+          for idx, row in enumerate(rows, start=2):
+              try:
+                  level2_id = row.get(level2_id_field, '').strip()
+                  level3_name = row.get(level3_name_field, '').strip()
+                  level3_id = row.get(level3_id_field, '').strip()
+                  level3_desc = row.get(level3_desc_field, '').strip() if level3_desc_field else ''
+
+                  if not level3_name or not level3_id or not level2_id:
+                      continue
+
+                  option_value = level3_id
+                  summary = level3_name
+                  description = level3_desc
+
+                  # 查找父级ID
+                  parent_id = level2_map.get(level2_id, 0)
+
+                  existing = await dropdown_option_controller.model.filter(
+                      tenant_id=target_tenant_id,
+                      app_name=app_name,
+                      class_name=class_name,
+                      option_value=option_value
+                  ).first()
+
+                  if existing:
+                      existing.summary = summary
+                      existing.description = description
+                      existing.parent_id = parent_id
+                      await existing.save()
+                      level3_map[option_value] = existing.id
+                      updated_count += 1
+                  else:
+                      option = await dropdown_option_controller.model.create(
+                          tenant_id=target_tenant_id,
+                          app_name=app_name,
+                          class_name=class_name,
+                          option_value=option_value,
+                          summary=summary,
+                          description=description,
+                          parent_id=parent_id
+                      )
+                      level3_map[option_value] = option.id
+                      created_count += 1
+
+              except Exception as e:
+                  errors.append(f"第{idx}行(三级): {str(e)}")
+
+        result = {
+            "created": created_count,
+            "updated": updated_count,
+            "total": len(rows),
+            "level1_count": len(level1_map),
+            "level2_count": len(level2_map),
+            "level3_count": len(level3_map),
             "errors": errors
         }
 

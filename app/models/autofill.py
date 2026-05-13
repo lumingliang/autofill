@@ -54,13 +54,13 @@ class SummaryTemplate(BaseModel, TimestampMixin):
 
 class DropdownOption(BaseModel, TimestampMixin):
     """下拉选项类填单模板表"""
-    summary = fields.CharField(max_length=500, default="", description="字段摘要")
-    description = fields.TextField(default="", description="详细说明")
+    summary = fields.CharField(max_length=500, default="", description="显示标签（下拉框中显示的文本）")
+    description = fields.TextField(default="", description="选项说明（帮助提示信息）")
     class_name = fields.CharField(max_length=64, default="", description="模板分类", index=True)
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     parent_id = fields.BigIntField(default=0, description="父选项ID，0表示顶级选项", index=True)
-    option_value = fields.CharField(max_length=128, default="", description="选项值", index=True)
+    option_value = fields.CharField(max_length=128, default="", description="选项编码（唯一标识，如 EVT001）", index=True)
 
     class Meta:
         table = "dropdown_option"

@@ -129,6 +129,49 @@ export default {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+  previewCsvStructure: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/autofill/dropdown/preview-csv', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  importHierarchicalDropdownFromCsv: (
+    file: File,
+    appName: string,
+    className: string = '事件类型',
+    level1NameField: string,
+    level1IdField: string,
+    level1DescField: string,
+    level2NameField: string,
+    level2IdField: string,
+    level2DescField: string,
+    level3NameField: string,
+    level3IdField: string,
+    level3DescField: string,
+    tenantId?: number
+  ) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const params: any = {
+      app_name: appName,
+      class_name: className,
+      level1_name_field: level1NameField,
+      level1_id_field: level1IdField,
+      level1_desc_field: level1DescField || '',
+      level2_name_field: level2NameField,
+      level2_id_field: level2IdField,
+      level2_desc_field: level2DescField || '',
+      level3_name_field: level3NameField,
+      level3_id_field: level3IdField,
+      level3_desc_field: level3DescField || '',
+    }
+    if (tenantId) params.tenant_id = tenantId
+    return request.post('/autofill/dropdown/import-hierarchical', formData, {
+      params,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 
   // autofill - 填单记录管理
   getRecordList: (params: any = {}) => request.get('/autofill/record/list', { params }),

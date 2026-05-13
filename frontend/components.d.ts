@@ -72,6 +72,7 @@ declare module 'vue' {
     ATypographyParagraph: typeof import('ant-design-vue/es')['TypographyParagraph']
     ATypographyText: typeof import('ant-design-vue/es')['TypographyText']
     AUpload: typeof import('ant-design-vue/es')['Upload']
+    AUploadDragger: typeof import('ant-design-vue/es')['UploadDragger']
     CrudTable: typeof import('./src/components/CrudTable/index.vue')['default']
     FilterForm: typeof import('./src/components/FilterForm/index.vue')['default']
     IconSelector: typeof import('./src/components/IconSelector/index.vue')['default']

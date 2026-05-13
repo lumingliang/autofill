@@ -39,7 +39,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             relation_fields = self._extract_relation_fields(obj_in)
 
         obj = await self.get(id=id)
-        obj = obj.update_from_dict(obj_dict)
+        obj = await obj.update_from_dict(obj_dict)
         await obj.save()
 
         if relation_fields:

@@ -92,8 +92,7 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
             await DeptClosure.filter(descendant=dept_obj.id).delete()
             await self.update_dept_closure(dept_obj)
         # 更新部门信息
-        dept_obj.update_from_dict(obj_in.model_dump(exclude_unset=True))
-        await dept_obj.save()
+        await dept_obj.update_from_dict(obj_in.model_dump(exclude_unset=True))
 
     @atomic(connection_name="mysql")
     async def delete_dept(self, dept_id: int):
