@@ -1,4 +1,4 @@
-from .autofill import app_router, dropdown_router, record_router, template_router
+from .autofill import app_router, dropdown_router, record_router, template_router, test_fill_router
 from .fill_page import field_group_router, field_spec_router, page_router
 
 __all__ = [
@@ -9,4 +9,5 @@ __all__ = [
     "page_router",
     "field_group_router",
     "field_spec_router",
+    "test_fill_router",
 ]

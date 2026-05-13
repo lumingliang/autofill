@@ -224,6 +224,54 @@ async def get_field_group_detail(
     return Success(data=result)
 
 
+@router.get("/field_group/detail_by_name", summary="通过页面ID和字段组名称获取字段组详情")
+async def get_field_group_detail_by_name(
+    page_id: int = Query(..., description="页面ID"),
+    group_name: str = Query(..., description="字段组名称"),
+    token: str = Header(..., description="token验证"),
+):
+    """
+    通过页面ID和字段组名称获取字段组详情（包含字段列表）
+    用于测试填单页面的级联选择
+    """
+    current_user = await AuthControl.is_authed(token)
+
+    # 查询字段组
+    q = Q(page_id=page_id, group_name=group_name, is_active=True)
+    tenant_query = build_tenant_query(current_user, 0)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
+
+    group = await field_group_config_controller.model.filter(q).first()
+    if not group:
+        return Fail(code=404, msg="字段组不存在")
+
+    if not is_superuser(current_user):
+        if group.tenant_id != current_user.current_tenant_id:
+            return Fail(code=403, msg="无权查看其他租户的字段组")
+
+    # 获取字段列表
+    fields = await field_spec_controller.get_by_field_group(group.id)
+
+    result = {
+        "basic_info": {
+            "id": group.id,
+            "group_name": group.group_name,
+            "group_code": group.group_code,
+            "app_name": group.app_name,
+            "page_id": group.page_id,
+            "page_name": group.page_name,
+            "description": group.description,
+            "is_active": group.is_active,
+            "created_at": str(group.created_at) if group.created_at else None,
+            "updated_at": str(group.updated_at) if group.updated_at else None,
+        },
+        "field_specs": [await obj.to_dict() for obj in fields],
+    }
+
+    return Success(data=result)
+
+
 @router.get("/field_group/export_md", summary="导出字段组配置为Markdown")
 async def export_field_group_md(
     id: int = Query(..., description="字段组ID"),

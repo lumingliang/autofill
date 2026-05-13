@@ -57,3 +57,25 @@ class OptimizeFieldInstructionRequest(BasePublicRequest):
     field_name: Optional[str] = Field(default=None, description="单个字段名称（可选，传了则只优化该字段）")
     batch_size: int = Field(default=10, description="每批处理的字段数量（默认10个）")
     model: Optional[str] = Field(default=None, description="使用的模型名称（可选，默认使用系统配置）")
+
+
+class ChatMessage(BaseModel):
+    """聊天消息"""
+    role: str = Field(..., description="角色：user 或 assistant")
+    content: str = Field(..., description="消息内容")
+    timestamp: Optional[str] = Field(default=None, description="时间戳")
+
+
+class ChatSessionRequest(BaseModel):
+    """聊天会话请求"""
+    session_id: Optional[str] = Field(default=None, description="会话ID（可选，不传则创建新会话）")
+    system_prompt: Optional[str] = Field(default=None, description="系统提示词（可选）")
+    message: str = Field(..., description="用户消息")
+    clear_history: bool = Field(default=False, description="是否清空历史记录（可选，默认false）")
+
+
+class TestFillRequest(BasePublicRequest):
+    """测试填单请求"""
+    page_id: int = Field(..., description="页面ID（必填）")
+    group_fields: Dict[str, List[str]] = Field(..., description="字段组与字段的映射关系，key为字段组名，value为该组要填写的字段列表")
+    chat_record: str = Field(..., description="聊天记录内容（必填）")

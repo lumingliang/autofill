@@ -274,66 +274,78 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         self.exclude_paths = exclude_paths
         self.audit_log_paths = ["/api/v1/auditlog/list"]
         self.max_body_size = 1024 * 1024  # 1MB 响应体大小限制
-
-    async def get_request_args(self, request: Request) -> dict:
+    
+    async def get_request_args(self, request: Request, request_body: bytes = None) -> dict:
         args = {}
         # 获取查询参数
         for key, value in request.query_params.items():
             args[key] = value
-
+        
         # 获取路径参数
         if hasattr(request.state, 'path_params'):
             args.update(request.state.path_params)
-
+        
         # 获取请求体
-        if request.method in ["POST", "PUT", "PATCH"]:
+        if request.method in ["POST", "PUT", "PATCH"] and request_body:
             content_type = request.headers.get("content-type", "")
             if "application/json" in content_type:
                 try:
-                    body = await request.body()
-                    if body:
-                        body_data = json.loads(body)
-                        if isinstance(body_data, dict):
-                            args.update(body_data)
+                    body_data = json.loads(request_body)
+                    if isinstance(body_data, dict):
+                        args.update(body_data)
                 except Exception:
                     pass
-
+        
         return args
-
+    
     def should_log(self, request: Request, response: Response) -> bool:
         """判断是否需要记录审计日志"""
         # 只记录指定的 HTTP 方法
         if request.method not in self.methods:
             return False
-
+        
         # 排除特定路径
         path = request.url.path
         for exclude_path in self.exclude_paths:
             if path.startswith(exclude_path):
                 return False
-
+        
         # 只记录成功的请求
         if response.status_code < 200 or response.status_code >= 300:
             return False
-
+        
         return True
-
+    
     async def dispatch(self, request: Request, call_next):
+        # 如果不记录日志，直接通过
+        path = request.url.path
+        if any(path.startswith(p) for p in self.exclude_paths) or request.method not in self.methods:
+            return await call_next(request)
+        
+        # 提前读取请求体，避免重复读取
+        request_body = b""
+        try:
+            if request.method in ["POST", "PUT", "PATCH"]:
+                request_body = await request.body()
+        except Exception:
+            pass
+        
+        # 调用下一个中间件
         response = await call_next(request)
-
+        
         # 检查是否需要记录
         if not self.should_log(request, response):
             return response
-
+        
         # 获取请求参数
-        request_args = await self.get_request_args(request)
-
+        request_args = await self.get_request_args(request, request_body)
+        
         # 获取响应内容
         response_body = b""
         if hasattr(response, 'body_iterator'):
             async for chunk in response.body_iterator:
                 response_body += chunk
-
+            
             # 重新构建响应
             response = Response(
                 content=response_body,
@@ -341,7 +353,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                 headers=dict(response.headers),
                 media_type=response.media_type
             )
-
+        
         # 解析响应内容
         response_content = ""
         try:
@@ -349,7 +361,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                 response_content = response_body.decode('utf-8')
         except Exception:
             pass
-
+        
         # 获取当前用户信息（API Key 认证无用户信息）
         user_id = None
         username = None
@@ -362,11 +374,11 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                     username = user_obj.username
         except Exception:
             pass
-
+        
         # 没有用户信息时不记录审计日志（如 API Key 认证）
         if user_id is None:
             return response
-
+        
         # 记录审计日志（后台任务）
         await BgTasks.add_task(
             AuditLog.create,
@@ -378,9 +390,9 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             args=request_args,
             response=response_content[:2000]  # 限制长度
         )
-
+        
         return response
-
+    
     def get_client_ip(self, request: Request) -> str:
         """获取客户端 IP"""
         forwarded = request.headers.get("X-Forwarded-For")

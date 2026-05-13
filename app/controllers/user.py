@@ -55,10 +55,11 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
     async def set_current_tenant(self, user_id: int, tenant_id: int) -> None:
         """设置用户当前选中的租户"""
         user = await self.get(id=user_id)
-        # 检查用户是否属于该租户
-        tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user_id)
-        if tenant_id not in tenant_ids:
-            raise HTTPException(status_code=403, detail="用户不属于该租户")
+        # 超级用户可以切换到任何租户，普通用户需要检查是否属于该租户
+        if not user.is_superuser:
+            tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user_id)
+            if tenant_id not in tenant_ids:
+                raise HTTPException(status_code=403, detail="用户不属于该租户")
         user.current_tenant_id = tenant_id
         await user.save()
 

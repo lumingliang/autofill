@@ -1,10 +1,10 @@
+import router from '@/router'
 import axios from 'axios'
 import { getToken, removeToken } from './auth'
-import router from '@/router'
 
 const request = axios.create({
     baseURL: import.meta.env.VITE_BASE_API,
-    timeout: 12000,
+    timeout: 600000,
 })
 
 request.interceptors.request.use(

@@ -170,6 +170,7 @@ export default {
   getFieldGroupList: (params: any = {}) => request.get('/autofill/field_group/list', { params }),
   getFieldGroupById: (params: any = {}) => request.get('/autofill/field_group/get', { params }),
   getFieldGroupDetail: (params: any = {}) => request.get('/autofill/field_group/detail', { params }),
+  getFieldGroupDetailByName: (params: any = {}) => request.get('/autofill/field_group/detail_by_name', { params }),
   exportFieldGroupMd: (params: any = {}) => request.get('/autofill/field_group/export_md', { params }),
   getFieldGroupByCode: (params: any = {}) => request.get('/autofill/field_group/get_by_code', { params }),
   createFieldGroup: (data: any = {}) => request.post('/autofill/field_group/create', data),
@@ -190,5 +191,9 @@ export default {
   }),
   syncFieldSpecOptions: (data: any = {}) => request.post('/autofill/field_spec/sync_options', data),
   parseCurlCommand: (data: any = {}) => request.post('/autofill/field_spec/parse_curl', data),
+
+  // 测试填单
+  testFillChat: (data: any = {}) => request.post('/autofill/test-fill/chat', data),
+  testFill: (data: any = {}) => request.post('/autofill/test-fill/fill', data),
 
 }
