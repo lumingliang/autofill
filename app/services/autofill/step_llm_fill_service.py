@@ -227,6 +227,10 @@ class StepLLMFillService:
             FillDataRecord对象
         """
         try:
+            # 记录query长度用于调试
+            query = request_data.get("query", "")
+            logger.info(f"save_step_request: session_id={session_id}, query_length={len(query)}")
+
             # 查询是否已存在记录
             record = await FillDataRecord.filter(
                 session_id=session_id,

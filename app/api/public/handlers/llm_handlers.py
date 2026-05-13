@@ -57,50 +57,52 @@ def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) ->
     """将 LLM 提取的数据 enriched 为包含完整选项信息的结构"""
     if not extracted_data or not field_specs:
         return extracted_data
-    
+
     field_spec_map = {}
     for fs in field_specs:
         if isinstance(fs, dict):
             field_spec_map[fs.get("field_name")] = fs
         else:
             field_spec_map[fs.field_name] = fs
-    
+
     enriched = {}
-    
+
     for field_name, extracted_value in extracted_data.items():
         if field_name.endswith('_reason'):
             enriched[field_name] = extracted_value
             continue
-        
+
         field_spec = field_spec_map.get(field_name)
         if not field_spec:
             enriched[field_name] = extracted_value
             continue
-        
+
         if isinstance(field_spec, dict):
             field_type = field_spec.get("field_type", "")
             options = field_spec.get("options", {})
+            field_label = field_spec.get("field_label", field_name)
         else:
             field_type = field_spec.field_type.value if hasattr(field_spec.field_type, 'value') else str(field_spec.field_type)
             options = field_spec.options
-        
+            field_label = getattr(field_spec, 'field_label', field_name)
+
         if field_type == 'text':
-            enriched[field_name] = {"type": "text", "value": extracted_value}
+            enriched[field_name] = {"type": "text", "value": extracted_value, "label": field_label}
         elif field_type in ['select_single', 'select_multi']:
             items = [opt for opt in (options or {}).get('items', []) if not opt.get('is_deleted', False)]
             label_to_value = {opt['label']: opt.get('value', opt['label']) for opt in items}
-            
+
             if field_type == 'select_single':
                 label = extracted_value
                 value = label_to_value.get(label, label)
-                enriched[field_name] = {"type": "select_single", "value": {"value": value, "label": label}}
+                enriched[field_name] = {"type": "select_single", "value": {"value": value, "label": label}, "label": field_label}
             else:
                 labels = extracted_value if isinstance(extracted_value, list) else [extracted_value]
                 value_label_pairs = [{"value": label_to_value.get(label, label), "label": label} for label in labels]
-                enriched[field_name] = {"type": "select_multi", "value": value_label_pairs}
+                enriched[field_name] = {"type": "select_multi", "value": value_label_pairs, "label": field_label}
         else:
-            enriched[field_name] = extracted_value
-    
+            enriched[field_name] = {"type": field_type, "value": extracted_value, "label": field_label}
+
     return enriched
 
 
@@ -408,7 +410,7 @@ async def _save_step_result(session_id: str, tenant_id: int, app_name: str, page
         "request": {
             "page_name": page_name,
             "group_fields": group_fields,
-            "query": query[:200] + "..." if len(query) > 200 else query,
+            "query": query,
             "method": method
         },
         "response": {
@@ -482,7 +484,7 @@ async def step_llm_fill(
         request_data={
             "page_name": page_name,
             "group_fields": group_fields,
-            "query": query[:200] + "..." if len(query) > 200 else query,
+            "query": query,
             "method": method
         }
     )

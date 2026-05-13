@@ -2,8 +2,7 @@
   <div class="record-page">
     <CrudTable ref="crudTableRef" :columns="columns" :data-source="tableData" :loading="loading"
       :pagination="pagination" :filter-model="queryParams" :filter-item-count="filterItemCount" :show-add-button="false"
-      show-modal :modal-title="modalTitle" :modal-loading="modalLoading" :modal-form="modalForm" modal-width="700px"
-      @search="handleSearch" @reset="handleReset" @table-change="handleTableChange" @modal-ok="handleSave">
+      @search="handleSearch" @reset="handleReset" @table-change="handleTableChange">
       <!-- 筛选条件 -->
       <template #filter-items>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
@@ -44,77 +43,30 @@
             {{ getStatusText(record.status) }}
           </a-tag>
         </template>
-        <template v-if="column.key === 'data'">
-          <a-button type="link" size="small" @click="viewData(record)">查看数据</a-button>
-        </template>
-        <template v-if="column.key === 'result'">
-          <a-button v-if="record.result" type="link" size="small" @click="viewResult(record)">查看结果</a-button>
-          <span v-else>-</span>
-        </template>
         <template v-if="column.key === 'created_at'">
           <span v-if="record.created_at">{{ formatDateTime(record.created_at) }}</span>
           <span v-else>-</span>
         </template>
         <template v-if="column.key === 'action'">
-          <a-space>
-            <a-button v-permission="'post/api/v1/autofill/record/update'" type="link" size="small"
-              @click="handleEdit(record)">编辑</a-button>
-            <a-popconfirm title="确定删除该记录吗？" @confirm="handleDelete(record)">
-              <a-button v-permission="'delete/api/v1/autofill/record/delete'" type="link" danger
-                size="small">删除</a-button>
-            </a-popconfirm>
-          </a-space>
+          <a-button type="link" size="small" @click="viewDetail(record)">查看详情</a-button>
         </template>
       </template>
 
-      <!-- 弹窗表单 -->
-      <template #modal-form="{ form }">
-        <a-form-item label="会话ID">
-          <span>{{ currentRecord?.session_id }}</span>
-        </a-form-item>
-        <a-form-item label="手机号" name="phone">
-          <a-input v-model:value="form.phone" placeholder="请输入手机号" />
-        </a-form-item>
-        <a-form-item label="用户标识" name="user_unique_id">
-          <a-input v-model:value="form.user_unique_id" placeholder="请输入用户唯一标识" />
-        </a-form-item>
-        <a-form-item label="用户名称" name="user_name">
-          <a-input v-model:value="form.user_name" placeholder="请输入用户名称" />
-        </a-form-item>
-        <a-form-item label="填单数据" name="data">
-          <a-textarea v-model:value="dataJsonStr" placeholder="请输入JSON格式的数据" :rows="10" />
-        </a-form-item>
-      </template>
     </CrudTable>
 
-    <!-- 查看数据弹窗 -->
-    <a-modal v-model:open="viewModalVisible" title="填单数据（请求记录）" width="800px" :footer="null">
-      <div v-if="currentRecord?.data && currentRecord.data.length > 0">
-        <a-tabs v-model:activeKey="activeDataTab" size="small">
-          <a-tab-pane v-for="(item, index) in currentRecord.data" :key="String(index)" :tab="`步骤 ${item.step || index + 1}`">
-            <a-descriptions :column="1" bordered size="small">
-              <a-descriptions-item label="步骤">{{ item.step || index + 1 }}</a-descriptions-item>
-              <a-descriptions-item label="时间">{{ formatDateTime(item.timestamp) }}</a-descriptions-item>
-            </a-descriptions>
-            <a-divider />
-            <JsonViewer :data="item.request" title="请求数据" :max-height="300" />
-          </a-tab-pane>
-        </a-tabs>
-      </div>
-      <div v-else>
-        <a-empty description="暂无填单数据" />
-      </div>
-    </a-modal>
-
-    <!-- 查看AI结果弹窗 -->
-    <a-modal v-model:open="resultModalVisible" title="AI填单结果" width="900px" :footer="null">
-      <div v-if="currentRecord?.result">
-        <a-descriptions :column="1" bordered>
+    <!-- 查看详情弹窗 -->
+    <a-modal v-model:open="detailModalVisible" title="填单详情" width="1000px" :footer="null">
+      <div v-if="currentRecord">
+        <!-- 基本信息 -->
+        <a-descriptions :column="2" bordered size="small">
+          <a-descriptions-item label="会话ID">{{ currentRecord.session_id }}</a-descriptions-item>
+          <a-descriptions-item label="应用名称">{{ currentRecord.app_name }}</a-descriptions-item>
           <a-descriptions-item label="处理状态">
             <a-tag :color="getStatusColor(currentRecord.status)">
               {{ getStatusText(currentRecord.status) }}
             </a-tag>
           </a-descriptions-item>
+          <a-descriptions-item label="创建时间">{{ formatDateTime(currentRecord.created_at) }}</a-descriptions-item>
           <a-descriptions-item label="处理时间" v-if="currentRecord.processed_at">
             {{ formatDateTime(currentRecord.processed_at) }}
           </a-descriptions-item>
@@ -123,11 +75,15 @@
           </a-descriptions-item>
         </a-descriptions>
 
-        <!-- 分步结果展示 -->
-        <div v-if="isStepResult(currentRecord.result)" style="margin-top: 16px;">
-          <a-tabs v-model:activeKey="activeResultTab">
-            <a-tab-pane v-for="(step, index) in currentRecord.result" :key="String(index)" :tab="`步骤 ${step.step || index + 1}`">
-              <a-descriptions :column="1" bordered size="small">
+        <a-divider />
+
+        <!-- 分步详情 -->
+        <div v-if="hasStepData">
+          <h4>分步填单记录</h4>
+          <a-tabs v-model:activeKey="activeDetailTab">
+            <a-tab-pane v-for="(step, index) in mergedSteps" :key="String(index)" :tab="`步骤 ${step.step || index + 1}`">
+              <!-- 步骤概览 -->
+              <a-descriptions :column="2" bordered size="small">
                 <a-descriptions-item label="步骤">{{ step.step || index + 1 }}</a-descriptions-item>
                 <a-descriptions-item label="时间">{{ formatDateTime(step.timestamp) }}</a-descriptions-item>
                 <a-descriptions-item label="用时" v-if="step.timing?.elapsed_time">
@@ -140,25 +96,36 @@
 
               <a-divider />
 
-              <a-tabs v-model:activeKey="activeStepTab[String(index)]" size="small">
-                <a-tab-pane tab="原始格式" key="fields">
-                  <JsonViewer :data="step.fields" title="原始返回格式（含type和value）" :max-height="400" />
-                </a-tab-pane>
-                <a-tab-pane tab="提取值" key="extracted">
-                  <JsonViewer :data="extractFieldValues(step.fields)" title="提取的字段值" :max-height="400" />
-                </a-tab-pane>
-              </a-tabs>
+              <!-- Query内容（可复制） -->
+              <div v-if="step.request?.query" style="margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <h4 style="margin: 0;">Query内容（用户对话）</h4>
+                  <a-button type="primary" size="small" @click="copyToClipboard(step.request.query)">
+                    复制
+                  </a-button>
+                </div>
+                <a-textarea :value="step.request.query" :rows="6" readonly style="background-color: #f5f5f5;" />
+              </div>
+
+              <!-- 请求数据 -->
+              <div v-if="step.request" style="margin-bottom: 16px;">
+                <h4>请求参数</h4>
+                <JsonViewer :data="step.request" title="请求参数" :max-height="300" />
+              </div>
+
+              <!-- 提取结果 -->
+              <div v-if="step.fields && Object.keys(step.fields).length > 0">
+                <h4>提取结果</h4>
+                <a-table :dataSource="formatFieldsForTable(step.fields)" :columns="fieldResultColumns" size="small" bordered :pagination="false" />
+              </div>
             </a-tab-pane>
           </a-tabs>
         </div>
 
-        <!-- 普通结果展示 -->
-        <div v-else style="margin-top: 16px;">
-          <JsonViewer :data="currentRecord.result" title="AI结果" :max-height="400" />
+        <!-- 无数据提示 -->
+        <div v-else>
+          <a-empty description="暂无填单数据" />
         </div>
-      </div>
-      <div v-else>
-        <a-empty description="暂无AI结果数据" />
       </div>
     </a-modal>
   </div>
@@ -196,35 +163,12 @@ const pagination = reactive({
   total: 0,
 })
 
-// 弹窗数据
-const modalTitle = ref('')
-const modalLoading = ref(false)
-const modalForm = reactive({
-  id: undefined as number | undefined,
-  phone: '',
-  user_unique_id: '',
-  user_name: '',
-  data: {} as Record<string, any>,
-})
-
 // 其他数据
 const tenantOptions = ref<any[]>([])
 const appOptions = ref<any[]>([])
 const currentRecord = ref<any>(null)
-const viewModalVisible = ref(false)
-const resultModalVisible = ref(false)
-const dataJsonStr = ref('')
-const activeResultTab = ref('0')
-const activeStepTab = ref<Record<string, string>>({})
-const activeDataTab = ref('0')
-
-watch(dataJsonStr, (val) => {
-  try {
-    modalForm.data = JSON.parse(val)
-  } catch (e) {
-    // 忽略解析错误
-  }
-})
+const detailModalVisible = ref(false)
+const activeDetailTab = ref('0')
 
 // 状态映射
 const statusMap: Record<string, { text: string; color: string }> = {
@@ -244,33 +188,87 @@ const getStatusColor = (status?: string) => {
   return statusMap[status || 'pending']?.color || 'default'
 }
 
-// 判断是否为分步结果
-const isStepResult = (result: any): boolean => {
-  if (!result || !Array.isArray(result)) return false
-  if (result.length === 0) return false
-  // 检查第一个元素是否有step字段
-  return result[0] && typeof result[0] === 'object' && 'step' in result[0]
+// 判断是否有分步数据
+const hasStepData = computed(() => {
+  return mergedSteps.value.length > 0
+})
+
+// 合并 data 和 result 为统一的步骤数据
+const mergedSteps = computed(() => {
+  if (!currentRecord.value) return []
+
+  const data = currentRecord.value.data || []
+  const result = currentRecord.value.result || []
+
+  // 如果 result 是数组（分步结果）
+  if (Array.isArray(result) && result.length > 0) {
+    return result.map((step: any, index: number) => {
+      const dataItem = data[index] || {}
+      return {
+        step: step.step || index + 1,
+        timestamp: step.timestamp || dataItem.timestamp,
+        timing: step.timing || {},
+        request: dataItem.request || {},
+        fields: step.fields || {},
+      }
+    })
+  }
+
+  // 如果只有 data，按 data 展示
+  if (data.length > 0) {
+    return data.map((item: any, index: number) => ({
+      step: item.step || index + 1,
+      timestamp: item.timestamp,
+      timing: {},
+      request: item.request || {},
+      fields: {},
+    }))
+  }
+
+  return []
+})
+
+// 提取结果表格列定义
+const fieldResultColumns = [
+  { title: '字段名', dataIndex: 'fieldName', key: 'fieldName' },
+  { title: '字段标签', dataIndex: 'fieldLabel', key: 'fieldLabel' },
+  { title: '字段类型', dataIndex: 'fieldType', key: 'fieldType' },
+  { title: '提取值', dataIndex: 'value', key: 'value' },
+]
+
+// 将字段格式化为表格数据
+const formatFieldsForTable = (fields: any) => {
+  if (!fields || typeof fields !== 'object') return []
+
+  return Object.entries(fields).map(([key, value]: [string, any]) => {
+    const fieldType = value?.type || 'unknown'
+    const fieldLabel = value?.label || key
+    let displayValue = ''
+
+    if (fieldType === 'select_single' && value?.value) {
+      displayValue = value.value.label || value.value.value || ''
+    } else if (fieldType === 'select_multi' && Array.isArray(value?.value)) {
+      displayValue = value.value.map((v: any) => v.label || v.value).join(', ')
+    } else {
+      displayValue = value?.value || ''
+    }
+
+    return {
+      fieldName: key,
+      fieldLabel: fieldLabel,
+      fieldType: fieldType,
+      value: displayValue,
+    }
+  })
 }
 
-// 从原始格式中提取字段值
-const extractFieldValues = (fields: any): Record<string, any> => {
-  if (!fields || typeof fields !== 'object') return {}
-
-  const result: Record<string, any> = {}
-  for (const [key, value] of Object.entries(fields)) {
-    if (value && typeof value === 'object') {
-      const fieldValue = (value as any).value
-      if (fieldValue && typeof fieldValue === 'object' && 'value' in fieldValue) {
-        // select_single 类型: {label, value}
-        result[key] = fieldValue.value
-      } else {
-        result[key] = fieldValue
-      }
-    } else {
-      result[key] = value
-    }
-  }
-  return result
+// 复制到剪贴板
+const copyToClipboard = (text: string) => {
+  navigator.clipboard.writeText(text).then(() => {
+    message.success('已复制到剪贴板')
+  }).catch(() => {
+    message.error('复制失败')
+  })
 }
 
 // 计算属性
@@ -282,10 +280,8 @@ const columns = computed(() => [
   { title: '用户名称', dataIndex: 'user_name', key: 'user_name' },
   { title: '应用名称', dataIndex: 'app_name', key: 'app_name' },
   { title: 'AI状态', key: 'status', width: 100 },
-  { title: '填单数据', key: 'data', width: 100 },
-  { title: 'AI结果', key: 'result', width: 100 },
   { title: '创建时间', key: 'created_at', width: 180 },
-  { title: '操作', key: 'action', width: 150, fixed: 'right' },
+  { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ])
 
 const filterItemCount = computed(() => {
@@ -359,75 +355,10 @@ const handleTableChange = (pag: any) => {
   fetchData()
 }
 
-const viewData = (record: any) => {
+const viewDetail = (record: any) => {
   currentRecord.value = record
-  viewModalVisible.value = true
-  activeDataTab.value = '0'
-}
-
-const viewResult = (record: any) => {
-  currentRecord.value = record
-  resultModalVisible.value = true
-  activeResultTab.value = '0'
-  // 初始化每个步骤的tab为fields
-  activeStepTab.value = {}
-  if (record.result && Array.isArray(record.result)) {
-    record.result.forEach((_: any, index: number) => {
-      activeStepTab.value[String(index)] = 'fields'
-    })
-  }
-}
-
-const handleEdit = (record: any) => {
-  currentRecord.value = record
-  modalTitle.value = '编辑填单数据'
-  Object.assign(modalForm, {
-    id: record.id,
-    phone: record.phone || '',
-    user_unique_id: record.user_unique_id || '',
-    user_name: record.user_name || '',
-    data: record.data || {},
-  })
-  dataJsonStr.value = JSON.stringify(record.data || {}, null, 2)
-  crudTableRef.value?.openEditModal(record)
-}
-
-const handleSave = async (form: Record<string, any>) => {
-  // 验证JSON格式
-  try {
-    JSON.parse(dataJsonStr.value)
-  } catch (e) {
-    message.error('填单数据格式不正确，请输入有效的JSON')
-    return
-  }
-
-  modalLoading.value = true
-  try {
-    const res: any = await api.updateRecord({ ...form })
-    if (res.code === 200) {
-      message.success('更新成功')
-      crudTableRef.value?.closeModal()
-      fetchData()
-    } else {
-      message.error(res.msg || '操作失败')
-    }
-  } finally {
-    modalLoading.value = false
-  }
-}
-
-const handleDelete = async (record: any) => {
-  try {
-    const res: any = await api.deleteRecord({ id: record.id })
-    if (res.code === 200) {
-      message.success('删除成功')
-      fetchData()
-    } else {
-      message.error(res.msg || '删除失败')
-    }
-  } catch (error) {
-    console.error('删除失败', error)
-  }
+  detailModalVisible.value = true
+  activeDetailTab.value = '0'
 }
 
 onMounted(() => {
