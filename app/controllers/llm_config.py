@@ -126,8 +126,13 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
         if config:
             return config
 
-        # 如果没有默认配置，返回第一个活跃配置
-        return await self.model.filter(tenant_id=tenant_id, is_active=True).first()
+        # 获取任意一个默认配置（不限租户）
+        config = await self.model.filter(is_default=True, is_active=True).first()
+        if config:
+            return config
+
+        # 如果没有默认配置，返回第一个活跃配置（不限租户）
+        return await self.model.filter(is_active=True).first()
 
     async def list_configs(
         self,

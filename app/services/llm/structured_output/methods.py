@@ -345,6 +345,98 @@ class StructuredOutputMethods:
 
             return result
 
+    async def method_plain(
+        self,
+        query: str,
+        system_prompt: str = None,
+        field_specs: List[Dict[str, Any]] = None,
+        include_reason: bool = False,
+        session_id: str = None,
+        memory_rounds: int = None,
+        history_manager: SessionHistoryManager = None
+    ) -> StructuredOutputResult:
+        """方法8: plain - 纯文本模式，直接返回LLM的原始响应
+
+        此方法不使用任何结构化输出机制，直接返回原始文本响应。
+        适用于简单的聊天场景，不需要提取结构化数据。
+        """
+        start_time = time.time()
+        method_name = "plain"
+
+        input_data = {
+            "query": query,
+            "system_prompt": system_prompt,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "note": "纯文本模式，直接返回原始响应"
+        }
+
+        try:
+            llm = self._create_llm()
+
+            # 构建消息列表
+            messages = []
+            if system_prompt:
+                messages.append(SystemMessage(content=system_prompt))
+
+            if session_id and history_manager:
+                history_manager.trim_history(session_id, memory_rounds)
+                history = history_manager.get_history(session_id)
+                messages.extend(history.messages)
+
+            messages.append(HumanMessage(content=query))
+
+            # 记录原始请求参数
+            raw_request = {
+                "model": self.model_name,
+                "messages": [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
+                "temperature": 0.0
+            }
+
+            response = await llm.ainvoke(messages)
+            content = response.content if hasattr(response, 'content') else str(response)
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            # 构建原始响应数据
+            raw_response_data = {
+                "content": content
+            }
+
+            # 构建结果数据
+            result_data = {
+                "raw_response": content,
+                "content": content
+            }
+
+            result = StructuredOutputResult(
+                success=True,
+                data=result_data,
+                method=method_name,
+                latency_ms=latency_ms
+            )
+
+            output_data = {"success": True, "data": result_data, "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
+
+            self._save_exchange_to_history(session_id, query, result, history_manager)
+            return result
+
+        except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
+
+            result = StructuredOutputResult(
+                success=False,
+                error=f"{type(e).__name__}: {e}",
+                method=method_name,
+                latency_ms=latency_ms
+            )
+
+            output_data = {"success": False, "error": f"{type(e).__name__}: {e}", "method": method_name}
+            log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request if 'raw_request' in locals() else None, None)
+
+            return result
+
     async def method_bind_tools_stream(
         self,
         query: str,
