@@ -202,13 +202,14 @@
           <a-form-item v-if="fieldCascadeConfigs.length > 0">
             <a-list :data-source="fieldCascadeConfigs" item-layout="horizontal" size="small">
               <template #renderItem="{ item }">
-                <a-list-item :actions="[
-                  <a-button type='link' size='small' @click='editCascadeConfig(item)'>编辑</a-button>,
-                  <a-button type='link' size='small' :loading='item.syncing' @click='syncCascadeConfig(item)'>同步</a-button>,
-                  <a-popconfirm title='确定删除该级联配置吗？' @confirm='deleteCascadeConfig(item)'>
-                    <a-button type='link' danger size='small'>删除</a-button>
-                  </a-popconfirm>
-                ]">
+                <a-list-item>
+                  <template #actions>
+                    <a-button type="link" size="small" @click="editCascadeConfig(item)">编辑</a-button>
+                    <a-button type="link" size="small" :loading="item.syncing" @click="syncCascadeConfig(item)">同步</a-button>
+                    <a-popconfirm title="确定删除该级联配置吗？" @confirm="deleteCascadeConfig(item)">
+                      <a-button type="link" danger size="small">删除</a-button>
+                    </a-popconfirm>
+                  </template>
                   <a-list-item-meta>
                     <template #title>{{ item.parent_field_name }}{{ item.field_name_suffix }}</template>
                     <template #description>
