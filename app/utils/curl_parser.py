@@ -242,7 +242,9 @@ def generate_openapi_schema_from_curl(
     curl_command: str,
     response_data: Any,
     label_path: str = '$.data[*].label',
-    value_path: str = '$.data[*].value'
+    value_path: str = '$.data[*].value',
+    enable_flatten: bool = False,
+    flatten_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     从 curl 命令和响应数据生成 OpenAPI 3.0 Schema
@@ -301,14 +303,22 @@ def generate_openapi_schema_from_curl(
     for key, value in parsed['query_params'].items():
         x_api_params[key] = value
     
+    # 构建 x-field-mapping
+    x_field_mapping = {
+        'label_path': label_path,
+        'value_path': value_path
+    }
+    
+    # 如果启用了展平，添加展平配置
+    if enable_flatten and flatten_config:
+        x_field_mapping['enable_flatten'] = True
+        x_field_mapping['flatten_config'] = flatten_config
+    
     # 构建 operation
     operation = {
         'summary': f'Generated from curl',
         'x-api-params': x_api_params,
-        'x-field-mapping': {
-            'label_path': label_path,
-            'value_path': value_path
-        },
+        'x-field-mapping': x_field_mapping,
         'responses': {
             '200': {
                 'description': '成功响应',

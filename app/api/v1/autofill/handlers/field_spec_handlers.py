@@ -30,6 +30,7 @@ from app.schemas.fill_page import (
     CurlParseRequest, CurlParseResponse
 )
 from app.services.autofill.field_spec_service import upsert_field_spec
+from app.services.autofill.field_flatten_service import FieldFlattener
 from app.utils.curl_parser import (
     parse_curl_command, generate_openapi_schema_from_curl, infer_schema_from_response
 )
@@ -802,38 +803,46 @@ async def sync_field_spec_options(
         x_mapping = operation.get('x-field-mapping', {})
         label_path = x_mapping.get('label_path', '$.data[*].label')
         value_path = x_mapping.get('value_path', '$.data[*].value')
-        
-        # 使用jsonpath-ng解析和提取数据
-        try:
-            label_expr = jsonpath_parse(label_path)
-            label_results = [match.value for match in label_expr.find(response_data)]
-            
-            value_expr = jsonpath_parse(value_path)
-            value_results = [match.value for match in value_expr.find(response_data)]
-        except Exception as e:
-            return Fail(code=400, msg=f"字段映射路径解析错误: {str(e)}")
-        
-        # 检查是否提取到数据
-        if not label_results:
-            return Fail(code=400, msg="API返回数据格式不正确，未找到选项列表")
+        enable_flatten = x_mapping.get('enable_flatten', False)
+        flatten_config = x_mapping.get('flatten_config', None)
         
         # 构建选项列表
         new_items = []
-        for i, label in enumerate(label_results):
-            value = value_results[i] if i < len(value_results) else label
-            label = str(label) if label is not None else ''
-            value = str(value) if value is not None else ''
+        
+        if enable_flatten and flatten_config:
+            # 使用展平配置提取数据
+            new_items = FieldFlattener.flatten_field_options(response_data, flatten_config)
+        else:
+            # 普通提取方式
+            try:
+                label_expr = jsonpath_parse(label_path)
+                label_results = [match.value for match in label_expr.find(response_data)]
+                
+                value_expr = jsonpath_parse(value_path)
+                value_results = [match.value for match in value_expr.find(response_data)]
+            except Exception as e:
+                return Fail(code=400, msg=f"字段映射路径解析错误: {str(e)}")
             
-            if not label:
-                continue
+            # 检查是否提取到数据
+            if not label_results:
+                return Fail(code=400, msg="API返回数据格式不正确，未找到选项列表")
             
-            new_items.append({
-                'value': value,
-                'label': label,
-                'fill_instruction': '',
-                'corrections': [],
-                'is_deleted': False
-            })
+            # 构建选项列表
+            for i, label in enumerate(label_results):
+                value = value_results[i] if i < len(value_results) else label
+                label = str(label) if label is not None else ''
+                value = str(value) if value is not None else ''
+                
+                if not label:
+                    continue
+                
+                new_items.append({
+                    'value': value,
+                    'label': label,
+                    'fill_instruction': '',
+                    'corrections': [],
+                    'is_deleted': False
+                })
         
         # 获取第一个字段组信息（用于获取app_name）
         if tenant_id > 0:
@@ -950,12 +959,28 @@ async def parse_curl_command_endpoint(
             response.raise_for_status()
             response_data = response.json()
         
-        # 3. 生成 OpenAPI Schema
+        # 3. 构建展平配置
+        flatten_config = None
+        if request.enable_flatten:
+            flatten_config = {
+                'label_path_level1': request.flatten_label_path_level1 or request.label_path,
+                'label_path_level2': request.flatten_label_path_level2,
+                'label_path_level3': request.flatten_label_path_level3,
+                'label_separator': request.flatten_label_separator,
+                'value_path_level1': request.flatten_value_path_level1 or request.value_path,
+                'value_path_level2': request.flatten_value_path_level2,
+                'value_path_level3': request.flatten_value_path_level3,
+                'value_separator': request.flatten_value_separator
+            }
+        
+        # 生成 OpenAPI Schema
         openapi_dict = generate_openapi_schema_from_curl(
             request.curl_command,
             response_data,
             label_path=request.label_path,
-            value_path=request.value_path
+            value_path=request.value_path,
+            enable_flatten=request.enable_flatten,
+            flatten_config=flatten_config
         )
         
         # 4. 转换为 YAML 格式

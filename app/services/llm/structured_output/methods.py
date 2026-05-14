@@ -797,7 +797,7 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法6: PydanticOutputParser - 增强版，确保提取所有字段"""
+        """方法6: PydanticOutputParser - 使用简单系统提示词"""
         start_time = time.time()
         method_name = "pydantic_parser"
 
@@ -824,49 +824,16 @@ class StructuredOutputMethods:
                 function_def = first_tool
             parameters = function_def.get("parameters", {})
             properties = parameters.get("properties", {})
-            required_fields = parameters.get("required", [])
-
-            # 构建详细的字段描述
-            fields_desc = []
-            for field_name, field_info in properties.items():
-                desc = field_info.get("description", "")
-                enum = field_info.get("enum", [])
-                is_required = field_name in required_fields
-                required_mark = " (必填)" if is_required else ""
-                if enum:
-                    fields_desc.append(f"  - {field_name}{required_mark}: {desc} (可选值: {', '.join(enum)})")
-                else:
-                    fields_desc.append(f"  - {field_name}{required_mark}: {desc}")
 
             format_instructions = parser.get_format_instructions()
 
-            # 增强版系统提示词
+            # 使用简单的系统提示词
             full_system_prompt = f"""{system_prompt or ''}
 
-你需要从对话中提取以下字段信息：
-{chr(10).join(fields_desc)}
-
-提取要求：
-1. 仔细阅读对话内容，提取每个字段的具体值
-2. 对于下拉选择字段，从可选值中选择最匹配的
-3. 如果某个字段在对话中没有明确信息，设置为null
-4. 必须返回所有字段，不能遗漏
-
-输出格式要求：
-{format_instructions}
-
-重要提示：
-1. 只返回JSON格式的数据，不要返回任何其他文本
-2. 不要添加解释、问候或任何其他内容
-3. 确保返回的是有效的JSON格式
-4. 必须包含所有字段，即使没有明确信息也要设置为null
-"""
+{format_instructions}"""
             messages = self._build_messages_with_history(
                 query, full_system_prompt, session_id, memory_rounds, history_manager
             )
-
-            # 添加强制JSON输出的用户提示
-            messages.append({"role": "user", "content": "请只返回JSON格式的字段数据，确保包含所有字段，不要添加任何其他文本。"})
 
             # 记录原始请求参数
             raw_request = {
@@ -958,7 +925,7 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法7: JsonOutputParser - 增强版，确保返回扁平结构"""
+        """方法7: JsonOutputParser - 使用简单系统提示词"""
         start_time = time.time()
         method_name = "json_parser"
 
@@ -985,35 +952,13 @@ class StructuredOutputMethods:
             parameters = function_def.get("parameters", {})
             properties = parameters.get("properties", {})
 
-            # 构建字段描述
-            fields_desc = []
-            for field_name, field_info in properties.items():
-                desc = field_info.get("description", "")
-                enum = field_info.get("enum", [])
-                if enum:
-                    fields_desc.append(f"  - {field_name}: {desc} (可选值: {', '.join(enum)})")
-                else:
-                    fields_desc.append(f"  - {field_name}: {desc}")
-
+            # 使用简单的系统提示词
             full_system_prompt = f"""{system_prompt or ''}
 
-你需要从对话中提取以下字段信息，并以JSON格式返回：
-{chr(10).join(fields_desc)}
-
-重要要求：
-1. 直接返回包含字段的JSON对象，不要嵌套在"fill_form"或其他键下
-2. 示例格式：{{"字段名1": "值1", "字段名2": "值2"}}
-3. 只返回JSON，不要添加任何解释或markdown格式
-4. 如果某个字段没有明确信息，设置为null
-
-{parser.get_format_instructions()}
-"""
+{parser.get_format_instructions()}"""
             messages = self._build_messages_with_history(
                 query, full_system_prompt, session_id, memory_rounds, history_manager
             )
-
-            # 添加强制JSON输出的用户提示
-            messages.append({"role": "user", "content": "请直接返回JSON格式的字段数据，不要嵌套在fill_form中，不要添加任何其他文本。"})
 
             # 记录原始请求参数
             raw_request = {

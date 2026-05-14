@@ -13,6 +13,7 @@ from .autofill import (
     record_router,
     template_router,
     test_fill_router,
+    cascade_router,
 )
 from .base import base_router
 from .depts import depts_router
@@ -46,6 +47,9 @@ v1_router.include_router(record_router, prefix="/autofill", dependencies=[Depend
 v1_router.include_router(page_router, prefix="/autofill", dependencies=[DependPermission], tags=["页面管理"])
 v1_router.include_router(field_group_router, prefix="/autofill", dependencies=[DependPermission], tags=["字段组管理"])
 v1_router.include_router(field_spec_router, prefix="/autofill", dependencies=[DependPermission], tags=["字段管理"])
+
+# 级联下拉配置
+v1_router.include_router(cascade_router, prefix="/autofill", dependencies=[DependPermission], tags=["级联下拉配置"])
 
 # 测试填单模块
 v1_router.include_router(test_fill_router, prefix="/autofill", dependencies=[DependPermission], tags=["测试填单"])

@@ -225,6 +225,15 @@ class CurlParseRequest(BaseModel):
     curl_command: str = Field(..., description="curl 命令字符串")
     label_path: str = Field("$.data[*].label", description="标签字段的 JSONPath")
     value_path: str = Field("$.data[*].value", description="值字段的 JSONPath")
+    enable_flatten: bool = Field(False, description="是否启用展平")
+    flatten_label_path_level1: str = Field("", description="标签路径1")
+    flatten_label_path_level2: str = Field("", description="标签路径2")
+    flatten_label_path_level3: str = Field("", description="标签路径3")
+    flatten_label_separator: str = Field("-", description="标签拼接符")
+    flatten_value_path_level1: str = Field("", description="值路径1")
+    flatten_value_path_level2: str = Field("", description="值路径2")
+    flatten_value_path_level3: str = Field("", description="值路径3")
+    flatten_value_separator: str = Field("-", description="值拼接符")
 
 
 class CurlParseResponse(BaseModel):

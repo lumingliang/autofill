@@ -166,3 +166,82 @@ class FieldGroupFieldSpec(BaseModel, TimestampMixin):
 
     class Meta:
         table = "field_group_field_spec"
+
+
+class FieldFlattenConfig(BaseModel, TimestampMixin):
+    """字段展平配置 - 支持多级嵌套数据的展平"""
+    field_spec_id = fields.BigIntField(default=0, description="关联字段ID", index=True)
+    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
+    
+    # 标签展平配置
+    label_path_level1 = fields.CharField(max_length=255, default="", description="第一级标签路径")
+    label_path_level2 = fields.CharField(max_length=255, default="", description="第二级标签路径")
+    label_path_level3 = fields.CharField(max_length=255, default="", description="第三级标签路径")
+    label_separator = fields.CharField(max_length=16, default="-", description="标签拼接符")
+    
+    # 值展平配置
+    value_path_level1 = fields.CharField(max_length=255, default="", description="第一级值路径")
+    value_path_level2 = fields.CharField(max_length=255, default="", description="第二级值路径")
+    value_path_level3 = fields.CharField(max_length=255, default="", description="第三级值路径")
+    value_separator = fields.CharField(max_length=16, default="-", description="值拼接符")
+    
+    is_active = fields.BooleanField(default=True, description="是否启用")
+
+    class Meta:
+        table = "field_flatten_config"
+
+
+class FieldCascadeConfig(BaseModel, TimestampMixin):
+    """级联下拉配置 - 支持多级级联下拉"""
+    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
+    
+    # 父字段配置
+    parent_field_id = fields.BigIntField(default=0, description="父字段ID", index=True)
+    parent_field_name = fields.CharField(max_length=64, default="", description="父字段名称")
+    parent_field_group_id = fields.BigIntField(default=0, description="父字段组ID", index=True)
+    
+    # 级联字段配置
+    field_name_suffix = fields.CharField(max_length=64, default="-子字段", description="级联字段后缀")
+    field_label_prefix = fields.CharField(max_length=128, default="", description="级联字段标签前缀")
+    
+    # 级联API配置
+    api_curl = fields.TextField(default="", description="级联API的curl命令")
+    api_method = fields.CharField(max_length=16, default="GET", description="请求方法")
+    api_url = fields.CharField(max_length=512, default="", description="API地址")
+    api_headers = fields.JSONField(default=dict, description="请求头")
+    api_body = fields.TextField(default="", description="请求体（JSON）")
+    
+    # 参数映射配置
+    api_params_mapping = fields.JSONField(default=dict, description="API参数映射，如{parentParam: parentValuePath}")
+    
+    # 数据映射配置（类似现有的x-field-mapping）
+    field_mapping = fields.JSONField(default=dict, description="字段映射，如{label_path, value_path}")
+    
+    # 展平配置（针对此级联API的返回数据）
+    enable_flatten = fields.BooleanField(default=False, description="是否启用展平")
+    flatten_config = fields.JSONField(default=dict, description="展平配置，结构同FieldFlattenConfig")
+    
+    # 状态
+    is_active = fields.BooleanField(default=True, description="是否启用")
+    last_sync_at = fields.DatetimeField(null=True, description="最后同步时间")
+
+    class Meta:
+        table = "field_cascade_config"
+
+
+class FieldCascadeData(BaseModel, TimestampMixin):
+    """级联下拉数据缓存表 - 存储级联后的字段数据"""
+    cascade_config_id = fields.BigIntField(default=0, description="级联配置ID", index=True)
+    parent_value = fields.CharField(max_length=255, default="", description="父选项值", index=True)
+    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
+    child_field_id = fields.BigIntField(default=0, description="生成的子字段ID")
+    child_field_name = fields.CharField(max_length=128, default="", description="生成的子字段名称")
+    child_options = fields.JSONField(default=list, description="子字段选项列表")
+    sync_status = fields.CharField(max_length=32, default="pending", description="同步状态: pending/success/failed")
+    error_msg = fields.TextField(default="", description="错误信息")
+
+    class Meta:
+        table = "field_cascade_data"

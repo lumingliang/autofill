@@ -11,6 +11,7 @@ from app.api.public.handlers import (
     fill_data_router,
     llm_router,
     template_router,
+    cascade_router,
 )
 
 autofill_public_router = APIRouter()
@@ -22,3 +23,4 @@ autofill_public_router.include_router(fill_data_router)
 autofill_public_router.include_router(field_group_router)
 autofill_public_router.include_router(field_spec_router)
 autofill_public_router.include_router(llm_router)
+autofill_public_router.include_router(cascade_router)

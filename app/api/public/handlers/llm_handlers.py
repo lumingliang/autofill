@@ -271,12 +271,34 @@ async def _prepare_llm_fill_context(tenant_id: int, app_name: str, params: dict)
     config = await llm_config_controller.get_default_config(tenant_id=tenant_id, app_name=app_name)
     if not config:
         raise HTTPException(status_code=500, detail="No LLM configuration found")
-    
+
     field_specs = result_data.get("all_field_specs", [])
-    
+
     base_prompt = params.get("system_prompt") or result_data.get("combined_prompt", "你是一个智能填单助手。")
-    
-    if field_specs:
+
+    # 获取调用方法，根据方法类型决定是否拼接 field_instructions
+    method = params.get("method")
+
+    # Toolcall 相关方法：系统提示词保持简单，不需要拼接 field_instructions
+    # 因为 toolcall 的参数已经通过 tools 参数传递给 LLM
+    toolcall_methods = {
+        "with_structured_output",
+        "bind_tools_non_stream",
+        "bind_tools_stream",
+        "custom_fc_non_stream",
+        "custom_fc_stream"
+    }
+
+    # 非 toolcall 方法（如 pydantic_parser, json_parser, plain）：需要拼接 field_instructions
+    # 因为这些方法依赖系统提示词来指导 LLM 生成正确的输出
+    if method in toolcall_methods:
+        # Toolcall 方法：使用简单的系统提示词，不包含 field_instructions
+        if "{fields_instructions}" in base_prompt:
+            system_prompt = base_prompt.replace("{fields_instructions}", "")
+        else:
+            system_prompt = base_prompt
+    elif field_specs:
+        # 非 toolcall 方法：需要拼接 field_instructions
         fields_instructions = build_fields_instructions(field_specs)
         if "{fields_instructions}" in base_prompt:
             system_prompt = base_prompt.replace("{fields_instructions}", fields_instructions)
@@ -290,7 +312,7 @@ async def _prepare_llm_fill_context(tenant_id: int, app_name: str, params: dict)
 请严格按照字段要求提取信息。"""
     else:
         system_prompt = base_prompt
-    
+
     return result_data, config, system_prompt, field_specs, unified_function_schema, query
 
 

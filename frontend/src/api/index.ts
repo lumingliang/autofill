@@ -239,4 +239,16 @@ export default {
   testFillChat: (data: any = {}) => request.post('/autofill/test-fill/chat', data),
   testFill: (data: any = {}) => request.post('/autofill/test-fill/fill', data),
 
+  // 级联下拉配置 (v1 API)
+  createCascadeConfig: (data: any = {}) => request.post('/api/v1/autofill/cascade/config/create', data),
+  updateCascadeConfig: (data: any = {}) => request.post('/api/v1/autofill/cascade/config/update', data),
+  getCascadeConfigList: (params: any = {}) => request.get('/api/v1/autofill/cascade/config/list', { params }),
+  deleteCascadeConfig: (data: any = {}) => request.delete('/api/v1/autofill/cascade/config/delete', { params: data }),
+  syncCascadeFields: (data: any = {}) => request.post('/api/v1/autofill/cascade/sync', data),
+  getCascadeData: (params: any = {}) => request.get('/api/v1/autofill/cascade/data/list', { params }),
+
+  // 字段展平配置
+  createFlattenConfig: (data: any = {}) => request.post('/autofill/flatten/config/create', data),
+  getFlattenConfig: (data: any = {}) => request.post('/autofill/flatten/config/get', data),
+
 }

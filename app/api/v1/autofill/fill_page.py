@@ -5,9 +5,11 @@ from app.api.v1.autofill.handlers import (
     field_group_router,
     field_spec_router,
     page_router,
+    cascade_router,
 )
 
 # 导出路由
 page_router = page_router
 field_group_router = field_group_router
 field_spec_router = field_spec_router
+cascade_router = cascade_router

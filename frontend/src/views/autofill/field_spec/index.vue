@@ -84,6 +84,12 @@
           <a-space>
             <a-button v-permission="'post/api/v1/autofill/field_spec/update'" type="link" size="small"
               @click="handleEdit(record)">编辑</a-button>
+            <template v-if="record.field_type === 'select_single'">
+              <a-button type="link" size="small" @click="showCascadeConfig(record)">
+                <LinkOutlined />
+                级联配置
+              </a-button>
+            </template>
             <a-popconfirm title="确定删除该字段吗？" @confirm="handleDelete(record)">
               <a-button v-permission="'delete/api/v1/autofill/field_spec/delete'" type="link" danger
                 size="small">删除</a-button>
@@ -185,6 +191,42 @@
             </a-typography-text>
           </a-form-item>
 
+          <!-- 级联配置 -->
+          <a-divider orientation="left">级联配置</a-divider>
+          <a-form-item>
+            <a-button type="dashed" block @click="showAddCascadeModal">
+              <PlusOutlined />
+              添加级联子字段
+            </a-button>
+          </a-form-item>
+          <a-form-item v-if="fieldCascadeConfigs.length > 0">
+            <a-list :data-source="fieldCascadeConfigs" item-layout="horizontal" size="small">
+              <template #renderItem="{ item }">
+                <a-list-item :actions="[
+                  <a-button type='link' size='small' @click='editCascadeConfig(item)'>编辑</a-button>,
+                  <a-button type='link' size='small' :loading='item.syncing' @click='syncCascadeConfig(item)'>同步</a-button>,
+                  <a-popconfirm title='确定删除该级联配置吗？' @confirm='deleteCascadeConfig(item)'>
+                    <a-button type='link' danger size='small'>删除</a-button>
+                  </a-popconfirm>
+                ]">
+                  <a-list-item-meta>
+                    <template #title>{{ item.parent_field_name }}{{ item.field_name_suffix }}</template>
+                    <template #description>
+                      <a-tag color="blue">后缀: {{ item.field_name_suffix }}</a-tag>
+                      <a-tag :color="item.is_active ? 'green' : 'red'">
+                        {{ item.is_active ? '启用' : '禁用' }}
+                      </a-tag>
+                      <br>
+                      <span v-if="item.last_sync_at">
+                        最后同步: {{ formatDateTime(item.last_sync_at) }}
+                      </span>
+                    </template>
+                  </a-list-item-meta>
+                </a-list-item>
+              </template>
+            </a-list>
+          </a-form-item>
+
           <a-divider orientation="left">选项列表</a-divider>
 
           <a-form-item label="选项列表">
@@ -228,12 +270,12 @@
 
     <!-- curl 解析弹窗 -->
     <a-modal v-model:open="curlModalVisible" title="从 curl 命令导入 OpenAPI Schema" :confirm-loading="curlModalLoading"
-      @ok="handleParseCurl" @cancel="handleCancelCurlModal" width="800px">
+      @ok="handleParseCurl" @cancel="handleCancelCurlModal" width="900px">
       <a-form layout="vertical">
         <a-form-item label="curl 命令" required>
           <a-textarea v-model:value="curlForm.curl_command"
             placeholder="请输入 curl 命令，例如：&#10;curl -X POST http://localhost:9999/api/autofill/dropdown_options/list \\&#10;  -H 'Authorization: Bearer your_token' \\&#10;  -H 'Content-Type: application/json' \\&#10;  -d '{&quot;parent_id&quot;: 0}'"
-            :rows="8" />
+            :rows="6" />
         </a-form-item>
         <a-form-item label="标签字段 JSONPath">
           <a-input v-model:value="curlForm.label_path" placeholder="$.data[*].label" />
@@ -247,6 +289,144 @@
             用于从响应中提取选项值的 JSONPath 表达式
           </a-typography-text>
         </a-form-item>
+
+        <a-divider orientation="left">展平配置 (可选)</a-divider>
+        <a-form-item label="启用展平">
+          <a-switch v-model:checked="curlForm.enable_flatten" />
+        </a-form-item>
+        <template v-if="curlForm.enable_flatten">
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="标签路径1">
+                <a-input v-model:value="curlForm.flatten_label_path1" placeholder="$.data[*].label" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标签路径2">
+                <a-input v-model:value="curlForm.flatten_label_path2" placeholder="$.children[*].label" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="标签路径3">
+                <a-input v-model:value="curlForm.flatten_label_path3" placeholder="" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标签分隔符">
+                <a-input v-model:value="curlForm.flatten_label_separator" placeholder="-" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="值路径1">
+                <a-input v-model:value="curlForm.flatten_value_path1" placeholder="$.data[*].value" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="值路径2">
+                <a-input v-model:value="curlForm.flatten_value_path2" placeholder="$.children[*].value" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="值路径3">
+                <a-input v-model:value="curlForm.flatten_value_path3" placeholder="" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="值分隔符">
+                <a-input v-model:value="curlForm.flatten_value_separator" placeholder="-" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </template>
+      </a-form>
+    </a-modal>
+
+    <!-- 级联配置弹窗 -->
+    <a-modal v-model:open="cascadeModalVisible" title="级联子字段配置" :confirm-loading="cascadeModalLoading"
+      @ok="handleSaveCascadeConfig" @cancel="handleCancelCascadeModal" width="900px">
+      <a-form layout="vertical">
+        <a-form-item label="字段名后缀">
+          <a-input v-model:value="cascadeConfig.field_name_suffix" placeholder="-子字段" />
+        </a-form-item>
+        <a-form-item label="字段标签前缀">
+          <a-input v-model:value="cascadeConfig.field_label_prefix" placeholder="" />
+        </a-form-item>
+        <a-form-item label="curl命令 (获取子选项)" required>
+          <a-textarea v-model:value="cascadeConfig.api_curl"
+            placeholder="请输入curl命令，参数使用 {parent_value} 占位符，例如：&#10;curl 'https://api.example.com/getChild?parentId={parent_value}' -H 'Authorization: Bearer xxx'"
+            :rows="6" />
+        </a-form-item>
+        <a-form-item label="API参数映射">
+          <a-textarea v-model:value="cascadeParamsMappingJson" placeholder='{"parentEventId": "{parent_value}"}' :rows="3" />
+          <a-typography-text type="secondary">
+            使用 {parent_value} 表示父字段值的占位符
+          </a-typography-text>
+        </a-form-item>
+        <a-form-item label="字段映射">
+          <a-textarea v-model:value="cascadeFieldMappingJson" placeholder='{"label_path": "$.data[*].label", "value_path": "$.data[*].value"}'
+            :rows="3" />
+        </a-form-item>
+
+        <a-divider orientation="left">展平配置 (可选)</a-divider>
+        <a-form-item label="启用展平">
+          <a-switch v-model:checked="cascadeConfig.enable_flatten" />
+        </a-form-item>
+        <template v-if="cascadeConfig.enable_flatten">
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="标签路径1">
+                <a-input v-model:value="cascadeFlattenConfig.label_path_level1" placeholder="$.data[*].label" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标签路径2">
+                <a-input v-model:value="cascadeFlattenConfig.label_path_level2" placeholder="$.children[*].label" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="标签路径3">
+                <a-input v-model:value="cascadeFlattenConfig.label_path_level3" placeholder="" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标签分隔符">
+                <a-input v-model:value="cascadeFlattenConfig.label_separator" placeholder="-" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="值路径1">
+                <a-input v-model:value="cascadeFlattenConfig.value_path_level1" placeholder="$.data[*].value" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="值路径2">
+                <a-input v-model:value="cascadeFlattenConfig.value_path_level2" placeholder="$.children[*].value" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="值路径3">
+                <a-input v-model:value="cascadeFlattenConfig.value_path_level3" placeholder="" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="值分隔符">
+                <a-input v-model:value="cascadeFlattenConfig.value_separator" placeholder="-" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </template>
       </a-form>
     </a-modal>
   </div>
@@ -257,7 +437,7 @@ import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
-import { CodeOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { CodeOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined, LinkOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
@@ -325,7 +505,46 @@ const curlForm = reactive({
   curl_command: '',
   label_path: '$.data[*].label',
   value_path: '$.data[*].value',
+  enable_flatten: false,
+  flatten_label_path1: '',
+  flatten_label_path2: '',
+  flatten_label_path3: '',
+  flatten_label_separator: '-',
+  flatten_value_path1: '',
+  flatten_value_path2: '',
+  flatten_value_path3: '',
+  flatten_value_separator: '-',
 })
+
+// 级联配置弹窗数据
+const cascadeModalVisible = ref(false)
+const cascadeModalLoading = ref(false)
+const cascadeConfig = reactive({
+  parent_field_id: undefined as number | undefined,
+  parent_field_group_id: undefined as number | undefined,
+  field_name_suffix: '-子字段',
+  field_label_prefix: '',
+  api_curl: '',
+  api_params_mapping: {} as any,
+  field_mapping: {} as any,
+  enable_flatten: false,
+  flatten_config: {} as any,
+})
+const cascadeParamsMappingJson = ref('')
+const cascadeFieldMappingJson = ref('')
+const cascadeFlattenConfig = reactive({
+  label_path_level1: '',
+  label_path_level2: '',
+  label_path_level3: '',
+  label_separator: '-',
+  value_path_level1: '',
+  value_path_level2: '',
+  value_path_level3: '',
+  value_separator: '-',
+})
+
+// 当前字段关联的级联配置
+const fieldCascadeConfigs = ref<any[]>([])
 
 const modalForm = reactive({
   id: undefined as number | undefined,
@@ -622,7 +841,14 @@ const handleEdit = (record: any) => {
   // 确保 corrections 是数组，避免 null 导致的问题（必须在 openEditModal 之后执行，因为 openEditModal 内部会 Object.assign 覆盖值）
   // 由于 Object.assign 会将 null 直接赋值给 corrections，我们需要重新赋值为数组
   const corrections = Array.isArray(record.corrections) ? record.corrections : []
-    ; (modalForm as any).corrections = [...corrections]
+  ; (modalForm as any).corrections = [...corrections]
+  
+  // 加载级联配置
+  if (record.field_type === 'select_single' && record.id) {
+    fetchFieldCascadeConfigs(record.id)
+  } else {
+    fieldCascadeConfigs.value = []
+  }
 }
 
 
@@ -845,6 +1071,164 @@ const handleImport = async (info: any) => {
     }
   } catch (error: any) {
     message.error(error.message || '导入失败')
+  }
+}
+
+// 级联配置相关方法
+const showCascadeConfig = async (record: any) => {
+  modalForm.id = record.id
+  modalForm.field_name = record.field_name
+  await fetchFieldCascadeConfigs(record.id)
+  crudTableRef.value?.openEditModal(record)
+}
+
+const fetchFieldCascadeConfigs = async (fieldId: number) => {
+  try {
+    const res: any = await api.getCascadeConfigList({ parent_field_id: fieldId })
+    if (res.code === 200) {
+      fieldCascadeConfigs.value = res.data?.configs || []
+    }
+  } catch (error) {
+    console.error('获取级联配置失败', error)
+    fieldCascadeConfigs.value = []
+  }
+}
+
+const showAddCascadeModal = () => {
+  if (!modalForm.id) {
+    message.warning('请先保存字段后再添加级联配置')
+    return
+  }
+  resetCascadeConfig()
+  cascadeConfig.parent_field_id = modalForm.id
+  cascadeConfig.parent_field_group_id = modalForm.field_group_ids?.[0]
+  cascadeModalVisible.value = true
+}
+
+const editCascadeConfig = (item: any) => {
+  cascadeConfig.parent_field_id = item.parent_field_id
+  cascadeConfig.parent_field_group_id = item.parent_field_group_id
+  cascadeConfig.field_name_suffix = item.field_name_suffix
+  cascadeConfig.field_label_prefix = item.field_label_prefix || ''
+  cascadeConfig.api_curl = item.api_curl || ''
+  cascadeConfig.api_params_mapping = item.api_params_mapping || {}
+  cascadeConfig.field_mapping = item.field_mapping || {}
+  cascadeConfig.enable_flatten = item.enable_flatten || false
+  cascadeConfig.flatten_config = item.flatten_config || {}
+  cascadeConfig.id = item.id
+
+  cascadeParamsMappingJson.value = JSON.stringify(cascadeConfig.api_params_mapping, null, 2)
+  cascadeFieldMappingJson.value = JSON.stringify(cascadeConfig.field_mapping, null, 2)
+
+  Object.assign(cascadeFlattenConfig, item.flatten_config || {})
+  cascadeModalVisible.value = true
+}
+
+const resetCascadeConfig = () => {
+  cascadeConfig.parent_field_id = undefined
+  cascadeConfig.parent_field_group_id = undefined
+  cascadeConfig.field_name_suffix = '-子字段'
+  cascadeConfig.field_label_prefix = ''
+  cascadeConfig.api_curl = ''
+  cascadeConfig.api_params_mapping = {}
+  cascadeConfig.field_mapping = {}
+  cascadeConfig.enable_flatten = false
+  cascadeConfig.flatten_config = {}
+  cascadeConfig.id = undefined
+
+  cascadeParamsMappingJson.value = ''
+  cascadeFieldMappingJson.value = ''
+
+  Object.assign(cascadeFlattenConfig, {
+    label_path_level1: '',
+    label_path_level2: '',
+    label_path_level3: '',
+    label_separator: '-',
+    value_path_level1: '',
+    value_path_level2: '',
+    value_path_level3: '',
+    value_separator: '-',
+  })
+}
+
+const handleSaveCascadeConfig = async () => {
+  if (!cascadeConfig.api_curl) {
+    message.warning('请输入curl命令')
+    return
+  }
+
+  try {
+    cascadeConfig.api_params_mapping = JSON.parse(cascadeParamsMappingJson.value || '{}')
+  } catch {
+    message.error('API参数映射JSON格式错误')
+    return
+  }
+
+  try {
+    cascadeConfig.field_mapping = JSON.parse(cascadeFieldMappingJson.value || '{}')
+  } catch {
+    message.error('字段映射JSON格式错误')
+    return
+  }
+
+  cascadeConfig.flatten_config = { ...cascadeFlattenConfig }
+
+  cascadeModalLoading.value = true
+  try {
+    const apiFunc = cascadeConfig.id ? api.updateCascadeConfig : api.createCascadeConfig
+    const res: any = await apiFunc({ ...cascadeConfig })
+    if (res.code === 200) {
+      message.success('保存成功')
+      cascadeModalVisible.value = false
+      if (cascadeConfig.parent_field_id) {
+        await fetchFieldCascadeConfigs(cascadeConfig.parent_field_id)
+      }
+    } else {
+      message.error(res.msg || '保存失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '保存失败')
+  } finally {
+    cascadeModalLoading.value = false
+  }
+}
+
+const handleCancelCascadeModal = () => {
+  cascadeModalVisible.value = false
+}
+
+const syncCascadeConfig = async (item: any) => {
+  item.syncing = true
+  try {
+    const res: any = await api.syncCascadeFields({ config_id: item.id })
+    if (res.code === 200) {
+      message.success(`同步成功: ${res.data?.synced_count || 0}/${res.data?.total_count || 0}`)
+      if (cascadeConfig.parent_field_id) {
+        await fetchFieldCascadeConfigs(cascadeConfig.parent_field_id)
+      }
+    } else {
+      message.error(res.msg || '同步失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '同步失败')
+  } finally {
+    item.syncing = false
+  }
+}
+
+const deleteCascadeConfig = async (item: any) => {
+  try {
+    const res: any = await api.deleteCascadeConfig({ config_id: item.id })
+    if (res.code === 200) {
+      message.success('删除成功')
+      if (cascadeConfig.parent_field_id) {
+        await fetchFieldCascadeConfigs(cascadeConfig.parent_field_id)
+      }
+    } else {
+      message.error(res.msg || '删除失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '删除失败')
   }
 }
 
