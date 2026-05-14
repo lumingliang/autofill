@@ -155,9 +155,15 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法1: with_structured_output - LangChain 官方结构化输出"""
+        """方法1: with_structured_output - LangChain 官方结构化输出
+
+        注意: 此方法使用 tool_call，忽略传入的 system_prompt，使用简单的 tool_call 系统提示词
+        """
         start_time = time.time()
         method_name = "with_structured_output"
+
+        # 使用简单的 tool_call 系统提示词，忽略传入的 system_prompt
+        tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         # 记录输入参数
         input_data = {
@@ -165,6 +171,7 @@ class StructuredOutputMethods:
             "tools_count": len(tools),
             "tools": tools,
             "system_prompt": system_prompt,
+            "actual_system_prompt": tool_call_system_prompt,
             "session_id": session_id,
             "memory_rounds": memory_rounds,
             "tool_choice": tool_choice
@@ -175,7 +182,7 @@ class StructuredOutputMethods:
             DynamicModel = create_dynamic_model(tools)
             structured_llm = llm.with_structured_output(DynamicModel)
             messages = self._build_messages_with_history(
-                query, system_prompt, session_id, memory_rounds, history_manager
+                query, tool_call_system_prompt, session_id, memory_rounds, history_manager
             )
 
             # 记录原始请求参数
@@ -239,15 +246,22 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法2: bind_tools + 非流式调用"""
+        """方法2: bind_tools + 非流式调用
+
+        注意: 此方法使用 tool_call，忽略传入的 system_prompt，使用简单的 tool_call 系统提示词
+        """
         start_time = time.time()
         method_name = "bind_tools_non_stream"
+
+        # 使用简单的 tool_call 系统提示词，忽略传入的 system_prompt
+        tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         input_data = {
             "query": query,
             "tools_count": len(tools),
             "tools": tools,
             "system_prompt": system_prompt,
+            "actual_system_prompt": tool_call_system_prompt,
             "session_id": session_id,
             "memory_rounds": memory_rounds,
             "tool_choice": tool_choice
@@ -258,7 +272,7 @@ class StructuredOutputMethods:
             lc_tools = [convert_to_openai_tool(t) for t in tools]
             llm_with_tools = llm.bind_tools(lc_tools, tool_choice="auto")
             messages = self._build_messages_with_history(
-                query, system_prompt, session_id, memory_rounds, history_manager
+                query, tool_call_system_prompt, session_id, memory_rounds, history_manager
             )
 
             # 记录原始请求参数
@@ -345,6 +359,8 @@ class StructuredOutputMethods:
     ) -> StructuredOutputResult:
         """方法7: plain 模式 - 直接返回大模型的原始消息，不需要结构化输出
 
+        注意: 此方法不使用 tool_call，仅使用传入的 system_prompt，不添加额外的 format_instructions
+
         Args:
             query: 用户查询内容
             system_prompt: 系统提示词
@@ -365,24 +381,17 @@ class StructuredOutputMethods:
             "system_prompt": system_prompt,
             "include_reason": include_reason,
             "session_id": session_id,
-            "memory_rounds": memory_rounds
+            "memory_rounds": memory_rounds,
+            "note": "此方法不使用 tool_call，仅使用传入的 system_prompt"
         }
 
         try:
             llm = self._create_llm()
 
-            # 为 plain 模式添加理由要求（仅在 include_reason=True 时）
-            plain_system_prompt = system_prompt
-            if include_reason and field_specs:
-                reason_instruction = "\n\n【重要】对于每个提取的字段，请在回答中说明：\n"
-                for field in field_specs:
-                    field_label = field.get('field_label', field.get('field_name', ''))
-                    reason_instruction += f"- 为什么填写'{field_label}'这个值（引用对话中的具体依据）\n"
-                plain_system_prompt = f"{system_prompt}{reason_instruction}"
-
+            # 仅使用传入的 system_prompt，不添加额外的 format_instructions
             messages = []
-            if plain_system_prompt:
-                messages.append({"role": "system", "content": plain_system_prompt})
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
 
             # 添加历史对话
             if session_id and history_manager:
@@ -451,15 +460,22 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法3: bind_tools + 流式调用"""
+        """方法3: bind_tools + 流式调用
+
+        注意: 此方法使用 tool_call，忽略传入的 system_prompt，使用简单的 tool_call 系统提示词
+        """
         start_time = time.time()
         method_name = "bind_tools_stream"
+
+        # 使用简单的 tool_call 系统提示词，忽略传入的 system_prompt
+        tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         input_data = {
             "query": query,
             "tools_count": len(tools),
             "tools": tools,
             "system_prompt": system_prompt,
+            "actual_system_prompt": tool_call_system_prompt,
             "session_id": session_id,
             "memory_rounds": memory_rounds,
             "tool_choice": tool_choice
@@ -470,7 +486,7 @@ class StructuredOutputMethods:
             lc_tools = [convert_to_openai_tool(t) for t in tools]
             llm_with_tools = llm.bind_tools(lc_tools, tool_choice="auto")
             messages = self._build_messages_with_history(
-                query, system_prompt, session_id, memory_rounds, history_manager
+                query, tool_call_system_prompt, session_id, memory_rounds, history_manager
             )
 
             # 记录原始请求参数
@@ -542,15 +558,22 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法4: 自定义 Function Calling + 非流式"""
+        """方法4: 自定义 Function Calling + 非流式
+
+        注意: 此方法使用 tool_call，忽略传入的 system_prompt，使用简单的 tool_call 系统提示词
+        """
         start_time = time.time()
         method_name = "custom_fc_non_stream"
+
+        # 使用简单的 tool_call 系统提示词，忽略传入的 system_prompt
+        tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         input_data = {
             "query": query,
             "tools_count": len(tools),
             "tools": tools,
             "system_prompt": system_prompt,
+            "actual_system_prompt": tool_call_system_prompt,
             "session_id": session_id,
             "memory_rounds": memory_rounds,
             "tool_choice": tool_choice
@@ -559,7 +582,7 @@ class StructuredOutputMethods:
         try:
             llm = self._create_llm()
             messages = self._build_messages_with_history(
-                query, system_prompt, session_id, memory_rounds, history_manager
+                query, tool_call_system_prompt, session_id, memory_rounds, history_manager
             )
 
             tool_definitions = []
@@ -575,7 +598,7 @@ class StructuredOutputMethods:
             # 记录原始请求参数
             raw_request = {
                 "model": self.model_name,
-                "messages": [{"role": "system", "content": system_prompt or ""}] +
+                "messages": [{"role": "system", "content": tool_call_system_prompt}] +
                             [{"role": m.type, "content": m.content} for m in messages if hasattr(m, 'type')],
                 "tools": [{"type": "function", "function": t} for t in tool_definitions],
                 "tool_choice": "auto" if tool_choice == "auto" else {"type": "function", "function": {"name": tool_choice}},
@@ -646,15 +669,22 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法5: 自定义 Function Calling + 流式"""
+        """方法5: 自定义 Function Calling + 流式
+
+        注意: 此方法使用 tool_call，忽略传入的 system_prompt，使用简单的 tool_call 系统提示词
+        """
         start_time = time.time()
         method_name = "custom_fc_stream"
+
+        # 使用简单的 tool_call 系统提示词，忽略传入的 system_prompt
+        tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         input_data = {
             "query": query,
             "tools_count": len(tools),
             "tools": tools,
             "system_prompt": system_prompt,
+            "actual_system_prompt": tool_call_system_prompt,
             "session_id": session_id,
             "memory_rounds": memory_rounds,
             "tool_choice": tool_choice
@@ -671,7 +701,7 @@ class StructuredOutputMethods:
             from openai import AsyncOpenAI
             client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
 
-            messages = [{"role": "system", "content": system_prompt or ""}]
+            messages = [{"role": "system", "content": tool_call_system_prompt}]
             if session_id and history_manager:
                 history_manager.trim_history(session_id, memory_rounds)
                 history = history_manager.get_history(session_id)
@@ -797,42 +827,27 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法6: PydanticOutputParser - 使用简单系统提示词"""
+        """方法6: PydanticOutputParser - 使用简单系统提示词
+
+        注意: 此方法不使用 tool_call，禁止使用 tools 进行参数封装，系统提示词仅使用传参的 system_prompt，禁止拼接 format_instructions
+        """
         start_time = time.time()
         method_name = "pydantic_parser"
 
         input_data = {
             "query": query,
-            "tools_count": len(tools),
-            "tools": tools,
             "system_prompt": system_prompt,
             "session_id": session_id,
             "memory_rounds": memory_rounds,
-            "tool_choice": tool_choice
+            "note": "此方法不使用 tools 进行参数封装，仅使用传入的 system_prompt"
         }
 
         try:
             llm = self._create_llm()
-            DynamicModel = create_dynamic_model(tools)
-            parser = PydanticOutputParser(pydantic_object=DynamicModel)
 
-            # 获取字段定义
-            first_tool = tools[0] if tools else {}
-            if "function" in first_tool:
-                function_def = first_tool.get("function", {})
-            else:
-                function_def = first_tool
-            parameters = function_def.get("parameters", {})
-            properties = parameters.get("properties", {})
-
-            format_instructions = parser.get_format_instructions()
-
-            # 使用简单的系统提示词
-            full_system_prompt = f"""{system_prompt or ''}
-
-{format_instructions}"""
+            # 仅使用传入的 system_prompt，禁止拼接 format_instructions
             messages = self._build_messages_with_history(
-                query, full_system_prompt, session_id, memory_rounds, history_manager
+                query, system_prompt, session_id, memory_rounds, history_manager
             )
 
             # 记录原始请求参数
@@ -848,18 +863,14 @@ class StructuredOutputMethods:
             # 尝试解析JSON
             parsed_data = None
             try:
-                parsed = parser.parse(content)
-                parsed_data = parsed.model_dump()
-            except Exception:
                 # 尝试从内容中提取JSON
                 import re
                 json_match = re.search(r'\{[\s\S]*\}', content)
                 if json_match:
-                    try:
-                        json_str = json_match.group(0)
-                        parsed_data = json.loads(json_str)
-                    except:
-                        pass
+                    json_str = json_match.group(0)
+                    parsed_data = json.loads(json_str)
+            except Exception:
+                pass
 
             latency_ms = (time.time() - start_time) * 1000
 
@@ -881,11 +892,6 @@ class StructuredOutputMethods:
                 log_llm_call(method_name, self.model_name, input_data, output_data, latency_ms, raw_request, raw_response_data)
 
                 return result
-
-            # 确保所有字段都存在（补全缺失字段为null）
-            for field_name in properties.keys():
-                if field_name not in parsed_data:
-                    parsed_data[field_name] = None
 
             result = StructuredOutputResult(
                 success=True,
@@ -925,39 +931,27 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法7: JsonOutputParser - 使用简单系统提示词"""
+        """方法7: JsonOutputParser - 使用简单系统提示词
+
+        注意: 此方法不使用 tool_call，禁止使用 tools 进行参数封装，系统提示词仅使用传参的 system_prompt，禁止拼接 format_instructions
+        """
         start_time = time.time()
         method_name = "json_parser"
 
         input_data = {
             "query": query,
-            "tools_count": len(tools),
-            "tools": tools,
             "system_prompt": system_prompt,
             "session_id": session_id,
             "memory_rounds": memory_rounds,
-            "tool_choice": tool_choice
+            "note": "此方法不使用 tools 进行参数封装，仅使用传入的 system_prompt"
         }
 
         try:
             llm = self._create_llm()
-            parser = JsonOutputParser()
 
-            # 获取第一个工具的参数定义
-            first_tool = tools[0] if tools else {}
-            if "function" in first_tool:
-                function_def = first_tool.get("function", {})
-            else:
-                function_def = first_tool
-            parameters = function_def.get("parameters", {})
-            properties = parameters.get("properties", {})
-
-            # 使用简单的系统提示词
-            full_system_prompt = f"""{system_prompt or ''}
-
-{parser.get_format_instructions()}"""
+            # 仅使用传入的 system_prompt，禁止拼接 format_instructions
             messages = self._build_messages_with_history(
-                query, full_system_prompt, session_id, memory_rounds, history_manager
+                query, system_prompt, session_id, memory_rounds, history_manager
             )
 
             # 记录原始请求参数

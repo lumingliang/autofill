@@ -48,11 +48,13 @@ async def create_cascade_config(
         }
     }
     """
-    auth_info = await AuthControl.is_authed(token)
+    user = await AuthControl.is_authed(token)
+    tenant_id = getattr(user, "current_tenant_id", 1)
+    is_superuser = getattr(user, "is_superuser", False)
 
     try:
         result = await field_cascade_service.create_cascade_config(
-            tenant_id=auth_info["current_tenant_id"],
+            tenant_id=tenant_id,
             app_name=data.get("app_name", "autofill"),
             parent_field_id=data.get("parent_field_id"),
             parent_field_group_id=data.get("parent_field_group_id"),
@@ -62,7 +64,8 @@ async def create_cascade_config(
             api_params_mapping=data.get("api_params_mapping"),
             field_mapping=data.get("field_mapping"),
             enable_flatten=data.get("enable_flatten", False),
-            flatten_config=data.get("flatten_config")
+            flatten_config=data.get("flatten_config"),
+            is_superuser=is_superuser
         )
         return Success(data=result)
     except Exception as e:
@@ -76,12 +79,13 @@ async def update_cascade_config(
     token: str = Header(..., description="token验证"),
 ) -> Success:
     """更新级联配置"""
-    auth_info = await AuthControl.is_authed(token)
+    user = await AuthControl.is_authed(token)
+    tenant_id = getattr(user, "current_tenant_id", 1)
 
     try:
         result = await field_cascade_service.update_cascade_config(
             config_id=data.get("config_id"),
-            tenant_id=auth_info["current_tenant_id"],
+            tenant_id=tenant_id,
             **data
         )
         return Success(data=result)
@@ -98,11 +102,12 @@ async def list_cascade_configs(
     """
     获取级联配置列表
     """
-    auth_info = await AuthControl.is_authed(token)
+    user = await AuthControl.is_authed(token)
+    tenant_id = getattr(user, "current_tenant_id", 1)
 
     try:
         configs = await field_cascade_service.get_cascade_configs(
-            tenant_id=auth_info["current_tenant_id"],
+            tenant_id=tenant_id,
             app_name="autofill",
             parent_field_id=parent_field_id if parent_field_id > 0 else None
         )
@@ -118,12 +123,13 @@ async def delete_cascade_config(
     token: str = Header(..., description="token验证"),
 ) -> Success:
     """删除级联配置"""
-    auth_info = await AuthControl.is_authed(token)
+    user = await AuthControl.is_authed(token)
+    tenant_id = getattr(user, "current_tenant_id", 1)
 
     try:
         result = await field_cascade_service.delete_cascade_config(
             config_id=config_id,
-            tenant_id=auth_info["current_tenant_id"]
+            tenant_id=tenant_id
         )
         return Success(data=result)
     except Exception as e:
@@ -144,12 +150,15 @@ async def sync_cascade_fields(
         "config_id": 1
     }
     """
-    auth_info = await AuthControl.is_authed(token)
+    user = await AuthControl.is_authed(token)
+    tenant_id = getattr(user, "current_tenant_id", 1)
+    is_superuser = getattr(user, "is_superuser", False)
 
     try:
         result = await field_cascade_service.sync_cascade_fields(
             config_id=data.get("config_id"),
-            tenant_id=auth_info["current_tenant_id"]
+            tenant_id=tenant_id,
+            is_superuser=is_superuser
         )
         return Success(data=result)
     except Exception as e:
@@ -165,12 +174,13 @@ async def list_cascade_data(
     """
     获取级联数据
     """
-    auth_info = await AuthControl.is_authed(token)
+    user = await AuthControl.is_authed(token)
+    tenant_id = getattr(user, "current_tenant_id", 1)
 
     try:
         data_list = await field_cascade_service.get_cascade_data(
             config_id=config_id,
-            tenant_id=auth_info["current_tenant_id"]
+            tenant_id=tenant_id
         )
         return Success(data={"cascade_data": data_list})
     except Exception as e:

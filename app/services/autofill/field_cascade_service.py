@@ -38,7 +38,8 @@ class FieldCascadeService:
         api_params_mapping: Optional[Dict[str, Any]] = None,
         field_mapping: Optional[Dict[str, Any]] = None,
         enable_flatten: bool = False,
-        flatten_config: Optional[Dict[str, Any]] = None
+        flatten_config: Optional[Dict[str, Any]] = None,
+        is_superuser: bool = False
     ) -> Dict[str, Any]:
         """
         创建级联配置
@@ -59,12 +60,17 @@ class FieldCascadeService:
         Returns:
             创建结果
         """
-        # 获取父字段信息
-        parent_field = await FieldSpec.filter(id=parent_field_id, tenant_id=tenant_id).first()
+        # 获取父字段信息（超级用户可以访问所有租户的字段）
+        if is_superuser:
+            parent_field = await FieldSpec.filter(id=parent_field_id).first()
+            parent_group = await FieldGroupConfig.filter(id=parent_field_group_id).first()
+        else:
+            parent_field = await FieldSpec.filter(id=parent_field_id, tenant_id=tenant_id).first()
+            parent_group = await FieldGroupConfig.filter(id=parent_field_group_id, tenant_id=tenant_id).first()
+        
         if not parent_field:
             raise ValueError("父字段不存在")
         
-        parent_group = await FieldGroupConfig.filter(id=parent_field_group_id, tenant_id=tenant_id).first()
         if not parent_group:
             raise ValueError("父字段组不存在")
         
@@ -134,7 +140,7 @@ class FieldCascadeService:
         config = await FieldCascadeConfig.filter(id=config_id, tenant_id=tenant_id).first()
         if not config:
             raise ValueError("级联配置不存在")
-        
+
         # 如果更新了api_curl，重新解析
         if "api_curl" in kwargs and kwargs["api_curl"]:
             try:
@@ -146,7 +152,40 @@ class FieldCascadeService:
                     kwargs["api_body"] = parsed.body
             except Exception as e:
                 logger.warning(f"解析curl失败: {e}")
-        
+
+        # 如果更新了 api_schema，同时更新 api_url 和 api_method（从 Schema 中提取）
+        if "api_schema" in kwargs and kwargs["api_schema"]:
+            try:
+                import tempfile
+                import os
+                import prance
+
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+                    f.write(kwargs["api_schema"])
+                    temp_path = f.name
+
+                try:
+                    parser = prance.ResolvingParser(temp_path, backend='openapi-spec-validator')
+                    spec = parser.specification
+
+                    # 提取 base_url
+                    servers = spec.get('servers', [])
+                    base_url = servers[0].get('url', '') if servers else ''
+
+                    # 获取第一个端点
+                    paths = spec.get('paths', {})
+                    if paths:
+                        path, methods = next(iter(paths.items()))
+                        method = 'get' if 'get' in methods else 'post'
+
+                        # 更新 api_url 和 api_method
+                        kwargs["api_url"] = f"{base_url.rstrip('/')}{path}"
+                        kwargs["api_method"] = method.upper()
+                finally:
+                    os.unlink(temp_path)
+            except Exception as e:
+                logger.warning(f"解析 api_schema 失败: {e}")
+
         # 更新配置
         for key, value in kwargs.items():
             if hasattr(config, key):
@@ -206,7 +245,8 @@ class FieldCascadeService:
     async def sync_cascade_fields(
         self,
         config_id: int,
-        tenant_id: int
+        tenant_id: int,
+        is_superuser: bool = False
     ) -> Dict[str, Any]:
         """
         同步级联字段
@@ -218,14 +258,23 @@ class FieldCascadeService:
         Returns:
             同步结果
         """
-        config = await FieldCascadeConfig.filter(id=config_id, tenant_id=tenant_id).first()
+        # 超级用户可以访问所有租户的配置
+        if is_superuser:
+            config = await FieldCascadeConfig.filter(id=config_id).first()
+        else:
+            config = await FieldCascadeConfig.filter(id=config_id, tenant_id=tenant_id).first()
+        
         if not config:
             raise ValueError("级联配置不存在")
         
         logger.info(f"[FieldCascadeService] 开始同步级联字段: config_id={config_id}")
         
-        # 获取父字段
-        parent_field = await FieldSpec.filter(id=config.parent_field_id, tenant_id=tenant_id).first()
+        # 获取父字段（超级用户可以访问所有租户的字段）
+        if is_superuser:
+            parent_field = await FieldSpec.filter(id=config.parent_field_id).first()
+        else:
+            parent_field = await FieldSpec.filter(id=config.parent_field_id, tenant_id=tenant_id).first()
+        
         if not parent_field:
             raise ValueError("父字段不存在")
         
@@ -387,12 +436,16 @@ class FieldCascadeService:
         Returns:
             API返回数据
         """
+        # 优先使用 api_schema 配置
+        if config.api_schema:
+            return await self._call_cascade_api_from_schema(config, parent_value)
+
         if not config.api_url:
             raise ValueError("API URL未配置")
-        
+
         # 构建请求参数
         params = {}
-        
+
         # 根据api_params_mapping构建参数
         if config.api_params_mapping:
             for param_name, param_config in config.api_params_mapping.items():
@@ -409,32 +462,106 @@ class FieldCascadeService:
                         params[param_name] = parent_value
                     else:
                         params[param_name] = param_config.get("default", "")
-        
+
         # 解析curl并执行
         try:
             if config.api_curl:
                 parsed = CurlParser.parse(config.api_curl)
-                
+
                 # 替换参数
                 for key, value in params.items():
                     if key in parsed.query_params:
                         parsed.query_params[key] = value
                     if key in parsed.body_params:
                         parsed.body_params[key] = value
-                
+
                 # 执行API
                 result = await self.api_executor.execute(parsed, params)
-                
+
                 if result.success:
                     return result.data
                 else:
                     raise ValueError(f"API调用失败: {result.error}")
-            
+
         except Exception as e:
             logger.error(f"调用级联API失败: {e}")
             raise
-        
+
         raise ValueError("无法调用API，缺少有效配置")
+
+    async def _call_cascade_api_from_schema(
+        self,
+        config: FieldCascadeConfig,
+        parent_value: str
+    ) -> Any:
+        """
+        根据 OpenAPI Schema 调用级联API
+
+        Args:
+            config: 级联配置
+            parent_value: 父选项值
+
+        Returns:
+            API返回数据
+        """
+        import tempfile
+        import os
+        import httpx
+        import yaml
+        import prance
+
+        try:
+            # 1. 解析 OpenAPI Schema
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+                f.write(config.api_schema)
+                temp_path = f.name
+
+            try:
+                parser = prance.ResolvingParser(temp_path, backend='openapi-spec-validator')
+                spec = parser.specification
+            finally:
+                os.unlink(temp_path)
+
+            # 2. 获取端点配置
+            servers = spec.get('servers', [])
+            base_url = servers[0].get('url', '') if servers else ''
+
+            paths = spec.get('paths', {})
+            if not paths:
+                raise ValueError("Schema中未找到paths配置")
+
+            path, methods = next(iter(paths.items()))
+            method = 'get' if 'get' in methods else 'post'
+            operation = methods.get(method, {})
+
+            full_url = f"{base_url.rstrip('/')}{path}"
+
+            # 3. 从 x-api-params 获取固定参数和 headers
+            x_api_params = operation.get('x-api-params', {})
+            headers = x_api_params.get('headers', {}).copy()
+
+            # 4. 构建请求参数（替换 parent_value 占位符）
+            params = {k: v for k, v in x_api_params.items() if k != 'headers'}
+
+            # 替换参数中的占位符
+            for key, value in params.items():
+                if isinstance(value, str) and '{parent_value}' in value:
+                    params[key] = value.replace('{parent_value}', parent_value)
+
+            # 5. 发送请求
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if method == 'get':
+                    response = await client.get(full_url, headers=headers, params=params)
+                else:
+                    headers.setdefault('Content-Type', 'application/json')
+                    response = await client.post(full_url, headers=headers, json=params)
+
+                response.raise_for_status()
+                return response.json()
+
+        except Exception as e:
+            logger.error(f"根据 Schema 调用级联API失败: {e}")
+            raise ValueError(f"API调用失败: {str(e)}")
 
     def _extract_options(
         self,

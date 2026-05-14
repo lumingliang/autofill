@@ -212,6 +212,7 @@ class FieldCascadeConfig(BaseModel, TimestampMixin):
     api_url = fields.CharField(max_length=512, default="", description="API地址")
     api_headers = fields.JSONField(default=dict, description="请求头")
     api_body = fields.TextField(default="", description="请求体（JSON）")
+    api_schema = fields.TextField(default="", description="OpenAPI Schema (YAML格式)")
     
     # 参数映射配置
     api_params_mapping = fields.JSONField(default=dict, description="API参数映射，如{parentParam: parentValuePath}")
