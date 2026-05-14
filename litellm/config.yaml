@@ -2,7 +2,11 @@ general_settings:
   master_key: sk-litellm-master-key
   port: 4000
   host: 0.0.0.0
-  store_model_in_db: false
+  store_model_in_db: true
+  database_url: postgresql://litellm:litellm123456@localhost:5432/litellm
+  # 启用 prompts 存储以查看完整请求和响应
+  store_prompts_in_spend_logs: true
+
 model_list:
 - model_name: C4AI-Command-R-Plus
   litellm_params:
