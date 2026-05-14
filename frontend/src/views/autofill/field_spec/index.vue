@@ -7,6 +7,12 @@
       @table-change="handleTableChange" @modal-ok="handleSave">
       <!-- 筛选条件 -->
       <template #filter-items>
+        <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+          <a-form-item label="租户" class="filter-item">
+            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear
+              :options="tenantOptions" @change="handleTenantChange" />
+          </a-form-item>
+        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="字段组" class="filter-item">
             <a-select v-model:value="queryParams.field_group_id" placeholder="请选择字段组" allow-clear
@@ -84,12 +90,6 @@
           <a-space>
             <a-button v-permission="'post/api/v1/autofill/field_spec/update'" type="link" size="small"
               @click="handleEdit(record)">编辑</a-button>
-            <template v-if="record.field_type === 'select_single'">
-              <a-button type="link" size="small" @click="showCascadeConfig(record)">
-                <LinkOutlined />
-                级联配置
-              </a-button>
-            </template>
             <a-popconfirm title="确定删除该字段吗？" @confirm="handleDelete(record)">
               <a-button v-permission="'delete/api/v1/autofill/field_spec/delete'" type="link" danger
                 size="small">删除</a-button>
@@ -100,6 +100,10 @@
 
       <!-- 弹窗表单 -->
       <template #modal-form="{ form }">
+        <a-form-item v-if="userStore.isSuperUser" label="所属租户" name="tenant_id">
+          <a-select v-model:value="form.tenant_id" placeholder="请选择租户" :options="tenantOptions"
+            @change="(val: number) => handleModalTenantChange(val, form)" />
+        </a-form-item>
         <a-form-item label="关联字段组" name="field_group_ids">
           <a-select v-model:value="form.field_group_ids" placeholder="请选择关联字段组（可多选）" mode="multiple"
             :options="fieldGroupOptions" />
@@ -211,9 +215,10 @@
                     </a-popconfirm>
                   </template>
                   <a-list-item-meta>
-                    <template #title>{{ item.parent_field_name }}{{ item.field_name_suffix }}</template>
+                    <template #title>{{ item.parent_field_name }} 子字段配置</template>
                     <template #description>
-                      <a-tag color="blue">后缀: {{ item.field_name_suffix }}</a-tag>
+                      <a-tag color="blue">字段名规则: {{ item.field_name_pattern }}</a-tag>
+                      <a-tag color="cyan">标签后缀: {{ item.field_label_suffix }}</a-tag>
                       <a-tag :color="item.is_active ? 'green' : 'red'">
                         {{ item.is_active ? '启用' : '禁用' }}
                       </a-tag>
@@ -293,7 +298,7 @@
 
         <a-divider orientation="left">展平配置 (可选)</a-divider>
         <a-form-item label="启用展平">
-          <a-switch v-model:checked="curlForm.enable_flatten" />
+          <a-switch v-model:checked="curlForm.enable_flatten" @change="onCurlFlattenChange" />
         </a-form-item>
         <template v-if="curlForm.enable_flatten">
           <a-row :gutter="16">
@@ -304,14 +309,14 @@
             </a-col>
             <a-col :span="12">
               <a-form-item label="标签路径2">
-                <a-input v-model:value="curlForm.flatten_label_path2" placeholder="$.children[*].label" />
+                <a-input v-model:value="curlForm.flatten_label_path2" placeholder="$.data[*].children[*].label" />
               </a-form-item>
             </a-col>
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="标签路径3">
-                <a-input v-model:value="curlForm.flatten_label_path3" placeholder="" />
+                <a-input v-model:value="curlForm.flatten_label_path3" placeholder="$.data[*].children[*].children[*].label" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -328,14 +333,14 @@
             </a-col>
             <a-col :span="12">
               <a-form-item label="值路径2">
-                <a-input v-model:value="curlForm.flatten_value_path2" placeholder="$.children[*].value" />
+                <a-input v-model:value="curlForm.flatten_value_path2" placeholder="$.data[*].children[*].value" />
               </a-form-item>
             </a-col>
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="值路径3">
-                <a-input v-model:value="curlForm.flatten_value_path3" placeholder="" />
+                <a-input v-model:value="curlForm.flatten_value_path3" placeholder="$.data[*].children[*].children[*].value" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -352,31 +357,53 @@
     <a-modal v-model:open="cascadeModalVisible" title="级联子字段配置" :confirm-loading="cascadeModalLoading"
       @ok="handleSaveCascadeConfig" @cancel="handleCancelCascadeModal" width="900px">
       <a-form layout="vertical">
-        <a-form-item label="字段名后缀">
-          <a-input v-model:value="cascadeConfig.field_name_suffix" placeholder="-子字段" />
-        </a-form-item>
-        <a-form-item label="字段标签前缀">
-          <a-input v-model:value="cascadeConfig.field_label_prefix" placeholder="" />
-        </a-form-item>
-        <a-form-item label="curl命令 (获取子选项)" required>
-          <a-textarea v-model:value="cascadeConfig.api_curl"
-            placeholder="请输入curl命令，参数使用 {parent_value} 占位符，例如：&#10;curl 'https://api.example.com/getChild?parentId={parent_value}' -H 'Authorization: Bearer xxx'"
-            :rows="6" />
-        </a-form-item>
-        <a-form-item label="API参数映射">
-          <a-textarea v-model:value="cascadeParamsMappingJson" placeholder='{"parentEventId": "{parent_value}"}' :rows="3" />
+        <a-form-item label="字段名规则">
+          <a-input v-model:value="cascadeConfig.field_name_pattern" placeholder="parent.$.data[*].label + -的二三级" />
           <a-typography-text type="secondary">
-            使用 {parent_value} 表示父字段值的占位符
+            字段名规则：parent.$.data[*].label 表示父字段选项的标签值，+ 表示连接，-的二三级 为固定后缀
           </a-typography-text>
         </a-form-item>
-        <a-form-item label="字段映射">
-          <a-textarea v-model:value="cascadeFieldMappingJson" placeholder='{"label_path": "$.data[*].label", "value_path": "$.data[*].value"}'
-            :rows="3" />
+        <a-form-item label="字段标签后缀">
+          <a-input v-model:value="cascadeConfig.field_label_suffix" placeholder="-的二三级" />
+        </a-form-item>
+
+        <a-divider orientation="left">API配置</a-divider>
+        <a-form-item label="请求Header">
+          <div v-for="(header, index) in cascadeConfig.api_headers" :key="index" class="header-item">
+            <a-space>
+              <a-input v-model:value="header.key" placeholder="Header键" style="width: 150px" />
+              <a-input v-model:value="header.value" placeholder="Header值" style="width: 250px" />
+              <a-button type="link" danger @click="removeCascadeApiHeader(index)">
+                <DeleteOutlined />
+              </a-button>
+            </a-space>
+          </div>
+          <a-button type="dashed" block @click="addCascadeApiHeader">
+            <PlusOutlined />
+            添加Header
+          </a-button>
+        </a-form-item>
+        <a-form-item label="OpenAPI Schema">
+          <a-textarea v-model:value="cascadeConfig.api_schema"
+            placeholder="请输入OpenAPI/Swagger配置（YAML格式）&#10;&#10;支持以下扩展字段：&#10;1. x-api-params: 配置请求参数&#10;2. x-field-mapping: 配置字段映射（JSONPath语法）&#10;&#10;示例：&#10;paths:&#10;  /api/endpoint:&#10;    get:&#10;      x-api-params:&#10;        parentEventId: $.data[*].value&#10;      x-field-mapping:&#10;        label_path: '$.data[*].label'&#10;        value_path: '$.data[*].value'"
+            :rows="10" />
+        </a-form-item>
+        <a-form-item>
+          <a-space>
+            <a-button type="primary" :loading="cascadeSyncLoading" @click="handleSyncCascadeSchema">
+              <SyncOutlined />
+              同步选项
+            </a-button>
+            <a-button @click="showCascadeCurlModal">
+              <CodeOutlined />
+              从 curl 导入
+            </a-button>
+          </a-space>
         </a-form-item>
 
         <a-divider orientation="left">展平配置 (可选)</a-divider>
         <a-form-item label="启用展平">
-          <a-switch v-model:checked="cascadeConfig.enable_flatten" />
+          <a-switch v-model:checked="cascadeConfig.enable_flatten" @change="onCascadeFlattenChange" />
         </a-form-item>
         <template v-if="cascadeConfig.enable_flatten">
           <a-row :gutter="16">
@@ -387,14 +414,14 @@
             </a-col>
             <a-col :span="12">
               <a-form-item label="标签路径2">
-                <a-input v-model:value="cascadeFlattenConfig.label_path_level2" placeholder="$.children[*].label" />
+                <a-input v-model:value="cascadeFlattenConfig.label_path_level2" placeholder="$.data[*].children[*].label" />
               </a-form-item>
             </a-col>
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="标签路径3">
-                <a-input v-model:value="cascadeFlattenConfig.label_path_level3" placeholder="" />
+                <a-input v-model:value="cascadeFlattenConfig.label_path_level3" placeholder="$.data[*].children[*].children[*].label" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -411,19 +438,92 @@
             </a-col>
             <a-col :span="12">
               <a-form-item label="值路径2">
-                <a-input v-model:value="cascadeFlattenConfig.value_path_level2" placeholder="$.children[*].value" />
+                <a-input v-model:value="cascadeFlattenConfig.value_path_level2" placeholder="$.data[*].children[*].value" />
               </a-form-item>
             </a-col>
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="值路径3">
-                <a-input v-model:value="cascadeFlattenConfig.value_path_level3" placeholder="" />
+                <a-input v-model:value="cascadeFlattenConfig.value_path_level3" placeholder="$.data[*].children[*].children[*].value" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item label="值分隔符">
                 <a-input v-model:value="cascadeFlattenConfig.value_separator" placeholder="-" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </template>
+      </a-form>
+    </a-modal>
+
+    <!-- 级联配置 curl 解析弹窗 -->
+    <a-modal v-model:open="cascadeCurlModalVisible" title="从 curl 命令导入 OpenAPI Schema" :confirm-loading="cascadeCurlModalLoading"
+      @ok="handleParseCascadeCurl" @cancel="handleCancelCascadeCurlModal" width="900px">
+      <a-form layout="vertical">
+        <a-form-item label="curl 命令" required>
+          <a-textarea v-model:value="cascadeCurlForm.curl_command"
+            placeholder="请输入 curl 命令，例如：&#10;curl -X GET 'https://api.example.com/getChildEventType?parentEventId=xxx' \\&#10;  -H 'Authorization: Bearer your_token'"
+            :rows="6" />
+        </a-form-item>
+        <a-form-item label="标签字段 JSONPath">
+          <a-input v-model:value="cascadeCurlForm.label_path" placeholder="$.data[*].label" />
+        </a-form-item>
+        <a-form-item label="值字段 JSONPath">
+          <a-input v-model:value="cascadeCurlForm.value_path" placeholder="$.data[*].value" />
+        </a-form-item>
+
+        <a-divider orientation="left">展平配置 (可选)</a-divider>
+        <a-form-item label="启用展平">
+          <a-switch v-model:checked="cascadeCurlForm.enable_flatten" @change="onCascadeCurlFlattenChange" />
+        </a-form-item>
+        <template v-if="cascadeCurlForm.enable_flatten">
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="标签路径1">
+                <a-input v-model:value="cascadeCurlForm.flatten_label_path1" placeholder="$.data[*].label" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标签路径2">
+                <a-input v-model:value="cascadeCurlForm.flatten_label_path2" placeholder="$.data[*].children[*].label" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="标签路径3">
+                <a-input v-model:value="cascadeCurlForm.flatten_label_path3" placeholder="$.data[*].children[*].children[*].label" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标签分隔符">
+                <a-input v-model:value="cascadeCurlForm.flatten_label_separator" placeholder="-" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="值路径1">
+                <a-input v-model:value="cascadeCurlForm.flatten_value_path1" placeholder="$.data[*].value" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="值路径2">
+                <a-input v-model:value="cascadeCurlForm.flatten_value_path2" placeholder="$.data[*].children[*].value" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="值路径3">
+                <a-input v-model:value="cascadeCurlForm.flatten_value_path3" placeholder="$.data[*].children[*].children[*].value" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="值分隔符">
+                <a-input v-model:value="cascadeCurlForm.flatten_value_separator" placeholder="-" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -467,7 +567,11 @@ const queryParams = reactive({
   field_label: '',
   field_type: undefined as string | undefined,
   field_group_id: props.fieldGroupId,
+  tenant_id: undefined as number | undefined,
 })
+
+// 租户选项
+const tenantOptions = ref<{ label: string; value: number }[]>([])
 
 // 表格数据
 const loading = ref(false)
@@ -520,19 +624,18 @@ const curlForm = reactive({
 // 级联配置弹窗数据
 const cascadeModalVisible = ref(false)
 const cascadeModalLoading = ref(false)
+const cascadeSyncLoading = ref(false)
 const cascadeConfig = reactive({
+  id: undefined as number | undefined,
   parent_field_id: undefined as number | undefined,
   parent_field_group_id: undefined as number | undefined,
-  field_name_suffix: '-子字段',
-  field_label_prefix: '',
-  api_curl: '',
-  api_params_mapping: {} as any,
-  field_mapping: {} as any,
+  field_name_pattern: 'parent.$.data[*].label + -的二三级',
+  field_label_suffix: '-的二三级',
+  api_headers: [] as { key: string; value: string }[],
+  api_schema: '',
   enable_flatten: false,
   flatten_config: {} as any,
 })
-const cascadeParamsMappingJson = ref('')
-const cascadeFieldMappingJson = ref('')
 const cascadeFlattenConfig = reactive({
   label_path_level1: '',
   label_path_level2: '',
@@ -542,6 +645,24 @@ const cascadeFlattenConfig = reactive({
   value_path_level2: '',
   value_path_level3: '',
   value_separator: '-',
+})
+
+// 级联配置 curl 解析弹窗数据
+const cascadeCurlModalVisible = ref(false)
+const cascadeCurlModalLoading = ref(false)
+const cascadeCurlForm = reactive({
+  curl_command: '',
+  label_path: '$.data[*].label',
+  value_path: '$.data[*].value',
+  enable_flatten: false,
+  flatten_label_path1: '',
+  flatten_label_path2: '',
+  flatten_label_path3: '',
+  flatten_label_separator: '-',
+  flatten_value_path1: '',
+  flatten_value_path2: '',
+  flatten_value_path3: '',
+  flatten_value_separator: '-',
 })
 
 // 当前字段关联的级联配置
@@ -698,6 +819,7 @@ const getFieldTypeColor = (type: string) => {
   }
 }
 const fieldGroupOptions = ref<{ label: string; value: number }[]>([])
+const allFieldGroups = ref<any[]>([]) // 存储所有字段组用于级联筛选
 
 // 计算属性
 const columns = computed(() => [
@@ -711,7 +833,7 @@ const columns = computed(() => [
   { title: '操作', key: 'action', width: 150, fixed: 'right' },
 ])
 
-const filterItemCount = computed(() => 4)
+const filterItemCount = computed(() => userStore.isSuperUser ? 5 : 4)
 
 const modalRules = {
   field_group_ids: [
@@ -746,6 +868,10 @@ const fetchData = async () => {
     if (fieldGroupId) {
       params.field_group_id = fieldGroupId
     }
+    // 超管可以按租户筛选
+    if (userStore.isSuperUser && queryParams.tenant_id) {
+      params.tenant_id = queryParams.tenant_id
+    }
     const res: any = await api.getFieldSpecList(params)
     if (res.code === 200) {
       tableData.value = res.data || []
@@ -768,16 +894,25 @@ const handleReset = () => {
   if (!props.fieldGroupId) {
     queryParams.field_group_id = undefined
   }
+  if (userStore.isSuperUser) {
+    queryParams.tenant_id = undefined
+  }
   pagination.current = 1
   fetchData()
 }
 
 // 加载字段组列表
-const fetchFieldGroups = async () => {
+const fetchFieldGroups = async (tenantId?: number) => {
   try {
-    const res: any = await api.getFieldGroupList({ page_size: 1000 })
+    const params: any = { page_size: 1000 }
+    // 如果指定了租户，只加载该租户的字段组
+    if (tenantId && tenantId > 0) {
+      params.tenant_id = tenantId
+    }
+    const res: any = await api.getFieldGroupList(params)
     if (res.code === 200) {
-      fieldGroupOptions.value = (res.data || []).map((item: any) => ({
+      allFieldGroups.value = res.data || []
+      fieldGroupOptions.value = allFieldGroups.value.map((item: any) => ({
         label: `${item.group_name} (${item.group_code})`,
         value: item.id,
       }))
@@ -785,6 +920,40 @@ const fetchFieldGroups = async () => {
   } catch (error) {
     console.error('加载字段组列表失败', error)
   }
+}
+
+// 加载租户列表
+const fetchTenantOptions = async () => {
+  if (!userStore.isSuperUser) return
+  try {
+    const res: any = await api.getTenantSelect()
+    if (res.code === 200) {
+      tenantOptions.value = (res.data || []).map((t: any) => ({
+        label: t.name,
+        value: t.id,
+      }))
+    }
+  } catch (error) {
+    console.error('获取租户列表失败', error)
+  }
+}
+
+// 租户变更处理（筛选区域）
+const handleTenantChange = (tenantId: number) => {
+  // 重置字段组选择
+  queryParams.field_group_id = undefined
+  // 重新加载该租户的字段组
+  fetchFieldGroups(tenantId)
+  // 刷新数据
+  handleSearch()
+}
+
+// 弹窗中租户变更处理
+const handleModalTenantChange = (tenantId: number, form: any) => {
+  // 重置字段组选择
+  form.field_group_ids = []
+  // 重新加载该租户的字段组
+  fetchFieldGroups(tenantId)
 }
 
 const handleTableChange = (pag: any) => {
@@ -800,6 +969,7 @@ const resetModalForm = () => {
   modalForm.field_label = ''
   modalForm.field_type = 'text'
   modalForm.fill_instruction = ''
+  modalForm.tenant_id = userStore.isSuperUser ? undefined : userStore.userInfo?.current_tenant_id
   modalForm.options = {
     items: [],
     min_selections: 1,
@@ -828,6 +998,7 @@ const handleEdit = (record: any) => {
   modalForm.field_label = record.field_label
   modalForm.field_type = record.field_type
   modalForm.fill_instruction = record.fill_instruction || ''
+  modalForm.tenant_id = record.tenant_id
   modalForm.options = {
     items: record.options?.items || [],
     min_selections: record.options?.min_selections ?? 1,
@@ -1083,6 +1254,42 @@ const showCascadeConfig = async (record: any) => {
   crudTableRef.value?.openEditModal(record)
 }
 
+// curl 展平配置变更处理
+const onCurlFlattenChange = () => {
+  if (curlForm.enable_flatten && !curlForm.flatten_label_path1) {
+    curlForm.flatten_label_path1 = '$.data[*].label'
+    curlForm.flatten_label_path2 = '$.data[*].children[*].label'
+    curlForm.flatten_label_separator = '-'
+    curlForm.flatten_value_path1 = '$.data[*].value'
+    curlForm.flatten_value_path2 = '$.data[*].children[*].value'
+    curlForm.flatten_value_separator = '-'
+  }
+}
+
+// 级联配置展平配置变更处理
+const onCascadeFlattenChange = () => {
+  if (cascadeConfig.enable_flatten && !cascadeFlattenConfig.label_path_level1) {
+    cascadeFlattenConfig.label_path_level1 = '$.data[*].label'
+    cascadeFlattenConfig.label_path_level2 = '$.data[*].children[*].label'
+    cascadeFlattenConfig.label_separator = '-'
+    cascadeFlattenConfig.value_path_level1 = '$.data[*].value'
+    cascadeFlattenConfig.value_path_level2 = '$.data[*].children[*].value'
+    cascadeFlattenConfig.value_separator = '-'
+  }
+}
+
+// 级联配置 curl 展平配置变更处理
+const onCascadeCurlFlattenChange = () => {
+  if (cascadeCurlForm.enable_flatten && !cascadeCurlForm.flatten_label_path1) {
+    cascadeCurlForm.flatten_label_path1 = '$.data[*].label'
+    cascadeCurlForm.flatten_label_path2 = '$.data[*].children[*].label'
+    cascadeCurlForm.flatten_label_separator = '-'
+    cascadeCurlForm.flatten_value_path1 = '$.data[*].value'
+    cascadeCurlForm.flatten_value_path2 = '$.data[*].children[*].value'
+    cascadeCurlForm.flatten_value_separator = '-'
+  }
+}
+
 const fetchFieldCascadeConfigs = async (fieldId: number) => {
   try {
     const res: any = await api.getCascadeConfigList({ parent_field_id: fieldId })
@@ -1092,6 +1299,19 @@ const fetchFieldCascadeConfigs = async (fieldId: number) => {
   } catch (error) {
     console.error('获取级联配置失败', error)
     fieldCascadeConfigs.value = []
+  }
+}
+
+const addCascadeApiHeader = () => {
+  if (!cascadeConfig.api_headers) {
+    cascadeConfig.api_headers = []
+  }
+  cascadeConfig.api_headers.push({ key: '', value: '' })
+}
+
+const removeCascadeApiHeader = (index: number) => {
+  if (cascadeConfig.api_headers) {
+    cascadeConfig.api_headers.splice(index, 1)
   }
 }
 
@@ -1107,38 +1327,30 @@ const showAddCascadeModal = () => {
 }
 
 const editCascadeConfig = (item: any) => {
+  cascadeConfig.id = item.id
   cascadeConfig.parent_field_id = item.parent_field_id
   cascadeConfig.parent_field_group_id = item.parent_field_group_id
-  cascadeConfig.field_name_suffix = item.field_name_suffix
-  cascadeConfig.field_label_prefix = item.field_label_prefix || ''
-  cascadeConfig.api_curl = item.api_curl || ''
-  cascadeConfig.api_params_mapping = item.api_params_mapping || {}
-  cascadeConfig.field_mapping = item.field_mapping || {}
+  cascadeConfig.field_name_pattern = item.field_name_pattern || 'parent.$.data[*].label + -的二三级'
+  cascadeConfig.field_label_suffix = item.field_label_suffix || '-的二三级'
+  cascadeConfig.api_headers = item.api_headers || []
+  cascadeConfig.api_schema = item.api_schema || ''
   cascadeConfig.enable_flatten = item.enable_flatten || false
   cascadeConfig.flatten_config = item.flatten_config || {}
-  cascadeConfig.id = item.id
-
-  cascadeParamsMappingJson.value = JSON.stringify(cascadeConfig.api_params_mapping, null, 2)
-  cascadeFieldMappingJson.value = JSON.stringify(cascadeConfig.field_mapping, null, 2)
 
   Object.assign(cascadeFlattenConfig, item.flatten_config || {})
   cascadeModalVisible.value = true
 }
 
 const resetCascadeConfig = () => {
+  cascadeConfig.id = undefined
   cascadeConfig.parent_field_id = undefined
   cascadeConfig.parent_field_group_id = undefined
-  cascadeConfig.field_name_suffix = '-子字段'
-  cascadeConfig.field_label_prefix = ''
-  cascadeConfig.api_curl = ''
-  cascadeConfig.api_params_mapping = {}
-  cascadeConfig.field_mapping = {}
+  cascadeConfig.field_name_pattern = 'parent.$.data[*].label + -的二三级'
+  cascadeConfig.field_label_suffix = '-的二三级'
+  cascadeConfig.api_headers = []
+  cascadeConfig.api_schema = ''
   cascadeConfig.enable_flatten = false
   cascadeConfig.flatten_config = {}
-  cascadeConfig.id = undefined
-
-  cascadeParamsMappingJson.value = ''
-  cascadeFieldMappingJson.value = ''
 
   Object.assign(cascadeFlattenConfig, {
     label_path_level1: '',
@@ -1153,22 +1365,8 @@ const resetCascadeConfig = () => {
 }
 
 const handleSaveCascadeConfig = async () => {
-  if (!cascadeConfig.api_curl) {
-    message.warning('请输入curl命令')
-    return
-  }
-
-  try {
-    cascadeConfig.api_params_mapping = JSON.parse(cascadeParamsMappingJson.value || '{}')
-  } catch {
-    message.error('API参数映射JSON格式错误')
-    return
-  }
-
-  try {
-    cascadeConfig.field_mapping = JSON.parse(cascadeFieldMappingJson.value || '{}')
-  } catch {
-    message.error('字段映射JSON格式错误')
+  if (!cascadeConfig.api_schema) {
+    message.warning('请配置OpenAPI Schema')
     return
   }
 
@@ -1191,6 +1389,80 @@ const handleSaveCascadeConfig = async () => {
     message.error(error.message || '保存失败')
   } finally {
     cascadeModalLoading.value = false
+  }
+}
+
+const showCascadeCurlModal = () => {
+  cascadeCurlForm.curl_command = ''
+  cascadeCurlForm.label_path = '$.data[*].label'
+  cascadeCurlForm.value_path = '$.data[*].value'
+  cascadeCurlForm.enable_flatten = false
+  cascadeCurlModalVisible.value = true
+}
+
+const handleParseCascadeCurl = async () => {
+  if (!cascadeCurlForm.curl_command.trim()) {
+    message.warning('请输入 curl 命令')
+    return
+  }
+
+  cascadeCurlModalLoading.value = true
+  try {
+    const res: any = await api.parseCurlCommand({
+      curl_command: cascadeCurlForm.curl_command,
+      label_path: cascadeCurlForm.label_path,
+      value_path: cascadeCurlForm.value_path,
+      enable_flatten: cascadeCurlForm.enable_flatten,
+      flatten_config: cascadeCurlForm.enable_flatten ? {
+        label_path_level1: cascadeCurlForm.flatten_label_path1,
+        label_path_level2: cascadeCurlForm.flatten_label_path2,
+        label_path_level3: cascadeCurlForm.flatten_label_path3,
+        label_separator: cascadeCurlForm.flatten_label_separator,
+        value_path_level1: cascadeCurlForm.flatten_value_path1,
+        value_path_level2: cascadeCurlForm.flatten_value_path2,
+        value_path_level3: cascadeCurlForm.flatten_value_path3,
+        value_separator: cascadeCurlForm.flatten_value_separator,
+      } : undefined,
+    })
+    if (res.code === 200) {
+      cascadeConfig.api_schema = res.data.openapi_schema
+      message.success(res.data.message || 'curl 解析成功，已生成 OpenAPI Schema')
+      cascadeCurlModalVisible.value = false
+    } else {
+      message.error(res.msg || '解析失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '解析失败')
+  } finally {
+    cascadeCurlModalLoading.value = false
+  }
+}
+
+const handleCancelCascadeCurlModal = () => {
+  cascadeCurlModalVisible.value = false
+}
+
+const handleSyncCascadeSchema = async () => {
+  if (!cascadeConfig.api_schema) {
+    message.warning('请先配置OpenAPI Schema')
+    return
+  }
+
+  cascadeSyncLoading.value = true
+  try {
+    const res: any = await api.syncCascadeFields({ config_id: cascadeConfig.id })
+    if (res.code === 200) {
+      message.success(`同步成功: ${res.data?.synced_count || 0}/${res.data?.total_count || 0}`)
+      if (cascadeConfig.parent_field_id) {
+        await fetchFieldCascadeConfigs(cascadeConfig.parent_field_id)
+      }
+    } else {
+      message.error(res.msg || '同步失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '同步失败')
+  } finally {
+    cascadeSyncLoading.value = false
   }
 }
 
@@ -1243,6 +1515,7 @@ watch(() => props.fieldGroupId, (newVal) => {
 }, { immediate: true })
 
 onMounted(() => {
+  fetchTenantOptions()
   fetchFieldGroups()
   fetchData()
 })

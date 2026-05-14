@@ -11,7 +11,7 @@ from app.controllers.autofill import (
     fill_page_controller,
 )
 from app.models.autofill import FieldGroupFieldSpec
-from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import FillPageCreate, FillPageUpdate
 
@@ -69,14 +69,18 @@ async def create_page(
     if not app:
         return Fail(code=400, msg=f"应用 '{page_in.app_name}' 不存在")
 
-    if is_superuser(current_user):
-        target_tenant_id = page_in.tenant_id if page_in.tenant_id > 0 else app.tenant_id
-    else:
-        target_tenant_id = app.tenant_id
-        if current_user.current_tenant_id > 0 and app.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权在该应用下创建页面")
-
-    page_in.tenant_id = target_tenant_id
+    # 使用公共方法验证租户ID
+    success, msg, effective_tenant_id = TenantControl.validate_create_tenant_id(
+        current_user, page_in.tenant_id
+    )
+    if not success:
+        return Fail(code=400, msg=msg)
+    
+    # 如果超管没传tenant_id，使用应用的租户
+    if is_superuser(current_user) and page_in.tenant_id <= 0:
+        effective_tenant_id = app.tenant_id
+    
+    page_in.tenant_id = effective_tenant_id
     page_in.app_id = app.id
 
     page = await fill_page_controller.create_page(obj_in=page_in)
@@ -113,9 +117,12 @@ async def delete_page(
     current_user = await AuthControl.is_authed(token)
     page = await fill_page_controller.get(id=id)
 
-    if not is_superuser(current_user):
-        if page.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的页面")
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, page.tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
 
     await fill_page_controller.remove(id=id)
     return Success(msg="删除成功")

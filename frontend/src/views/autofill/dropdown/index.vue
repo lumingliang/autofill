@@ -7,6 +7,12 @@
       @modal-ok="handleSave">
       <!-- 筛选条件 -->
       <template #filter-items>
+        <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+          <a-form-item label="租户" class="filter-item">
+            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
+              @change="handleTenantChange" />
+          </a-form-item>
+        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="应用名称" class="filter-item">
             <a-select v-model:value="queryParams.app_name" placeholder="请选择应用" allow-clear :options="appOptions"
@@ -22,12 +28,6 @@
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="父选项ID" class="filter-item">
             <a-input-number v-model:value="queryParams.parent_id" placeholder="0表示顶级" style="width: 100%" />
-          </a-form-item>
-        </a-col>
-        <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-              @change="handleSearch" />
           </a-form-item>
         </a-col>
       </template>
@@ -81,6 +81,10 @@
 
       <!-- 弹窗表单 -->
       <template #modal-form="{ form }">
+        <a-form-item v-if="userStore.isSuperUser" label="所属租户" name="tenant_id">
+          <a-select v-model:value="form.tenant_id" placeholder="请选择租户" :options="tenantOptions"
+            @change="(val: number) => handleModalTenantChange(val, form)" />
+        </a-form-item>
         <a-form-item label="选项编码" name="option_value">
           <a-input v-model:value="form.option_value" placeholder="请输入选项编码（唯一标识）" />
         </a-form-item>
@@ -413,9 +417,14 @@ const fetchTenantOptions = async () => {
   }
 }
 
-const fetchAppOptions = async () => {
+const fetchAppOptions = async (tenantId?: number) => {
   try {
-    const res: any = await api.getAppSelect()
+    const params: any = {}
+    // 如果指定了租户，只加载该租户的应用
+    if (tenantId && tenantId > 0) {
+      params.tenant_id = tenantId
+    }
+    const res: any = await api.getAppSelect(params)
     if (res.code === 200) {
       appOptions.value = res.data || []
     }
@@ -436,6 +445,23 @@ const handleReset = () => {
   queryParams.tenant_id = undefined
   pagination.current = 1
   fetchData()
+}
+
+const handleTenantChange = (tenantId: number) => {
+  // 重置应用选择
+  queryParams.app_name = ''
+  // 重新加载该租户的应用
+  fetchAppOptions(tenantId)
+  // 刷新数据
+  handleSearch()
+}
+
+// 弹窗中租户变更处理
+const handleModalTenantChange = (tenantId: number, form: any) => {
+  // 重置应用选择
+  form.app_name = undefined
+  // 重新加载该租户的应用
+  fetchAppOptions(tenantId)
 }
 
 const handleTableChange = (pag: any) => {

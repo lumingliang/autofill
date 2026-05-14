@@ -273,7 +273,7 @@ const modalForm = reactive<any>({
   assigned_tenant_ids: [],
 })
 
-const modalRules = {
+const modalRules = computed(() => ({
   username: [{ required: true, message: '请输入名称', trigger: ['input', 'blur'] }],
   email: [
     { required: true, message: '请输入邮箱地址', trigger: ['input', 'change'] },
@@ -287,18 +287,27 @@ const modalRules = {
       trigger: 'blur',
     },
   ],
-  password: [{ required: true, message: '请输入密码', trigger: ['input', 'blur', 'change'] }],
+  password: [{ required: modalAction.value === 'add', message: '请输入密码', trigger: ['input', 'blur', 'change'] }],
   confirmPassword: [
-    { required: true, message: '请再次输入密码', trigger: ['input'] },
+    { required: modalAction.value === 'add', message: '请再次输入密码', trigger: ['input'] },
     {
       validator: (_rule: any, value: string) => {
+        if (modalAction.value === 'edit') return Promise.resolve()
         if (value !== modalForm.password) return Promise.reject('两次密码输入不一致')
         return Promise.resolve()
       },
       trigger: 'blur',
     },
   ],
-}
+  tenant_id: [
+    {
+      required: userStore.isSuperUser && modalAction.value === 'add',
+      message: '请选择租户',
+      trigger: 'change',
+      type: 'number',
+    },
+  ],
+}))
 
 async function loadData() {
   loading.value = true

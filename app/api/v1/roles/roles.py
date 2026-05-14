@@ -4,7 +4,7 @@ from tortoise.expressions import Q
 
 from app.controllers import role_controller
 from app.controllers.user import user_controller
-from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.core.relation import RelationQuery
 from app.log import logger
 from app.models.admin import Api, Menu, Role, Tenant, User, UserRole, UserTenant
@@ -77,11 +77,14 @@ async def create_role(
     token: str = Header(..., description="token验证"),
 ):
     current_user = await AuthControl.is_authed(token)
-    if role_in.tenant_id > 0 and not is_superuser(current_user):
-        return Fail(code=403, msg="只有超级管理员才能创建租户角色")
 
-    if not is_superuser(current_user):
-        role_in.tenant_id = current_user.current_tenant_id
+    # 使用公共方法验证租户ID
+    success, msg, effective_tenant_id = TenantControl.validate_create_tenant_id(
+        current_user, role_in.tenant_id
+    )
+    if not success:
+        return Fail(code=400, msg=msg)
+    role_in.tenant_id = effective_tenant_id
 
     if await role_controller.is_exist(name=role_in.name, tenant_id=role_in.tenant_id):
         raise HTTPException(
@@ -113,6 +116,14 @@ async def delete_role(
     current_user = await AuthControl.is_authed(token)
     role_obj = await role_controller.get(id=role_id)
 
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, role_obj.tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
+
+    # 非超管不能删除系统角色
     if not is_superuser(current_user) and role_obj.is_system:
         return Fail(code=403, msg="不能删除系统角色")
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Header, Query
 from tortoise.expressions import Q
 
 from app.controllers.autofill import app_management_controller
-from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.schemas.autofill import AppCreate, AppUpdate
 from app.schemas.base import Fail, Success, SuccessExtra
 
@@ -53,14 +53,14 @@ async def create_app(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    if is_superuser(current_user):
-        target_tenant_id = app_in.tenant_id if app_in.tenant_id > 0 else 0
-    else:
-        target_tenant_id = current_user.current_tenant_id
-        if target_tenant_id <= 0:
-            return Fail(code=400, msg="您当前未选择租户，无法创建应用")
+    # 使用公共方法验证租户ID
+    success, msg, effective_tenant_id = TenantControl.validate_create_tenant_id(
+        current_user, app_in.tenant_id
+    )
+    if not success:
+        return Fail(code=400, msg=msg)
+    app_in.tenant_id = effective_tenant_id
 
-    app_in.tenant_id = target_tenant_id
     app = await app_management_controller.create_app(obj_in=app_in)
     return Success(data=await app.to_dict())
 
@@ -89,9 +89,12 @@ async def delete_app(
     current_user = await AuthControl.is_authed(token)
     app = await app_management_controller.get(id=id)
 
-    if not is_superuser(current_user):
-        if app.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的应用")
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, app.tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
 
     await app_management_controller.remove(id=id)
     return Success(msg="删除成功")

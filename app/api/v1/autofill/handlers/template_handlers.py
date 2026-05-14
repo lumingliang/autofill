@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Header, Query, UploadFile
 from tortoise.expressions import Q
 
 from app.controllers.autofill import summary_template_controller
-from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.schemas.autofill import SummaryTemplateCreate, SummaryTemplateUpdate
 from app.schemas.base import Fail, Success, SuccessExtra
 
@@ -62,15 +62,14 @@ async def create_template(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    target_tenant_id = 0
-    if is_superuser(current_user):
-        target_tenant_id = template_in.tenant_id
-    else:
-        target_tenant_id = current_user.current_tenant_id
-        if target_tenant_id <= 0:
-            return Fail(code=400, msg="您当前未选择租户，无法创建模板")
+    # 使用公共方法验证租户ID
+    success, msg, effective_tenant_id = TenantControl.validate_create_tenant_id(
+        current_user, template_in.tenant_id
+    )
+    if not success:
+        return Fail(code=400, msg=msg)
+    template_in.tenant_id = effective_tenant_id
 
-    template_in.tenant_id = target_tenant_id
     template = await summary_template_controller.create_template(obj_in=template_in)
     return Success(data=await template.to_dict())
 
@@ -99,9 +98,12 @@ async def delete_template(
     current_user = await AuthControl.is_authed(token)
     template = await summary_template_controller.get(id=id)
 
-    if not is_superuser(current_user):
-        if template.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的模板")
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, template.tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
 
     await summary_template_controller.remove(id=id)
     return Success(msg="删除成功")

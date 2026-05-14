@@ -11,7 +11,7 @@ from app.controllers.autofill import (
     app_management_controller,
     dropdown_option_controller,
 )
-from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.schemas.autofill import DropdownOptionCreate, DropdownOptionUpdate
 from app.schemas.base import Fail, Success, SuccessExtra
 
@@ -130,24 +130,25 @@ async def create_dropdown(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    target_tenant_id = 0
-    if is_superuser(current_user):
-        if option_in.tenant_id and option_in.tenant_id > 0:
-            target_tenant_id = option_in.tenant_id
-        elif option_in.app_name:
+    # 使用公共方法验证租户ID
+    success, msg, effective_tenant_id = TenantControl.validate_create_tenant_id(
+        current_user, option_in.tenant_id
+    )
+    if not success:
+        return Fail(code=400, msg=msg)
+    
+    # 如果超管没传tenant_id，尝试从应用获取
+    if is_superuser(current_user) and option_in.tenant_id <= 0:
+        if option_in.app_name:
             app = await app_management_controller.model.filter(app_name=option_in.app_name).first()
             if app:
-                target_tenant_id = app.tenant_id
+                effective_tenant_id = app.tenant_id
             else:
                 return Fail(code=400, msg=f"应用 '{option_in.app_name}' 不存在")
         else:
             return Fail(code=400, msg="请指定租户ID或应用名称")
-    else:
-        target_tenant_id = current_user.current_tenant_id
-        if target_tenant_id <= 0:
-            return Fail(code=400, msg="您当前未选择租户，无法创建选项")
-
-    option_in.tenant_id = target_tenant_id
+    
+    option_in.tenant_id = effective_tenant_id
     option = await dropdown_option_controller.create_option(obj_in=option_in)
     return Success(data=await option.to_dict())
 
@@ -176,9 +177,12 @@ async def delete_dropdown(
     current_user = await AuthControl.is_authed(token)
     option = await dropdown_option_controller.get(id=id)
 
-    if not is_superuser(current_user):
-        if option.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的选项")
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, option.tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
 
     children_count = await dropdown_option_controller.model.filter(parent_id=id).count()
     if children_count > 0:

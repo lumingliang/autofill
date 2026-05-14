@@ -2,7 +2,7 @@ from fastapi import APIRouter, Header, Query
 from tortoise.expressions import Q
 
 from app.controllers.dept import dept_controller
-from app.core.dependency import AuthControl, is_superuser, get_effective_tenant_id
+from app.core.dependency import AuthControl, is_superuser, get_effective_tenant_id, TenantControl
 from app.models.admin import Dept, User
 from app.schemas import Success
 from app.schemas.depts import *
@@ -70,9 +70,13 @@ async def create_dept(
 ):
     current_user: User = await AuthControl.is_authed(token)
 
-    # 数据隔离：非超级管理员创建的部门自动归属当前租户
-    if not is_superuser(current_user):
-        dept_in.tenant_id = current_user.current_tenant_id
+    # 使用公共方法验证租户ID
+    success, msg, effective_tenant_id = TenantControl.validate_create_tenant_id(
+        current_user, dept_in.tenant_id
+    )
+    if not success:
+        return Success(code=400, msg=msg)
+    dept_in.tenant_id = effective_tenant_id
 
     await dept_controller.create_dept(obj_in=dept_in)
     return Success(msg="Created Successfully")
@@ -105,10 +109,12 @@ async def delete_dept(
     current_user: User = await AuthControl.is_authed(token)
     dept_obj = await dept_controller.get(id=dept_id)
 
-    # 数据隔离：非超级管理员只能删除自己租户的部门
-    if not is_superuser(current_user):
-        if dept_obj.tenant_id != current_user.current_tenant_id:
-            return Success(code=403, msg="您没有权限删除该部门")
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, dept_obj.tenant_id
+    )
+    if not success:
+        return Success(code=403, msg=msg)
 
     await dept_controller.delete_dept(dept_id=dept_id)
     return Success(msg="Deleted Success")

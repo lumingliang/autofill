@@ -161,10 +161,10 @@ const modalForm = reactive({
   desc: '',
   tenant_id: undefined as number | undefined,
 })
-const modalRules = {
-  tenant_id: { required: true, message: '请选择所属租户', trigger: ['change', 'blur'], type: 'number' },
+const modalRules = computed(() => ({
+  tenant_id: { required: userStore.isSuperUser, message: '请选择所属租户', trigger: ['change', 'blur'], type: 'number' },
   name: { required: true, message: '请输入角色名称', trigger: ['input', 'blur'] },
-}
+}))
 
 // 权限设置
 const drawerVisible = ref(false)

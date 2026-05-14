@@ -11,7 +11,7 @@ from app.controllers.autofill import (
     field_spec_controller,
     fill_page_controller,
 )
-from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import FieldGroupConfigCreate, FieldGroupConfigUpdate
 from app.services.autofill.prompt_service import build_function_schema
@@ -82,14 +82,18 @@ async def create_field_group(
     if not page:
         return Fail(code=400, msg="页面不存在")
 
-    if is_superuser(current_user):
-        target_tenant_id = group_in.tenant_id if group_in.tenant_id > 0 else page.tenant_id
-    else:
-        target_tenant_id = page.tenant_id
-        if current_user.current_tenant_id > 0 and page.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权在该页面下创建字段组")
-
-    group_in.tenant_id = target_tenant_id
+    # 使用公共方法验证租户ID
+    success, msg, effective_tenant_id = TenantControl.validate_create_tenant_id(
+        current_user, group_in.tenant_id
+    )
+    if not success:
+        return Fail(code=400, msg=msg)
+    
+    # 如果超管没传tenant_id，使用页面的租户
+    if is_superuser(current_user) and group_in.tenant_id <= 0:
+        effective_tenant_id = page.tenant_id
+    
+    group_in.tenant_id = effective_tenant_id
     group_in.page_name = page.page_name
     group_in.app_name = page.app_name
 
@@ -128,9 +132,12 @@ async def delete_field_group(
     current_user = await AuthControl.is_authed(token)
     group = await field_group_config_controller.get(id=id)
 
-    if not is_superuser(current_user):
-        if group.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的字段组")
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, group.tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
 
     await field_group_config_controller.remove(id=id)
     return Success(msg="删除成功")

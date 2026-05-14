@@ -1,4 +1,10 @@
 import request from '@/utils/request'
+import axios from 'axios'
+
+// 创建不带 baseURL 的请求实例（用于公开 API）
+const publicRequest = axios.create({
+  timeout: 600000,
+})
 
 export default {
   // 登录相关
@@ -191,11 +197,11 @@ export default {
   resetLLMMethods: (data: any = {}) => request.post('/ai/llm_config/reset_methods', data),
   getLLMMethods: (params: any = {}) => request.get('/ai/llm_config/methods', { params }),
 
-  // LLM 代理公开接口 (使用 API Key 认证)
-  llmProxy: (data: any = {}, apiKey: string) => request.post('/api/llm/proxy', data, {
+  // LLM 代理公开接口 (使用 API Key 认证，使用绝对路径)
+  llmProxy: (data: any = {}, apiKey: string) => publicRequest.post('/api/llm/proxy', data, {
     headers: { 'Authorization': `Bearer ${apiKey}` }
   }),
-  llmProxyHealth: (apiKey: string) => request.get('/api/llm/proxy/health', {
+  llmProxyHealth: (apiKey: string) => publicRequest.get('/api/llm/proxy/health', {
     headers: { 'Authorization': `Bearer ${apiKey}` }
   }),
 
@@ -243,11 +249,9 @@ export default {
   createCascadeConfig: (data: any = {}) => request.post('/autofill/cascade/config/create', data),
   updateCascadeConfig: (data: any = {}) => request.post('/autofill/cascade/config/update', data),
   getCascadeConfigList: (params: any = {}) => request.get('/autofill/cascade/config/list', { params }),
-  deleteCascadeConfig: (data: any = {}) => request.delete('/autofill/cascade/config/delete', { params: data }),
+  deleteCascadeConfig: (params: any = {}) => request.delete('/autofill/cascade/config/delete', { params }),
   syncCascadeFields: (data: any = {}) => request.post('/autofill/cascade/sync', data),
   getCascadeData: (params: any = {}) => request.get('/autofill/cascade/data/list', { params }),
-  parseCurlForCascade: (data: any = {}) => request.post('/autofill/cascade/parse_curl', data),
-  syncCascadeFromSchema: (data: any = {}) => request.post('/autofill/cascade/sync_from_schema', data),
 
   // 字段展平配置
   createFlattenConfig: (data: any = {}) => request.post('/autofill/flatten/config/create', data),

@@ -5,6 +5,12 @@
       @search="handleSearch" @reset="handleReset" @table-change="handleTableChange">
       <!-- 筛选条件 -->
       <template #filter-items>
+        <a-col v-if="isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+          <a-form-item label="租户" class="filter-item">
+            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
+              @change="handleTenantChange" />
+          </a-form-item>
+        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="会话ID" class="filter-item">
             <a-input v-model:value="queryParams.session_id" placeholder="请输入会话ID" allow-clear
@@ -25,12 +31,6 @@
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="应用名称" class="filter-item">
             <a-select v-model:value="queryParams.app_name" placeholder="请选择应用" allow-clear :options="appOptions"
-              @change="handleSearch" />
-          </a-form-item>
-        </a-col>
-        <a-col v-if="isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
               @change="handleSearch" />
           </a-form-item>
         </a-col>
@@ -323,9 +323,14 @@ const fetchTenantOptions = async () => {
   }
 }
 
-const fetchAppOptions = async () => {
+const fetchAppOptions = async (tenantId?: number) => {
   try {
-    const res: any = await api.getAppSelect()
+    const params: any = {}
+    // 如果指定了租户，只加载该租户的应用
+    if (tenantId && tenantId > 0) {
+      params.tenant_id = tenantId
+    }
+    const res: any = await api.getAppSelect(params)
     if (res.code === 200) {
       appOptions.value = res.data || []
     }
@@ -347,6 +352,15 @@ const handleReset = () => {
   queryParams.tenant_id = undefined
   pagination.current = 1
   fetchData()
+}
+
+const handleTenantChange = (tenantId: number) => {
+  // 重置应用选择
+  queryParams.app_name = ''
+  // 重新加载该租户的应用
+  fetchAppOptions(tenantId)
+  // 刷新数据
+  handleSearch()
 }
 
 const handleTableChange = (pag: any) => {

@@ -116,9 +116,10 @@ const modalForm = reactive({
 })
 const isDisabled = ref(false)
 
-const modalRules = {
+const modalRules = computed(() => ({
   name: [{ required: true, message: '请输入部门名称', trigger: ['input', 'blur', 'change'] }],
-}
+  tenant_id: { required: userStore.isSuperUser, message: '请选择所属租户', trigger: ['change', 'blur'], type: 'number' },
+}))
 
 // 方法
 async function loadData() {

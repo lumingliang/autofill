@@ -5,7 +5,7 @@ from tortoise.expressions import Q
 from app.controllers.dept import dept_controller
 from app.controllers.role import role_controller
 from app.controllers.user import user_controller
-from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.core.relation import RelationQuery
 from app.log import logger
 from app.models.admin import DeptClosure, Role, Tenant, User, UserRole, UserTenant
@@ -111,17 +111,12 @@ async def create_user(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    # 确定租户ID
-    target_tenant_id = 0
-    if is_superuser(current_user):
-        # 超管使用传参的tenant_id
-        target_tenant_id = user_in.tenant_id
-    else:
-        # 普通用户从JWT获取租户ID
-        decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
-        target_tenant_id = decode_data.get("current_tenant_id", 0)
-        if target_tenant_id <= 0:
-            return Fail(code=400, msg="您当前未选择租户，无法创建用户")
+    # 使用公共方法验证租户ID
+    success, msg, target_tenant_id = TenantControl.validate_create_tenant_id(
+        current_user, user_in.tenant_id
+    )
+    if not success:
+        return Fail(code=400, msg=msg)
 
     user = await user_controller.get_by_email(user_in.email)
     if user:
@@ -149,6 +144,20 @@ async def delete_user(
     user_id: int = Query(..., description="用户ID"),
     token: str = Header(..., description="token验证"),
 ):
+    current_user = await AuthControl.is_authed(token)
+
+    # 获取要删除的用户所属租户
+    user_tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user_id)
+    # 使用第一个租户ID进行权限校验（用户可能属于多个租户）
+    existing_tenant_id = user_tenant_ids[0] if user_tenant_ids else 0
+
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, existing_tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
+
     await user_controller.remove(id=user_id)
     return Success(msg="删除成功")
 

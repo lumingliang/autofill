@@ -203,22 +203,14 @@ class FieldCascadeConfig(BaseModel, TimestampMixin):
     parent_field_group_id = fields.BigIntField(default=0, description="父字段组ID", index=True)
     
     # 级联字段配置
-    field_name_suffix = fields.CharField(max_length=64, default="-子字段", description="级联字段后缀")
-    field_label_prefix = fields.CharField(max_length=128, default="", description="级联字段标签前缀")
+    field_name_pattern = fields.CharField(max_length=255, default="parent.$.data[*].label + -的二三级", description="字段名规则")
+    field_label_suffix = fields.CharField(max_length=128, default="-的二三级", description="级联字段标签后缀")
     
     # 级联API配置
-    api_curl = fields.TextField(default="", description="级联API的curl命令")
     api_method = fields.CharField(max_length=16, default="GET", description="请求方法")
     api_url = fields.CharField(max_length=512, default="", description="API地址")
-    api_headers = fields.JSONField(default=dict, description="请求头")
-    api_body = fields.TextField(default="", description="请求体（JSON）")
+    api_headers = fields.JSONField(default=list, description="请求头列表")
     api_schema = fields.TextField(default="", description="OpenAPI Schema (YAML格式)")
-    
-    # 参数映射配置
-    api_params_mapping = fields.JSONField(default=dict, description="API参数映射，如{parentParam: parentValuePath}")
-    
-    # 数据映射配置（类似现有的x-field-mapping）
-    field_mapping = fields.JSONField(default=dict, description="字段映射，如{label_path, value_path}")
     
     # 展平配置（针对此级联API的返回数据）
     enable_flatten = fields.BooleanField(default=False, description="是否启用展平")
