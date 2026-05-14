@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -223,17 +223,38 @@ class FieldSpecSyncOptionsResponse(BaseModel):
 class CurlParseRequest(BaseModel):
     """CURL 解析请求"""
     curl_command: str = Field(..., description="curl 命令字符串")
+    label_path: Optional[str] = Field(None, description="标签字段的 JSONPath")
+    value_path: Optional[str] = Field(None, description="值字段的 JSONPath")
+    enable_flatten: bool = Field(False, description="是否启用展平")
+    flatten_label_path_level1: Optional[str] = Field(None, description="标签路径1")
+    flatten_label_path_level2: Optional[str] = Field(None, description="标签路径2")
+    flatten_label_path_level3: Optional[str] = Field(None, description="标签路径3")
+    flatten_label_separator: str = Field("-", description="标签拼接符")
+    flatten_value_path_level1: Optional[str] = Field(None, description="值路径1")
+    flatten_value_path_level2: Optional[str] = Field(None, description="值路径2")
+    flatten_value_path_level3: Optional[str] = Field(None, description="值路径3")
+    flatten_value_separator: str = Field("-", description="值拼接符")
+
+
+class FlattenConfig(BaseModel):
+    """展平配置"""
+    label_path_level1: Optional[str] = Field(None, description="标签路径1")
+    label_path_level2: Optional[str] = Field(None, description="标签路径2")
+    label_path_level3: Optional[str] = Field(None, description="标签路径3")
+    label_separator: str = Field("-", description="标签拼接符")
+    value_path_level1: Optional[str] = Field(None, description="值路径1")
+    value_path_level2: Optional[str] = Field(None, description="值路径2")
+    value_path_level3: Optional[str] = Field(None, description="值路径3")
+    value_separator: str = Field("-", description="值拼接符")
+
+
+class ApplyFieldMappingRequest(BaseModel):
+    """应用字段映射请求"""
+    openapi_schema: str = Field(..., description="OpenAPI Schema YAML 字符串")
     label_path: str = Field("$.data[*].label", description="标签字段的 JSONPath")
     value_path: str = Field("$.data[*].value", description="值字段的 JSONPath")
     enable_flatten: bool = Field(False, description="是否启用展平")
-    flatten_label_path_level1: str = Field("", description="标签路径1")
-    flatten_label_path_level2: str = Field("", description="标签路径2")
-    flatten_label_path_level3: str = Field("", description="标签路径3")
-    flatten_label_separator: str = Field("-", description="标签拼接符")
-    flatten_value_path_level1: str = Field("", description="值路径1")
-    flatten_value_path_level2: str = Field("", description="值路径2")
-    flatten_value_path_level3: str = Field("", description="值路径3")
-    flatten_value_separator: str = Field("-", description="值拼接符")
+    flatten_config: Optional[FlattenConfig] = Field(None, description="展平配置")
 
 
 class CurlParseResponse(BaseModel):

@@ -240,6 +240,7 @@ export default {
   }),
   syncFieldSpecOptions: (data: any = {}) => request.post('/autofill/field_spec/sync_options', data),
   parseCurlCommand: (data: any = {}) => request.post('/autofill/field_spec/parse_curl', data),
+  applyFieldMapping: (data: any = {}) => request.post('/autofill/field_spec/apply_mapping', data),
 
   // 测试填单
   testFillChat: (data: any = {}) => request.post('/autofill/test-fill/chat', data),

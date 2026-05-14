@@ -155,6 +155,8 @@ class FieldSpec(BaseModel, TimestampMixin):
 
     class Meta:
         table = "field_spec"
+        # 唯一索引：字段名 + 租户ID + 应用名称
+        unique_together = (("field_name", "tenant_id", "app_name"),)
 
 
 class FieldGroupFieldSpec(BaseModel, TimestampMixin):
@@ -204,7 +206,7 @@ class FieldCascadeConfig(BaseModel, TimestampMixin):
     
     # 级联字段配置
     field_name_pattern = fields.CharField(max_length=255, default="parent.$.data[*].label + -的二三级", description="字段名规则")
-    field_label_suffix = fields.CharField(max_length=128, default="-的二三级", description="级联字段标签后缀")
+    field_label_pattern = fields.CharField(max_length=255, default="parent.$.data[*].value + -的二三级", description="字段标签规则")
     
     # 级联API配置
     api_method = fields.CharField(max_length=16, default="GET", description="请求方法")

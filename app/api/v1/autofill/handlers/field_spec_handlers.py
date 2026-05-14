@@ -25,7 +25,7 @@ from app.models.autofill import FieldGroupFieldSpec, FieldGroupConfig, FillPage
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import (
     FieldSpecCreate, FieldSpecUpdate, FieldSpecSyncOptionsRequest,
-    CurlParseRequest
+    CurlParseRequest, ApplyFieldMappingRequest
 )
 from app.services.autofill.field_spec_service import upsert_field_spec
 from app.services.autofill.field_flatten_service import FieldFlattener
@@ -152,6 +152,10 @@ async def create_field_spec(spec_in: FieldSpecCreate, token: str = Header(...)):
     
     target_tenant_id = effective_tenant_id
     target_app_name = spec_in.app_name if spec_in.app_name else first_group.app_name
+
+    # 更新 spec_in 的 tenant_id 和 app_name，确保一致性
+    spec_in.tenant_id = target_tenant_id
+    spec_in.app_name = target_app_name
 
     spec = await field_spec_controller.create_field_spec(obj_in=spec_in, tenant_id=target_tenant_id, app_name=target_app_name)
     spec_dict = await spec.to_dict()
@@ -495,7 +499,6 @@ async def import_field_specs(
 @router.post("/field_spec/sync_options", summary="同步字段选项")
 async def sync_field_spec_options(sync_in: FieldSpecSyncOptionsRequest, token: str = Header(...)):
     await AuthControl.is_authed(token)
-    tenant_id = TenantContext.get_tenant_id()
 
     if not sync_in.field_name:
         return Fail(code=400, msg="字段名称不能为空")
@@ -505,6 +508,19 @@ async def sync_field_spec_options(sync_in: FieldSpecSyncOptionsRequest, token: s
         return Fail(code=400, msg="请至少选择一个关联字段组")
     if not sync_in.options.api_schema:
         return Fail(code=400, msg="请先配置OpenAPI Schema")
+
+    # 从第一个字段组获取租户ID和应用名称
+    # 超管可以访问所有字段组，普通用户只能访问自己租户的字段组
+    field_group = await FieldGroupConfig.filter(id=sync_in.field_group_ids[0]).first()
+    if not field_group:
+        return Fail(code=400, msg="字段组不存在")
+    
+    # 权限检查：普通用户只能操作自己租户的字段组
+    if not TenantContext.is_superuser() and field_group.tenant_id != TenantContext.get_tenant_id():
+        return Fail(code=403, msg="无权操作其他租户的字段组")
+    
+    tenant_id = field_group.tenant_id
+    app_name = field_group.app_name
 
     try:
         spec = parse_openapi_schema(sync_in.options.api_schema)
@@ -570,12 +586,6 @@ async def sync_field_spec_options(sync_in: FieldSpecSyncOptionsRequest, token: s
                     continue
                 new_items.append({'value': value, 'label': label, 'fill_instruction': '', 'corrections': [], 'is_deleted': False})
 
-        tenant_filter = {"tenant_id": tenant_id} if tenant_id > 0 else {}
-        field_group = await FieldGroupConfig.filter(id=sync_in.field_group_ids[0], **tenant_filter).first()
-        if not field_group:
-            return Fail(code=400, msg="字段组不存在或无权限访问")
-
-        app_name = field_group.app_name
         options_data = {
             'items': new_items,
             'min_selections': sync_in.options.min_selections or 1,
@@ -638,21 +648,25 @@ async def parse_curl_command_endpoint(request: CurlParseRequest, token: str = He
             response.raise_for_status()
             response_data = response.json()
 
+        # 如果没有提供 label_path 和 value_path，则生成基础 schema（用于第一步）
+        label_path = request.label_path or "$.data[*].label"
+        value_path = request.value_path or "$.data[*].value"
+
         flatten_config = None
         if request.enable_flatten:
             flatten_config = {
-                'label_path_level1': request.flatten_label_path_level1 or request.label_path,
+                'label_path_level1': request.flatten_label_path_level1 or label_path,
                 'label_path_level2': request.flatten_label_path_level2,
                 'label_path_level3': request.flatten_label_path_level3,
                 'label_separator': request.flatten_label_separator,
-                'value_path_level1': request.flatten_value_path_level1 or request.value_path,
+                'value_path_level1': request.flatten_value_path_level1 or value_path,
                 'value_path_level2': request.flatten_value_path_level2,
                 'value_path_level3': request.flatten_value_path_level3,
                 'value_separator': request.flatten_value_separator
             }
 
         openapi_dict = generate_openapi_schema_from_curl(
-            request.curl_command, response_data, label_path=request.label_path, value_path=request.value_path,
+            request.curl_command, response_data, label_path=label_path, value_path=value_path,
             enable_flatten=request.enable_flatten, flatten_config=flatten_config
         )
         openapi_yaml = yaml.dump(openapi_dict, allow_unicode=True, sort_keys=False)
@@ -667,3 +681,53 @@ async def parse_curl_command_endpoint(request: CurlParseRequest, token: str = He
         return Fail(code=400, msg=f"响应数据不是有效的 JSON: {str(e)}")
     except Exception as e:
         return Fail(code=500, msg=f"解析失败: {str(e)}")
+
+
+@router.post("/field_spec/apply_mapping", summary="应用字段映射到 OpenAPI Schema")
+async def apply_field_mapping_endpoint(request: ApplyFieldMappingRequest, token: str = Header(...)):
+    """
+    将字段映射配置应用到已解析的 OpenAPI Schema
+    """
+    await AuthControl.is_authed(token)
+
+    if not request.openapi_schema or not request.openapi_schema.strip():
+        return Fail(code=400, msg="OpenAPI Schema 不能为空")
+
+    try:
+        # 解析现有的 schema
+        schema = yaml.safe_load(request.openapi_schema)
+
+        # 更新 x-field-mapping 配置
+        if 'paths' in schema:
+            for path, methods in schema['paths'].items():
+                for method, operation in methods.items():
+                    if isinstance(operation, dict):
+                        if 'x-field-mapping' not in operation:
+                            operation['x-field-mapping'] = {}
+
+                        operation['x-field-mapping']['label_path'] = request.label_path
+                        operation['x-field-mapping']['value_path'] = request.value_path
+
+                        # 添加展平配置
+                        if request.enable_flatten and request.flatten_config:
+                            operation['x-field-mapping']['enable_flatten'] = True
+                            operation['x-field-mapping']['flatten_config'] = {
+                                'label_path_level1': request.flatten_config.label_path_level1 or request.label_path,
+                                'label_path_level2': request.flatten_config.label_path_level2,
+                                'label_path_level3': request.flatten_config.label_path_level3,
+                                'label_separator': request.flatten_config.label_separator,
+                                'value_path_level1': request.flatten_config.value_path_level1 or request.value_path,
+                                'value_path_level2': request.flatten_config.value_path_level2,
+                                'value_path_level3': request.flatten_config.value_path_level3,
+                                'value_separator': request.flatten_config.value_separator,
+                            }
+
+        # 重新生成 YAML
+        openapi_yaml = yaml.dump(schema, allow_unicode=True, sort_keys=False)
+
+        return Success(data={"openapi_schema": openapi_yaml, "message": "字段映射配置成功"})
+
+    except yaml.YAMLError as e:
+        return Fail(code=400, msg=f"YAML 解析错误: {str(e)}")
+    except Exception as e:
+        return Fail(code=500, msg=f"应用字段映射失败: {str(e)}")

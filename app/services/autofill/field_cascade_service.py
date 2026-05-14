@@ -36,7 +36,7 @@ class FieldCascadeService:
         parent_field_id: int,
         parent_field_group_id: int,
         field_name_pattern: str = "parent.$.data[*].label + -的二三级",
-        field_label_suffix: str = "-的二三级",
+        field_label_pattern: str = "parent.$.data[*].value + -的二三级",
         api_headers: Optional[List[Dict[str, str]]] = None,
         api_schema: str = "",
         enable_flatten: bool = False,
@@ -85,7 +85,7 @@ class FieldCascadeService:
             parent_field_name=parent_field.field_name,
             parent_field_group_id=parent_field_group_id,
             field_name_pattern=field_name_pattern,
-            field_label_suffix=field_label_suffix,
+            field_label_pattern=field_label_pattern,
             api_headers=api_headers or [],
             api_schema=api_schema,
             api_method=api_method,
@@ -123,7 +123,7 @@ class FieldCascadeService:
                 "parent_field_name": config.parent_field_name,
                 "parent_field_group_id": config.parent_field_group_id,
                 "field_name_pattern": config.field_name_pattern,
-                "field_label_suffix": config.field_label_suffix,
+                "field_label_pattern": config.field_label_pattern,
                 "api_url": config.api_url,
                 "api_headers": config.api_headers,
                 "api_schema": config.api_schema,
@@ -243,6 +243,7 @@ class FieldCascadeService:
             try:
                 sync_result = await self._sync_single_cascade_field(
                     config=config,
+                    parent_field=parent_field,
                     parent_label=parent_label,
                     parent_value=parent_value,
                     parent_option=option
@@ -276,6 +277,7 @@ class FieldCascadeService:
     async def _sync_single_cascade_field(
         self,
         config: FieldCascadeConfig,
+        parent_field: FieldSpec,
         parent_label: str,
         parent_value: str,
         parent_option: Dict[str, Any] = None
@@ -303,17 +305,24 @@ class FieldCascadeService:
 
         field_name_pattern = config.field_name_pattern or "parent.$.data[*].label + -的二三级"
         child_field_name = self._generate_field_name(field_name_pattern, parent_label, parent_value)
-        child_field_label = f"{parent_label}{config.field_label_suffix}"
+
+        # 使用字段标签规则生成标签，逻辑同字段名规则
+        field_label_pattern = config.field_label_pattern or "parent.$.data[*].value + -的二三级"
+        child_field_label = self._generate_field_label(field_label_pattern, parent_label, parent_value)
+
+        # 使用父字段的字段类型，保持级联子字段与父字段类型一致
+        parent_field_type = parent_field.field_type if parent_field else "select_single"
 
         upsert_result = await upsert_field_spec(
             tenant_id=config.tenant_id,
             app_name=config.app_name,
             field_name=child_field_name,
             field_label=child_field_label,
-            field_type="select_single",
+            field_type=parent_field_type,
             field_group_ids=[config.parent_field_group_id],
             fill_instruction=f"根据'{parent_label}'选择的子项",
-            options={"items": options}
+            options={"items": options},
+            sync_mode='replace'  # 级联字段同步使用 replace 模式，完全替换选项
         )
 
         logger.info(f"[FieldCascadeService] 同步单个级联字段成功: child_field={child_field_name}")
@@ -380,7 +389,16 @@ class FieldCascadeService:
                 if param_key == 'headers':
                     continue
 
-                if isinstance(param_value, str) and param_value.startswith('$'):
+                if isinstance(param_value, str) and param_value.startswith('parent.$'):
+                    # 支持 parent.$.data[*].value 格式，从父选项中提取值
+                    # 去掉 parent. 前缀，得到真正的 JSONPath
+                    json_path = param_value[7:]  # 去掉 'parent.' 前缀
+                    extracted_values = self._apply_jsonpath(parent_option, json_path)
+                    if extracted_values:
+                        params[param_key] = str(extracted_values[0])
+                    else:
+                        params[param_key] = parent_value
+                elif isinstance(param_value, str) and param_value.startswith('$'):
                     extracted_values = self._apply_jsonpath(parent_option, param_value)
                     if extracted_values:
                         params[param_key] = str(extracted_values[0])
@@ -494,6 +512,44 @@ class FieldCascadeService:
                 result += part
 
         result = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '_', result)
+        return result
+
+    @staticmethod
+    def _generate_field_label(field_label_pattern: str, parent_label: str, parent_value: str) -> str:
+        """
+        生成字段标签，逻辑同字段名规则，但保留原始字符（不进行下划线替换）
+        
+        Args:
+            field_label_pattern: 字段标签规则，如 "parent.$.data[*].value + -的二三级"
+            parent_label: 父选项标签
+            parent_value: 父选项值
+            
+        Returns:
+            生成的字段标签
+        """
+        parts = field_label_pattern.split('+')
+        result = ""
+
+        for part in parts:
+            part = part.strip()
+            if part.startswith("parent.$"):
+                # 根据JSONPath中的关键字判断使用label还是value
+                if "label" in part.lower():
+                    result += parent_label
+                elif "value" in part.lower():
+                    result += parent_value
+                else:
+                    # 默认使用value
+                    result += parent_value
+            elif part.startswith("{") and part.endswith("}"):
+                placeholder = part[1:-1].strip()
+                if placeholder == "parent_value":
+                    result += parent_value
+                elif placeholder == "parent_label":
+                    result += parent_label
+            else:
+                result += part
+
         return result
 
     async def get_cascade_data(
