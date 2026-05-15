@@ -544,7 +544,7 @@ class FieldCascadeService:
             else:
                 result += part
 
-        result = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '_', result)
+        result = re.sub(r'[^a-zA-Z0-9_\-\u4e00-\u9fa5]', '_', result)
         return result
 
     @staticmethod
