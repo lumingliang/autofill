@@ -45,10 +45,12 @@ async def update_cascade_config(data: dict, token: str = Header(...)) -> Success
     tenant_id = TenantContext.get_tenant_id(data.get("tenant_id", 0))
 
     try:
+        # 从 data 中移除 id 和 tenant_id，避免重复传递
+        update_data = {k: v for k, v in data.items() if k not in ("id", "tenant_id")}
         result = await field_cascade_service.update_cascade_config(
             config_id=data.get("id"),
             tenant_id=tenant_id,
-            **data
+            **update_data
         )
         return Success(data=result)
     except Exception as e:
