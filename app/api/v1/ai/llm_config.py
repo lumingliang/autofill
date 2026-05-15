@@ -254,3 +254,59 @@ async def get_llm_methods(
         "model_name": config.name,
         "capabilities": config.capabilities
     })
+
+
+@llm_config_router.post("/llm_config/sync_to_gateway", summary="同步配置到 LiteLLM 网关")
+async def sync_to_gateway(
+    id: Optional[int] = Query(None, description="配置ID，不传则同步所有活跃配置"),
+    token: str = Header(..., description="token验证"),
+):
+    """同步配置到 LiteLLM 网关"""
+    current_user = await AuthControl.is_authed(token)
+
+    # 权限检查 - 只允许超级管理员或租户管理员
+    if not is_superuser(current_user):
+        return Fail(code=403, msg="无权执行此操作")
+
+    result = await llm_config_controller.sync_to_gateway(config_id=id)
+    if result["success"]:
+        return Success(data=result, msg=result["message"])
+    else:
+        return Fail(code=500, msg=result["message"])
+
+
+@llm_config_router.post("/llm_config/sync_from_gateway", summary="从 LiteLLM 网关同步配置")
+async def sync_from_gateway(
+    tenant_id: Optional[int] = Query(None, description="租户ID，用于新导入的模型"),
+    token: str = Header(..., description="token验证"),
+):
+    """从 LiteLLM 网关同步模型配置到本地数据库"""
+    current_user = await AuthControl.is_authed(token)
+
+    # 权限检查 - 只允许超级管理员或租户管理员
+    if not is_superuser(current_user):
+        return Fail(code=403, msg="无权执行此操作")
+
+    # 使用当前用户的租户ID作为默认值
+    target_tenant_id = tenant_id or current_user.current_tenant_id or 0
+
+    result = await llm_config_controller.sync_from_gateway(tenant_id=target_tenant_id)
+    return Success(data=result, msg=f"同步完成: 总计 {result['total']}, 新建 {result['created']}, 更新 {result['updated']}, 跳过 {result['skipped']}, 失败 {result['failed']}")
+
+
+@llm_config_router.get("/llm_config/gateway/models", summary="获取 LiteLLM 网关模型列表")
+async def get_gateway_models(
+    token: str = Header(..., description="token验证"),
+):
+    """获取 LiteLLM 网关中的模型列表"""
+    current_user = await AuthControl.is_authed(token)
+
+    # 权限检查 - 只允许超级管理员或租户管理员
+    if not is_superuser(current_user):
+        return Fail(code=403, msg="无权执行此操作")
+
+    models = await llm_config_controller.get_gateway_models()
+    return Success(data={
+        "total": len(models),
+        "models": models
+    })

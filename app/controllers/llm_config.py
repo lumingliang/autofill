@@ -263,6 +263,80 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"测试失败: {str(e)}")
 
+    async def sync_to_gateway(self, config_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        同步配置到 LiteLLM 网关
+
+        Args:
+            config_id: 配置ID，为None时同步所有活跃配置
+
+        Returns:
+            Dict: 同步结果
+        """
+        try:
+            if config_id:
+                # 同步单个配置
+                config = await self.get(id=config_id)
+                success = await litellm_sync_service.add_or_update_config(config)
+                return {
+                    "success": success,
+                    "message": f"配置 '{config.name}' {'同步成功' if success else '同步失败'}"
+                }
+            else:
+                # 同步所有活跃配置
+                success = await litellm_sync_service.sync_all_configs()
+                return {
+                    "success": success,
+                    "message": "所有活跃配置已同步到 LiteLLM 网关" if success else "同步过程中出现错误"
+                }
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to sync to gateway: {e}")
+            return {
+                "success": False,
+                "message": f"同步失败: {str(e)}"
+            }
+
+    async def sync_from_gateway(self, tenant_id: int = 0) -> Dict[str, Any]:
+        """
+        从 LiteLLM 网关同步模型配置到本地
+
+        Args:
+            tenant_id: 租户ID，用于新导入的模型
+
+        Returns:
+            Dict: 同步结果统计
+        """
+        try:
+            result = await litellm_sync_service.sync_from_gateway(tenant_id=tenant_id)
+            return result
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to sync from gateway: {e}")
+            return {
+                "total": 0,
+                "created": 0,
+                "updated": 0,
+                "skipped": 0,
+                "failed": 1,
+                "errors": [f"同步失败: {str(e)}"]
+            }
+
+    async def get_gateway_models(self) -> List[Dict[str, Any]]:
+        """
+        获取 LiteLLM 网关中的模型列表
+
+        Returns:
+            List[Dict]: 网关中的模型列表
+        """
+        try:
+            models = await litellm_sync_service.get_models_from_gateway()
+            return models
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to get gateway models: {e}")
+            raise HTTPException(status_code=500, detail=f"获取网关模型失败: {str(e)}")
+
 
 # 全局控制器实例
 llm_config_controller = LLMConfigController()

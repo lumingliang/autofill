@@ -42,6 +42,29 @@
             <ApiOutlined />
             网关状态
           </a-button>
+          <a-dropdown>
+            <a-button>
+              <SyncOutlined />
+              同步操作
+              <DownOutlined />
+            </a-button>
+            <template #overlay>
+              <a-menu>
+                <a-menu-item @click="handleSyncToGateway">
+                  <CloudUploadOutlined />
+                  同步到网关
+                </a-menu-item>
+                <a-menu-item @click="handleSyncFromGateway">
+                  <CloudDownloadOutlined />
+                  从网关同步
+                </a-menu-item>
+                <a-menu-item @click="handleViewGatewayModels">
+                  <EyeOutlined />
+                  查看网关模型
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
         </a-space>
       </template>
 
@@ -185,6 +208,127 @@
       </a-spin>
     </a-modal>
 
+    <!-- 同步到网关弹窗 -->
+    <a-modal v-model:open="syncToGatewayModalVisible" title="同步配置到 LiteLLM 网关" :footer="null" width="500px">
+      <a-spin :spinning="syncToGatewayLoading">
+        <div class="sync-actions">
+          <a-space direction="vertical" style="width: 100%">
+            <a-alert
+              message="同步说明"
+              description="将本地数据库中的模型配置同步到 LiteLLM 网关。可以选择同步单个配置或同步所有活跃配置。"
+              type="info"
+              show-icon
+            />
+            <a-divider />
+            <a-space>
+              <a-button type="primary" :loading="syncToGatewayLoading" @click="handleSyncAllToGateway">
+                同步所有活跃配置
+              </a-button>
+              <a-button @click="syncToGatewayModalVisible = false">关闭</a-button>
+            </a-space>
+          </a-space>
+        </div>
+        <div v-if="syncToGatewayResult" class="sync-result">
+          <a-divider />
+          <a-result
+            :status="syncToGatewayResult.success ? 'success' : 'error'"
+            :title="syncToGatewayResult.success ? '同步成功' : '同步失败'"
+            :sub-title="syncToGatewayResult.message"
+          />
+        </div>
+      </a-spin>
+    </a-modal>
+
+    <!-- 从网关同步弹窗 -->
+    <a-modal v-model:open="syncFromGatewayModalVisible" title="从 LiteLLM 网关同步配置" :footer="null" width="600px">
+      <a-spin :spinning="syncFromGatewayLoading">
+        <div class="sync-actions">
+          <a-space direction="vertical" style="width: 100%">
+            <a-alert
+              message="同步说明"
+              description="从 LiteLLM 网关获取模型配置并导入到本地数据库。已存在的配置将被更新，不存在的配置将被创建。"
+              type="info"
+              show-icon
+            />
+            <a-divider />
+            <a-space>
+              <a-button type="primary" :loading="syncFromGatewayLoading" @click="handleConfirmSyncFromGateway">
+                开始同步
+              </a-button>
+              <a-button @click="syncFromGatewayModalVisible = false">关闭</a-button>
+            </a-space>
+          </a-space>
+        </div>
+        <div v-if="syncFromGatewayResult" class="sync-result">
+          <a-divider />
+          <a-descriptions title="同步结果" :column="2" bordered>
+            <a-descriptions-item label="总计">{{ syncFromGatewayResult.total }}</a-descriptions-item>
+            <a-descriptions-item label="新建">{{ syncFromGatewayResult.created }}</a-descriptions-item>
+            <a-descriptions-item label="更新">{{ syncFromGatewayResult.updated }}</a-descriptions-item>
+            <a-descriptions-item label="跳过">{{ syncFromGatewayResult.skipped }}</a-descriptions-item>
+            <a-descriptions-item label="失败">{{ syncFromGatewayResult.failed }}</a-descriptions-item>
+          </a-descriptions>
+          <div v-if="syncFromGatewayResult.errors && syncFromGatewayResult.errors.length > 0" class="sync-errors">
+            <a-divider />
+            <a-alert
+              message="错误信息"
+              type="error"
+              show-icon
+            />
+            <a-list
+              size="small"
+              :data-source="syncFromGatewayResult.errors"
+              style="margin-top: 8px; max-height: 200px; overflow-y: auto;"
+            >
+              <template #renderItem="{ item }">
+                <a-list-item>
+                  <span style="color: #ff4d4f">{{ item }}</span>
+                </a-list-item>
+              </template>
+            </a-list>
+          </div>
+        </div>
+      </a-spin>
+    </a-modal>
+
+    <!-- 网关模型列表弹窗 -->
+    <a-modal v-model:open="gatewayModelsModalVisible" title="LiteLLM 网关模型列表" :footer="null" width="800px">
+      <a-spin :spinning="gatewayModelsLoading">
+        <div v-if="gatewayModelsData" class="gateway-models">
+          <a-alert
+            :message="`共 ${gatewayModelsData.total} 个模型`"
+            type="info"
+            show-icon
+            style="margin-bottom: 16px"
+          />
+          <a-table
+            :columns="gatewayModelsColumns"
+            :data-source="gatewayModelsData.models"
+            :pagination="false"
+            size="small"
+            bordered
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'model_name'">
+                <strong>{{ record.model_name }}</strong>
+              </template>
+              <template v-if="column.key === 'model'">
+                {{ record.litellm_params?.model || '-' }}
+              </template>
+              <template v-if="column.key === 'api_base'">
+                <span class="ellipsis-text">{{ record.litellm_params?.api_base || '-' }}</span>
+              </template>
+              <template v-if="column.key === 'actions'">
+                <a-button type="link" size="small" @click="handleImportGatewayModel(record)">
+                  导入
+                </a-button>
+              </template>
+            </template>
+          </a-table>
+        </div>
+      </a-spin>
+    </a-modal>
+
     <!-- 网关状态弹窗 -->
     <a-modal v-model:open="gatewayModalVisible" title="LiteLLM 网关状态" :footer="null" width="500px">
       <a-spin :spinning="gatewayLoading">
@@ -241,7 +385,7 @@
 import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { formatDateTime } from '@/utils'
-import { PlusOutlined, ApiOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ApiOutlined, SyncOutlined, DownOutlined, CloudUploadOutlined, CloudDownloadOutlined, EyeOutlined } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 defineOptions({ name: 'LLMConfigPage' })
@@ -362,6 +506,28 @@ const methodsList = computed(() => {
     ...value,
   }))
 })
+
+// 网关模型列表弹窗
+const gatewayModelsModalVisible = ref(false)
+const gatewayModelsLoading = ref(false)
+const gatewayModelsData = ref<any>(null)
+
+const gatewayModelsColumns = [
+  { title: '模型名称', key: 'model_name', width: 180 },
+  { title: '模型标识', key: 'model', width: 200, ellipsis: true },
+  { title: 'API Base', key: 'api_base', ellipsis: true },
+  { title: '操作', key: 'actions', width: 80, align: 'center' },
+]
+
+// 同步到网关弹窗
+const syncToGatewayModalVisible = ref(false)
+const syncToGatewayLoading = ref(false)
+const syncToGatewayResult = ref<any>(null)
+
+// 从网关同步弹窗
+const syncFromGatewayModalVisible = ref(false)
+const syncFromGatewayLoading = ref(false)
+const syncFromGatewayResult = ref<any>(null)
 
 function getMethodName(key: string): string {
   const names: Record<string, string> = {
@@ -556,6 +722,102 @@ async function handleResetMethods() {
   }
 }
 
+// 同步到网关
+function handleSyncToGateway() {
+  syncToGatewayModalVisible.value = true
+  syncToGatewayResult.value = null
+}
+
+async function handleSyncAllToGateway() {
+  syncToGatewayLoading.value = true
+  syncToGatewayResult.value = null
+  try {
+    const res: any = await api.syncToGateway({})
+    if (res.code === 200) {
+      syncToGatewayResult.value = res.data
+      window.$message?.success(res.msg || '同步成功')
+    } else {
+      syncToGatewayResult.value = { success: false, message: res.msg || '同步失败' }
+      window.$message?.error(res.msg || '同步失败')
+    }
+  } catch (error: any) {
+    syncToGatewayResult.value = { success: false, message: error.response?.data?.msg || error.message || '同步失败' }
+    window.$message?.error(error.response?.data?.msg || error.message || '同步失败')
+  } finally {
+    syncToGatewayLoading.value = false
+  }
+}
+
+// 从网关同步
+function handleSyncFromGateway() {
+  syncFromGatewayModalVisible.value = true
+  syncFromGatewayResult.value = null
+}
+
+async function handleConfirmSyncFromGateway() {
+  syncFromGatewayLoading.value = true
+  syncFromGatewayResult.value = null
+  try {
+    const res: any = await api.syncFromGateway({})
+    if (res.code === 200) {
+      syncFromGatewayResult.value = res.data
+      window.$message?.success(res.msg || '同步成功')
+      // 刷新列表
+      loadData()
+    } else {
+      syncFromGatewayResult.value = { total: 0, created: 0, updated: 0, skipped: 0, failed: 1, errors: [res.msg || '同步失败'] }
+      window.$message?.error(res.msg || '同步失败')
+    }
+  } catch (error: any) {
+    syncFromGatewayResult.value = { total: 0, created: 0, updated: 0, skipped: 0, failed: 1, errors: [error.response?.data?.msg || error.message || '同步失败'] }
+    window.$message?.error(error.response?.data?.msg || error.message || '同步失败')
+  } finally {
+    syncFromGatewayLoading.value = false
+  }
+}
+
+// 查看网关模型
+async function handleViewGatewayModels() {
+  gatewayModelsModalVisible.value = true
+  gatewayModelsLoading.value = true
+  gatewayModelsData.value = null
+  try {
+    const res: any = await api.getGatewayModels()
+    if (res.code === 200) {
+      gatewayModelsData.value = res.data
+    } else {
+      window.$message?.error(res.msg || '获取失败')
+    }
+  } catch (error: any) {
+    window.$message?.error(error.response?.data?.msg || error.message || '获取失败')
+  } finally {
+    gatewayModelsLoading.value = false
+  }
+}
+
+// 导入单个网关模型
+async function handleImportGatewayModel(record: any) {
+  try {
+    // 先检查是否已存在
+    const existing = tableData.value.find((item: any) => item.name === record.model_name)
+    if (existing) {
+      window.$message?.warning(`模型 "${record.model_name}" 已存在，将更新配置`)
+    }
+    // 触发从网关同步
+    const res: any = await api.syncFromGateway({})
+    if (res.code === 200) {
+      window.$message?.success(`模型 "${record.model_name}" 导入成功`)
+      loadData()
+      // 关闭弹窗
+      gatewayModelsModalVisible.value = false
+    } else {
+      window.$message?.error(res.msg || '导入失败')
+    }
+  } catch (error: any) {
+    window.$message?.error(error.response?.data?.msg || error.message || '导入失败')
+  }
+}
+
 onMounted(loadData)
 </script>
 
@@ -570,5 +832,30 @@ onMounted(loadData)
 
 .error-text {
   color: #ff4d4f;
+}
+
+.sync-actions {
+  padding: 16px 0;
+}
+
+.sync-result {
+  margin-top: 16px;
+}
+
+.sync-errors {
+  margin-top: 16px;
+}
+
+.ellipsis-text {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gateway-models {
+  max-height: 500px;
+  overflow-y: auto;
 }
 </style>

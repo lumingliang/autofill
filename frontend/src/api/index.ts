@@ -196,6 +196,9 @@ export default {
   getLLMGatewayStatus: () => request.get('/ai/llm_config/gateway/status'),
   resetLLMMethods: (data: any = {}) => request.post('/ai/llm_config/reset_methods', data),
   getLLMMethods: (params: any = {}) => request.get('/ai/llm_config/methods', { params }),
+  syncToGateway: (params: any = {}) => request.post('/ai/llm_config/sync_to_gateway', null, { params }),
+  syncFromGateway: (params: any = {}) => request.post('/ai/llm_config/sync_from_gateway', null, { params }),
+  getGatewayModels: () => request.get('/ai/llm_config/gateway/models'),
 
   // LLM 代理公开接口 (使用 API Key 认证，使用绝对路径)
   llmProxy: (data: any = {}, apiKey: string) => publicRequest.post('/api/llm/proxy', data, {
