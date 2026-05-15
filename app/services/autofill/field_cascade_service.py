@@ -138,9 +138,11 @@ class FieldCascadeService:
     async def update_cascade_config(
         self,
         config_id: int,
-        tenant_id: int,
         **kwargs
     ) -> Dict[str, Any]:
+        # 从 kwargs 中获取 tenant_id，如果没有则使用上下文中的 tenant_id
+        from app.core.context import TenantContext
+        tenant_id = kwargs.pop("tenant_id", None) or TenantContext.get_tenant_id()
         config = await FieldCascadeConfig.filter(id=config_id, tenant_id=tenant_id).first()
         if not config:
             raise ValueError("级联配置不存在")

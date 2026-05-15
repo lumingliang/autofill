@@ -41,16 +41,11 @@ async def create_cascade_config(data: dict, token: str = Header(...)) -> Success
 @router.post("/cascade/config/update", summary="更新级联配置")
 async def update_cascade_config(data: dict, token: str = Header(...)) -> Success:
     user = await AuthControl.is_authed(token)
-    # 超管使用前端传的tenant_id，普通用户使用ctx的tenant_id
-    tenant_id = TenantContext.get_tenant_id(data.get("tenant_id", 0))
 
     try:
-        # 从 data 中移除 id 和 tenant_id，避免重复传递
-        update_data = {k: v for k, v in data.items() if k not in ("id", "tenant_id")}
         result = await field_cascade_service.update_cascade_config(
-            config_id=data.get("id"),
-            tenant_id=tenant_id,
-            **update_data
+            config_id=data.pop("id", None),
+            **data
         )
         return Success(data=result)
     except Exception as e:
