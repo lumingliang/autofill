@@ -2,6 +2,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from tortoise import Tortoise
 
@@ -59,17 +60,35 @@ def create_app() -> FastAPI:
         description=settings.APP_DESCRIPTION,
         version=settings.VERSION,
         openapi_url="/openapi.json",
+        docs_url=None,
+        redoc_url=None,
         middleware=make_middlewares(),
         lifespan=lifespan,
     )
     register_exceptions(app)
     register_routers(app, prefix="/api")
-    
+
     # 注册静态文件服务 - 上传文件访问
     upload_dir = os.path.abspath(settings.UPLOAD_DIR)
     os.makedirs(upload_dir, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
-    
+
+    # 注册本地 Swagger UI 静态资源（内网部署使用）
+    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static")
+    swagger_ui_dir = os.path.join(static_dir, "swagger-ui")
+    if os.path.exists(swagger_ui_dir):
+        app.mount("/static/swagger-ui", StaticFiles(directory=swagger_ui_dir), name="swagger-ui-static")
+
+    @app.get("/docs", include_in_schema=False)
+    async def custom_swagger_ui_html():
+        return get_swagger_ui_html(
+            openapi_url="/openapi.json",
+            title=f"{settings.APP_TITLE} - Swagger UI",
+            swagger_js_url="/static/swagger-ui/swagger-ui-bundle.js",
+            swagger_css_url="/static/swagger-ui/swagger-ui.css",
+            swagger_favicon_url="/static/swagger-ui/favicon.png",
+        )
+
     return app
 
 
