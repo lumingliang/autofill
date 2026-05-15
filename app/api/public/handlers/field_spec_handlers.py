@@ -15,7 +15,7 @@ from app.schemas.public import (
 from app.services.autofill.field_group_service import field_group_service
 from app.services.autofill.field_spec_service_v2 import field_spec_service
 
-router = APIRouter()
+router = APIRouter(tags=["public"])
 
 
 @router.post("/autofill/field_spec/list", summary="查询字段明细列表")
@@ -79,8 +79,7 @@ async def upsert_field_group(
         group_code=params.get("group_code"),
         output_templates=params.get("output_templates"),
         prompt_template_base=params.get("prompt_template_base"),
-        fields=params.get("fields"),
-        is_append=params.get("is_append", False)
+        fields=params.get("fields")
     )
     
     return Success(data=result)

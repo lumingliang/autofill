@@ -322,8 +322,7 @@ class FieldCascadeService:
             field_type=parent_field_type,
             field_group_ids=[config.parent_field_group_id],
             fill_instruction=f"根据'{parent_label}'选择的子项",
-            options={"items": options},
-            sync_mode='replace'  # 级联字段同步使用 replace 模式，完全替换选项
+            options={"items": options}
         )
 
         logger.info(f"[FieldCascadeService] 同步单个级联字段成功: child_field={child_field_name}")

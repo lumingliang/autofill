@@ -32,7 +32,7 @@ from app.services.llm.llm_proxy_service import llm_proxy_service
 from app.services.autofill.step_llm_fill_service import step_llm_fill_service
 from app.services.autofill.test_fill_service import test_fill_service
 
-router = APIRouter()
+router = APIRouter(tags=["public"])
 
 
 def _extract_field_value(field_data: Any) -> Any:

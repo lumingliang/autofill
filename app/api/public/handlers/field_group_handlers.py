@@ -10,7 +10,7 @@ from app.schemas.base import Success
 from app.schemas.public import FieldGroupRequest
 from app.services.autofill.field_group_query_service import field_group_query_service
 
-router = APIRouter()
+router = APIRouter(tags=["public"])
 
 
 @router.post("/autofill/field_group", summary="查询字段组配置")

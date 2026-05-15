@@ -17,7 +17,7 @@ from app.schemas.public import (
     SubmenusTreeRequest,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["public"])
 
 
 async def build_dropdown_tree(tenant_id: int, app_name: str, parent_id: int) -> list:

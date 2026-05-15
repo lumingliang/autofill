@@ -278,7 +278,7 @@ async def export_field_specs(export_in: Dict[str, Any], token: str = Header(...)
             for group_info in groups_data:
                 base_writer.writerow([spec.id, spec.field_name, spec.field_label or '', spec.field_type.value if spec.field_type else '', spec.fill_instruction or '', corrections_text, status_str, tenant_domain, group_info['group_name'], group_info['page_name']])
 
-        if spec.field_type in ['select_single', 'select_multi'] and spec.options:
+        if spec.field_type.value in ['select_single', 'select_multi'] and spec.options:
             items = spec.options.get('items', [])
             for item in items:
                 option_corrections = item.get('corrections', '')
@@ -597,7 +597,7 @@ async def sync_field_spec_options(sync_in: FieldSpecSyncOptionsRequest, token: s
         result = await upsert_field_spec(
             tenant_id=tenant_id, app_name=app_name, field_name=sync_in.field_name, field_label=sync_in.field_label,
             field_type=sync_in.field_type, field_group_ids=sync_in.field_group_ids,
-            fill_instruction=sync_in.fill_instruction, options=options_data, sync_mode='replace', delete_not_exist=True
+            fill_instruction=sync_in.fill_instruction, options=options_data, delete_not_exist=True
         )
 
         field_spec = result["field_spec"]

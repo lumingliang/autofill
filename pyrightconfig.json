@@ -1,0 +1,14 @@
+{
+  "include": [
+    "app"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/node_modules"
+  ],
+  "venvPath": "/Users/lu/miniforge3/envs",
+  "venv": "dev",
+  "reportMissingImports": "error",
+  "reportMissingTypeStubs": "none",
+  "pythonVersion": "3.11"
+}

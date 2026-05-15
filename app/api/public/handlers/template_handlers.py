@@ -13,7 +13,7 @@ from app.schemas.public import (
 )
 from app.services.autofill.template_service import template_service
 
-router = APIRouter()
+router = APIRouter(tags=["public"])
 
 
 @router.post("/autofill/summary_template/list", summary="查询模板列表")
