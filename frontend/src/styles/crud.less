@@ -1,0 +1,123 @@
+// CRUD页面通用样式
+// 提供统一的筛选表单、表格样式
+
+.crud-page {
+  padding: 4px;
+
+  // 筛选表单样式
+  .crud-filter-form {
+    margin-bottom: 8px;
+
+    // 筛选行 - 确保响应式换行正常工作
+    .filter-row {
+      display: flex;
+      flex-wrap: wrap;
+    }
+
+    // 筛选项 - 使用 Ant Design Vue 默认布局，仅固定标签宽度
+    .filter-item {
+      margin-bottom: 8px;
+
+      // 固定标签宽度，确保所有表单项对齐
+      .ant-form-item-label {
+        width: 80px;
+      }
+
+      // 确保输入组件占满剩余空间
+      // .ant-input,
+      // .ant-picker,
+      // .ant-select {
+      //   width: 100%;
+      // }
+    }
+
+    // 操作按钮容器 - 与表单项保持相同布局
+    .filter-actions {
+      display: flex;
+      align-items: center;
+      margin-bottom: 0;
+      padding-top: 0;
+      height: 32px;
+
+      // 默认左对齐
+      justify-content: flex-start;
+
+      // 多行模式下右对齐
+      &.align-right {
+        justify-content: flex-end;
+      }
+    }
+  }
+
+  // 表格操作区
+  .table-actions {
+    margin-bottom: 16px;
+  }
+
+  // 表格样式优化
+  .crud-table {
+
+    // 固定列样式
+    .ant-table-cell-fix-right {
+      background: #fff;
+    }
+
+    .ant-table-cell-fix-left {
+      background: #fff;
+    }
+
+    // 可调整列宽指示器
+    .ant-table-column-resizer {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      cursor: col-resize;
+      background-color: transparent;
+      z-index: 1;
+
+      &:hover {
+        background-color: #1890ff;
+      }
+    }
+
+    // 表格行样式
+    .ant-table-row {
+      cursor: pointer;
+
+      &:hover {
+        background-color: #f5f5f5;
+      }
+    }
+
+    // 选中行样式
+    .ant-table-row-selected {
+      background-color: #e6f7ff;
+
+      &:hover {
+        background-color: #e6f7ff;
+      }
+    }
+  }
+
+  // 分页样式
+  .crud-pagination {
+    margin-top: 16px;
+    text-align: right;
+  }
+}
+
+// 筛选表单栅格布局
+.filter-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-right: -8px;
+  margin-left: -8px;
+}
+
+.filter-item-col {
+  padding-right: 8px;
+  padding-left: 8px;
+  // margin-bottom: 4px;
+}

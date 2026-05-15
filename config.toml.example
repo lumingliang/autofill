@@ -1,0 +1,76 @@
+# 数据库配置
+[database.mysql]
+host = "127.0.0.1"
+port = 3306
+user = "root"
+password = "root123456"
+database = "autofill"
+
+# Redis 配置
+[redis]
+host = "127.0.0.1"
+port = 6379
+password = ""
+db = 0
+key_prefix = "autofill"
+
+# Dify AI 服务配置
+[dify]
+dify_timeout = 60.0
+
+# Kafka 配置
+[kafka]
+# Kafka 连接配置
+bootstrap_servers = "localhost:9092"
+client_id = "autofill-python-client"
+
+# 生产者配置
+[kafka.producer]
+acks = "all"              # 等待所有副本确认
+retries = 3               # 发送失败重试次数
+batch_size = 16384        # 批量发送大小
+linger_ms = 10            # 延迟发送时间
+
+# 消费者配置
+[kafka.consumer]
+group_id = "autofill-consumer-group"
+auto_offset_reset = "earliest"   # 从最早消息开始消费
+enable_auto_commit = true        # 自动提交偏移量
+auto_commit_interval_ms = 5000   # 自动提交间隔
+
+# 主题配置
+[kafka.topic]
+name = "autofill.ai.requests"
+partitions = 3
+replication_factor = 1
+
+# 应用配置
+[app]
+debug = true
+secret_key = "your-secret-key-here"
+jwt_access_token_expire_minutes = 10080
+
+[app.cors]
+origins = ["*"]
+allow_credentials = true
+allow_methods = ["*"]
+allow_headers = ["*"]
+
+# 上传配置
+[upload]
+upload_dir = "./uploads"
+avatar_dir = "./uploads/avatars"
+allowed_extensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+max_file_size = 5
+file_url_prefix = "/uploads"
+
+# 日志配置
+[logging]
+level = "INFO"
+log_file = "./logs/app.log"
+max_bytes = 10
+backup_count = 5
+console_output = true
+file_output = true
+format = "json"
+enable_request_id = true

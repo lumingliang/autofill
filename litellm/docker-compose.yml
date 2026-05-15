@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    environment:
+      # 配置文件路径
+      - CONFIG_FILE_PATH=/app/config.yaml
+      # LiteLLM 主密钥（用于管理接口）
+      - LITELLM_MASTER_KEY=sk-litellm-master-key
+      # 数据库 URL（使用项目现有的 MySQL）
+      - DATABASE_URL=mysql://root:root123456@host.docker.internal:3306/autofill
+      # Redis 配置（使用项目现有的 Redis）
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis123456
+      # 日志级别
+      - LOG_LEVEL=INFO
+    command: >
+      --config /app/config.yaml
+      --port 4000
+      --host 0.0.0.0
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - litellm-network
+
+networks:
+  litellm-network:
+    driver: bridge
