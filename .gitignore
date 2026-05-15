@@ -24,3 +24,7 @@ logs/
 *.bak
 *.backup
 node_modules/
+.autofill-autofill/
+
+# Archive directory
+autofill-archive/
