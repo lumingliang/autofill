@@ -69,14 +69,6 @@
             {{ getFieldTypeLabel(record.field_type) }}
           </a-tag>
         </template>
-        <template v-if="column.key === 'field_groups'">
-          <a-space v-if="record.field_groups && record.field_groups.length > 0" wrap>
-            <a-tag v-for="group in record.field_groups" :key="group.id" color="blue">
-              {{ group.group_name }}
-            </a-tag>
-          </a-space>
-          <span v-else>-</span>
-        </template>
         <template v-if="column.key === 'is_active'">
           <a-tag :color="record.is_active ? 'green' : 'red'">
             {{ record.is_active ? '启用' : '禁用' }}
@@ -567,11 +559,9 @@ const curlForm = reactive({
   label_path: '$.data[*].label',
   value_path: '$.data[*].value',
   enable_flatten: false,
-  flatten_label_path1: '',
   flatten_label_path2: '$.data[*].children[*].label',
   flatten_label_path3: '$.data[*].children[*].children[*].label',
   flatten_label_separator: '-',
-  flatten_value_path1: '',
   flatten_value_path2: '$.data[*].children[*].value',
   flatten_value_path3: '$.data[*].children[*].children[*].value',
   flatten_value_separator: '-',
@@ -603,11 +593,9 @@ const cascadeCurlForm = reactive({
   label_path: '$.data[*].label',
   value_path: '$.data[*].value',
   enable_flatten: false,
-  flatten_label_path1: '',
   flatten_label_path2: '$.data[*].children[*].label',
   flatten_label_path3: '$.data[*].children[*].children[*].label',
   flatten_label_separator: '-',
-  flatten_value_path1: '',
   flatten_value_path2: '$.data[*].children[*].value',
   flatten_value_path3: '$.data[*].children[*].children[*].value',
   flatten_value_separator: '-',
@@ -778,7 +766,6 @@ const columns = computed(() => [
   { title: '字段名', dataIndex: 'field_name', key: 'field_name' },
   { title: '字段标签', dataIndex: 'field_label', key: 'field_label' },
   { title: '字段类型', key: 'field_type', width: 120 },
-  { title: '关联字段组', key: 'field_groups', width: 200 },
   { title: '状态', key: 'is_active', width: 100 },
   { title: '创建时间', key: 'created_at', width: 180 },
   { title: '操作', key: 'action', width: 150, fixed: 'right' },
@@ -1118,11 +1105,9 @@ const handleParseCurlStep2 = async () => {
       value_path: curlForm.value_path,
       enable_flatten: curlForm.enable_flatten,
       flatten_config: curlForm.enable_flatten ? {
-        label_path_level1: curlForm.label_path,
         label_path_level2: curlForm.flatten_label_path2,
         label_path_level3: curlForm.flatten_label_path3,
         label_separator: curlForm.flatten_label_separator,
-        value_path_level1: curlForm.value_path,
         value_path_level2: curlForm.flatten_value_path2,
         value_path_level3: curlForm.flatten_value_path3,
         value_separator: curlForm.flatten_value_separator,
@@ -1263,11 +1248,9 @@ const showCascadeConfig = async (record: any) => {
 
 // curl 展平配置变更处理
 const onCurlFlattenChange = () => {
-  if (curlForm.enable_flatten && !curlForm.flatten_label_path1) {
-    curlForm.flatten_label_path1 = '$.data[*].label'
+  if (curlForm.enable_flatten && !curlForm.flatten_label_path2) {
     curlForm.flatten_label_path2 = '$.data[*].children[*].label'
     curlForm.flatten_label_separator = '-'
-    curlForm.flatten_value_path1 = '$.data[*].value'
     curlForm.flatten_value_path2 = '$.data[*].children[*].value'
     curlForm.flatten_value_separator = '-'
   }
@@ -1275,11 +1258,9 @@ const onCurlFlattenChange = () => {
 
 // 级联配置 curl 展平配置变更处理
 const onCascadeCurlFlattenChange = () => {
-  if (cascadeCurlForm.enable_flatten && !cascadeCurlForm.flatten_label_path1) {
-    cascadeCurlForm.flatten_label_path1 = '$.data[*].label'
+  if (cascadeCurlForm.enable_flatten && !cascadeCurlForm.flatten_label_path2) {
     cascadeCurlForm.flatten_label_path2 = '$.data[*].children[*].label'
     cascadeCurlForm.flatten_label_separator = '-'
-    cascadeCurlForm.flatten_value_path1 = '$.data[*].value'
     cascadeCurlForm.flatten_value_path2 = '$.data[*].children[*].value'
     cascadeCurlForm.flatten_value_separator = '-'
   }
@@ -1470,11 +1451,9 @@ const handleParseCascadeCurlStep2 = async () => {
       value_path: cascadeCurlForm.value_path,
       enable_flatten: cascadeCurlForm.enable_flatten,
       flatten_config: cascadeCurlForm.enable_flatten ? {
-        label_path_level1: cascadeCurlForm.label_path,
         label_path_level2: cascadeCurlForm.flatten_label_path2,
         label_path_level3: cascadeCurlForm.flatten_label_path3,
         label_separator: cascadeCurlForm.flatten_label_separator,
-        value_path_level1: cascadeCurlForm.value_path,
         value_path_level2: cascadeCurlForm.flatten_value_path2,
         value_path_level3: cascadeCurlForm.flatten_value_path3,
         value_separator: cascadeCurlForm.flatten_value_separator,

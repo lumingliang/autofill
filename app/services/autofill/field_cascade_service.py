@@ -430,16 +430,20 @@ class FieldCascadeService:
         enable_flatten: bool = False,
         flatten_config: Dict[str, Any] = None
     ) -> List[Dict[str, Any]]:
-        if enable_flatten and flatten_config:
-            return self.flattener.flatten_field_options(
-                data=api_data,
-                flatten_config=flatten_config
-            )
+        """
+        从API响应数据中提取选项
 
+        支持两种模式：
+        1. 展平模式：使用 flatten_config 中的 label_path_level1/2/3 等配置
+        2. 普通模式：使用 label_path 和 value_path 提取
+        """
         try:
+            # 默认路径
             label_path = "$.data[*].label"
             value_path = "$.data[*].value"
+            field_mapping_spec = {}
 
+            # 从 api_schema 中解析 x-field-mapping
             if config.api_schema:
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
                     f.write(config.api_schema)
@@ -458,9 +462,38 @@ class FieldCascadeService:
                         field_mapping_spec = operation.get('x-field-mapping', {})
                         label_path = field_mapping_spec.get("label_path", label_path)
                         value_path = field_mapping_spec.get("value_path", value_path)
+                        # 从 x-field-mapping 中读取 enable_flatten 和 flatten_config
+                        mapping_enable_flatten = field_mapping_spec.get("enable_flatten", False)
+                        mapping_flatten_config = field_mapping_spec.get("flatten_config", {})
+
+                        # 如果 x-field-mapping 中有展平配置，优先使用
+                        if mapping_enable_flatten and mapping_flatten_config:
+                            enable_flatten = True
+                            flatten_config = mapping_flatten_config
                 finally:
                     os.unlink(temp_path)
 
+            # 展平模式：使用 flatten_config 中的配置
+            if enable_flatten and flatten_config:
+                # 构建完整的 flatten_config，使用 label_path/value_path 作为默认值
+                complete_flatten_config = {
+                    "label_path_level1": flatten_config.get("label_path_level1") or label_path,
+                    "label_path_level2": flatten_config.get("label_path_level2", ""),
+                    "label_path_level3": flatten_config.get("label_path_level3", ""),
+                    "label_separator": flatten_config.get("label_separator", "-"),
+                    "value_path_level1": flatten_config.get("value_path_level1") or value_path,
+                    "value_path_level2": flatten_config.get("value_path_level2", ""),
+                    "value_path_level3": flatten_config.get("value_path_level3", ""),
+                    "value_separator": flatten_config.get("value_separator", "-"),
+                }
+
+                logger.info(f"[_extract_options] 使用展平模式，配置: {complete_flatten_config}")
+                return self.flattener.flatten_field_options(
+                    data=api_data,
+                    flatten_config=complete_flatten_config
+                )
+
+            # 普通模式：直接使用 label_path 和 value_path
             labels = self._apply_jsonpath(api_data, label_path)
             values = self._apply_jsonpath(api_data, value_path)
 
