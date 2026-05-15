@@ -147,10 +147,12 @@ class FieldFlattener:
         适用于配置如：
         - level1_path: $.data.children[*].summary
         - level2_path: $.data.children[*].children[*].summary
+        - level3_path: $.data.children[*].children[*].children[*].summary
         
         实现思路：
         1. 从level1_path提取父级对象（不是字段值）
         2. 对每个父级对象，使用相对路径提取子级
+        3. 对每个子级对象，使用相对路径提取第三级
         """
         result: List[str] = []
         
@@ -163,29 +165,69 @@ class FieldFlattener:
         if not parent_objects:
             return result
         
-        # 从level2_path推断子级字段名和路径
-        # 例如：$.data.children[*].children[*].summary -> children[*].summary
+        # 提取字段名（去除前后空格）
+        parent_field = level1_path.rsplit('.', 1)[-1].strip() if '.' in level1_path else None
+        child_field = level2_path.rsplit('.', 1)[-1].strip() if '.' in level2_path else None
+        grandchild_field = level3_path.rsplit('.', 1)[-1].strip() if '.' in level3_path else None
+        
+        # 从level2_path推断子级相对路径
+        level2_relative = ""
         if level2_path:
-            # 移除共同前缀，得到相对路径
             level2_relative = level2_path
             if level2_path.startswith(level1_obj_path):
                 level2_relative = level2_path[len(level1_obj_path):].lstrip('.')
+            # 去掉最后的字段访问，得到子级对象路径
+            # 例如：children[*].summary -> children[*]
+            if '.' in level2_relative:
+                level2_relative = level2_relative.rsplit('.', 1)[0]
+        
+        # 从level3_path推断第三级相对路径
+        level3_relative = ""
+        if level3_path and level2_path:
+            # 推断子级对象路径
+            level2_obj_path = level2_path.rsplit('.', 1)[0] if '.' in level2_path else level2_path
+            level3_relative = level3_path
+            if level3_path.startswith(level2_obj_path):
+                level3_relative = level3_path[len(level2_obj_path):].lstrip('.')
+        
+        # 处理每个父级对象
+        for parent_obj in parent_objects:
+            parent_str = FieldFlattener._extract_value(parent_obj, parent_field)
             
-            # 处理每个父级对象
-            for parent_obj in parent_objects:
-                # 提取父级字段值
-                parent_field = level1_path.rsplit('.', 1)[-1] if '.' in level1_path else None
-                parent_str = FieldFlattener._extract_value(parent_obj, parent_field)
+            if not level2_path:
+                # 只有一级
+                result.append(parent_str)
+                continue
+            
+            # 从父级对象中提取子级
+            child_objects = FieldFlattener._apply_jsonpath(parent_obj, level2_relative) if level2_relative else []
+            
+            if not child_objects:
+                # 没有子级，只使用父级
+                result.append(parent_str)
+                continue
+            
+            for child_obj in child_objects:
+                child_str = FieldFlattener._extract_value(child_obj, child_field)
                 
-                # 从父级对象中提取子级
-                child_values = FieldFlattener._apply_jsonpath(parent_obj, level2_relative) if level2_relative else []
-                
-                # 提取子级字段名
-                child_field = level2_path.rsplit('.', 1)[-1] if '.' in level2_path else None
-                
-                for child_val in child_values:
-                    child_str = FieldFlattener._extract_value(child_val, child_field)
+                if not level3_path:
+                    # 只有两级
                     combined = f"{parent_str}{separator}{child_str}"
+                    result.append(combined)
+                    continue
+                
+                # 从子级对象中提取第三级
+                grandchild_objects = FieldFlattener._apply_jsonpath(child_obj, level3_relative) if level3_relative else []
+                
+                if not grandchild_objects:
+                    # 没有第三级，使用前两级
+                    combined = f"{parent_str}{separator}{child_str}"
+                    result.append(combined)
+                    continue
+                
+                for grandchild_obj in grandchild_objects:
+                    grandchild_str = FieldFlattener._extract_value(grandchild_obj, grandchild_field)
+                    combined = f"{parent_str}{separator}{child_str}{separator}{grandchild_str}"
                     result.append(combined)
         
         return list(dict.fromkeys(result))
