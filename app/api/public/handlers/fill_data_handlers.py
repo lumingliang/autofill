@@ -10,7 +10,7 @@ from app.core.request_parser import parse_request_params
 from app.schemas.base import Success
 from app.schemas.public import RecordFillDataRequest
 
-router = APIRouter()
+router = APIRouter(tags=["public"])
 
 
 async def record_fill_data_handler(request: Request, auth_info: dict):

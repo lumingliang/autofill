@@ -6,10 +6,8 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from tortoise.expressions import Q
 
-from app.controllers.autofill import field_spec_controller
 from app.models.autofill import FieldGroupFieldSpec, FieldGroupConfig, FieldSpec
 from app.models.admin import Tenant
-from app.schemas.fill_page import FieldSpecCreate, FieldSpecUpdate, FieldOptions
 
 
 async def find_field_by_unique_key(
@@ -80,13 +78,12 @@ async def upsert_field_spec(
     field_group_ids: List[int],
     fill_instruction: str = "",
     options: Optional[Dict[str, Any]] = None,
+    delete_not_exist: bool = True,
     sync_mode: str = "merge",
-    delete_not_exist: bool = False,
-    is_append: bool = False,
 ) -> Dict[str, Any]:
     """
     创建或更新字段规格
-    
+
     Args:
         tenant_id: 租户ID
         app_name: 应用名称
@@ -96,15 +93,14 @@ async def upsert_field_spec(
         field_group_ids: 关联字段组ID列表
         fill_instruction: 填写指引
         options: 选项配置
-        sync_mode: 同步模式，merge=合并（保留人工标注），replace=替换
         delete_not_exist: 是否删除接口返回中不存在的选项
-        is_append: 是否追加模式（仅用于replace模式，追加新选项而不删除旧选项）
-    
+        sync_mode: 同步模式，仅支持merge=合并（新值非空时更新，否则保留原值），保留参数用于后续扩展
+
     Returns:
         Dict包含: field_spec(字段对象), is_new(是否新建), updated_count(更新选项数)
     """
-    # 查找现有字段
-    field_spec = await field_spec_controller.model.filter(
+    # 查找现有字段 - 直接操作 model，不通过 controller
+    field_spec = await FieldSpec.filter(
         tenant_id=tenant_id,
         app_name=app_name,
         field_name=field_name
@@ -128,60 +124,31 @@ async def upsert_field_spec(
         options_data['api_headers'] = options['api_headers']
     
     if field_spec:
-        # 字段已存在，根据sync_mode处理选项
+        # 字段已存在，使用merge模式处理选项
         existing_options = field_spec.options or {}
         existing_items = existing_options.get('items', []) if isinstance(existing_options, dict) else []
         new_items = options_data['items']
-        
-        if sync_mode == 'replace':
-            # replace模式：替换选项，但保留相同选项的fill_instruction和corrections
-            existing_items_map = {item['label']: item for item in existing_items if isinstance(item, dict) and 'label' in item}
-            final_items = []
-            for new_item in new_items:
-                label = new_item['label']
-                if label in existing_items_map:
-                    # 保留原有fill_instruction和corrections，更新其他字段
-                    existing_item = existing_items_map[label]
-                    merged_item = {**new_item}
-                    if 'fill_instruction' in existing_item:
-                        merged_item['fill_instruction'] = existing_item['fill_instruction']
-                    if 'corrections' in existing_item:
-                        merged_item['corrections'] = existing_item['corrections']
-                    final_items.append(merged_item)
-                else:
-                    final_items.append(new_item)
-        elif sync_mode == 'replace_keep_instruction':
-            # replace_keep_instruction模式：保留已有选项的fill_instruction和corrections，只更新value和label
-            merged_items_map = {item['label']: item for item in existing_items if isinstance(item, dict) and 'label' in item}
-            for new_item in new_items:
-                label = new_item['label']
-                if label in merged_items_map:
-                    # 保留原有fill_instruction和corrections，更新value和label
-                    existing_item = merged_items_map[label]
-                    existing_item['value'] = new_item['value']
-                    existing_item['label'] = new_item['label']
-                else:
-                    merged_items_map[label] = new_item
-            final_items = list(merged_items_map.values())
-        else:
-            # merge模式（默认）：合并现有选项和新选项，保留已有选项的fill_instruction和corrections
-            merged_items_map = {}
-            for item in existing_items:
-                if isinstance(item, dict) and 'label' in item:
-                    merged_items_map[item['label']] = item
-            
-            for new_item in new_items:
-                label = new_item['label']
-                if label in merged_items_map:
-                    # 保留原有fill_instruction和corrections，只更新value
-                    merged_items_map[label]['value'] = new_item['value']
-                else:
-                    merged_items_map[label] = new_item
-            
-            final_items = list(merged_items_map.values())
-        
-        # 如果开启delete_not_exist且不是append模式，删除接口返回中不存在的选项
-        if delete_not_exist and not is_append:
+
+        # merge模式（默认）：合并现有选项和新选项，新值非空时更新，否则保留原值
+        merged_items_map = {}
+        for item in existing_items:
+            if isinstance(item, dict) and 'label' in item:
+                merged_items_map[item['label']] = item
+
+        for new_item in new_items:
+            label = new_item['label']
+            if label in merged_items_map:
+                # 新值非空时更新，否则保留原值
+                for key in ['value', 'label', 'fill_instruction', 'corrections']:
+                    if new_item.get(key):
+                        merged_items_map[label][key] = new_item[key]
+            else:
+                merged_items_map[label] = new_item
+
+        final_items = list(merged_items_map.values())
+
+        # 如果开启delete_not_exist，删除接口返回中不存在的选项
+        if delete_not_exist:
             new_item_labels = {item['label'] for item in new_items}
             final_items = [item for item in final_items if item['label'] in new_item_labels]
         
@@ -194,37 +161,21 @@ async def upsert_field_spec(
         # 合并字段组ID（去重）
         all_group_ids = list(set(existing_group_ids + field_group_ids))
         
-        # 更新字段
-        update_data = FieldSpecUpdate(
-            id=field_spec.id,
-            field_label=field_label,
-            field_type=field_type,
-            fill_instruction=fill_instruction,
-            field_group_ids=all_group_ids,
-            options=FieldOptions(**options_data)
-        )
-        
-        field_spec = await field_spec_controller.update_field_spec(
-            id=field_spec.id,
-            obj_in=update_data,
-            tenant_id=tenant_id,
-            app_name=app_name
-        )
-        
+        # 更新字段 - 直接操作 model
+        field_spec.field_label = field_label
+        field_spec.field_type = field_type
+        field_spec.fill_instruction = fill_instruction
+        field_spec.options = options_data
+        await field_spec.save()
+
         # 确保字段与所有字段组建立关联
         for group_id in field_group_ids:
-            if tenant_id > 0:
-                existing_relation = await FieldGroupFieldSpec.filter(
-                    field_group_id=group_id,
-                    field_spec_id=field_spec.id,
-                    tenant_id=tenant_id
-                ).first()
-            else:
-                existing_relation = await FieldGroupFieldSpec.filter(
-                    field_group_id=group_id,
-                    field_spec_id=field_spec.id
-                ).first()
-            
+            existing_relation = await FieldGroupFieldSpec.filter(
+                field_group_id=group_id,
+                field_spec_id=field_spec.id,
+                tenant_id=tenant_id
+            ).first()
+
             if not existing_relation:
                 await FieldGroupFieldSpec.create(
                     field_group_id=group_id,
@@ -232,7 +183,7 @@ async def upsert_field_spec(
                     tenant_id=tenant_id,
                     app_name=app_name
                 )
-        
+
         return {
             "field_spec": field_spec,
             "is_new": False,
@@ -240,22 +191,26 @@ async def upsert_field_spec(
             "items": final_items
         }
     else:
-        # 字段不存在，创建新字段
-        create_data = FieldSpecCreate(
+        # 字段不存在，创建新字段 - 直接操作 model
+        field_spec = await FieldSpec.create(
+            tenant_id=tenant_id,
+            app_name=app_name,
             field_name=field_name,
             field_label=field_label,
             field_type=field_type,
             fill_instruction=fill_instruction,
-            field_group_ids=field_group_ids,
-            options=FieldOptions(**options_data)
+            options=options_data
         )
-        
-        field_spec = await field_spec_controller.create_field_spec(
-            obj_in=create_data,
-            tenant_id=tenant_id,
-            app_name=app_name
-        )
-        
+
+        # 创建字段组关联
+        for group_id in field_group_ids:
+            await FieldGroupFieldSpec.create(
+                field_group_id=group_id,
+                field_spec_id=field_spec.id,
+                tenant_id=tenant_id,
+                app_name=app_name
+            )
+
         return {
             "field_spec": field_spec,
             "is_new": True,

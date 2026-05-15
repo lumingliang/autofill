@@ -67,7 +67,6 @@ class UpsertFieldGroupRequest(PageBaseRequest):
     output_templates: Optional[Dict[str, Any]] = Field(default=None, description="输出模板配置")
     prompt_template_base: Optional[str] = Field(default=None, description="基础提示词模板")
     fields: List[FieldItem] = Field(default_factory=list, description="字段列表")
-    is_append: bool = Field(default=False, description="是否合并options，True=合并，False=覆盖")
 
 
 # ==================== 字段组相关请求 ====================

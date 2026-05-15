@@ -11,7 +11,8 @@ from app.controllers.autofill import (
     fill_page_controller,
 )
 from app.models.autofill import (
-    FieldGroupFieldSpec, 
+    FieldGroupFieldSpec,
+    FieldType,
     generate_field_group_code
 )
 from app.schemas.fill_page import OutputTemplateItem, FieldGroupConfigCreate
@@ -30,8 +31,7 @@ class FieldGroupService:
         group_code: Optional[str] = None,
         output_templates: Optional[Dict] = None,
         prompt_template_base: Optional[str] = None,
-        fields: Optional[List[Dict]] = None,
-        is_append: bool = False
+        fields: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
         """
         创建或更新字段组，并批量处理字段列表
@@ -105,12 +105,8 @@ class FieldGroupService:
             fill_instruction = field_item.get("fill_instruction") or ""
             options = field_item.get("options", {})
             
-            # 兼容处理 field_type
-            if field_type == "select":
-                selection_mode = options.get("selection_mode", 1)
-                field_type = "select_single" if selection_mode == 0 else "select_multi"
-            if field_type not in ["text", "select_single", "select_multi"]:
-                field_type = "text"
+            # 使用枚举验证和转换 field_type
+            field_type = FieldType(field_type) if field_type in [ft.value for ft in FieldType] else FieldType.TEXT
             
             # 使用 service 层统一处理
             result = await upsert_field_spec(
@@ -121,10 +117,7 @@ class FieldGroupService:
                 field_type=field_type,
                 field_group_ids=[field_group.id],
                 fill_instruction=fill_instruction,
-                options=options,
-                sync_mode="replace",
-                delete_not_exist=False,
-                is_append=is_append
+                options=options
             )
             
             field_spec = result["field_spec"]

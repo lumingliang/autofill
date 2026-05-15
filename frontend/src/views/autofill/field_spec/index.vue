@@ -208,9 +208,6 @@
                     <template #description>
                       <a-tag color="blue">字段名规则: {{ item.field_name_pattern }}</a-tag>
                       <a-tag color="cyan">字段标签规则: {{ item.field_label_pattern }}</a-tag>
-                      <a-tag :color="item.is_active ? 'green' : 'red'">
-                        {{ item.is_active ? '启用' : '禁用' }}
-                      </a-tag>
                       <br>
                       <span v-if="item.last_sync_at">
                         最后同步: {{ formatDateTime(item.last_sync_at) }}
@@ -368,7 +365,7 @@
           </a-typography-text>
           <div v-for="(param, index) in cascadeConfig.dynamic_params" :key="index" class="header-item">
             <a-space>
-              <a-input v-model:value="param.key" placeholder="参数名，如：first_level_value" style="width: 180px" />
+              <a-input v-model:value="param.key" placeholder="参数名，如 first_level_value" style="width: 220px" />
               <span>=</span>
               <a-input v-model:value="param.value" placeholder="parent.$.data[*].value" style="width: 220px" />
               <a-button type="link" danger @click="removeDynamicParam(index)">
@@ -376,26 +373,20 @@
               </a-button>
             </a-space>
           </div>
-          <a-button type="dashed" block @click="addDynamicParam">
+          <a-button type="dashed" @click="addDynamicParam">
             <PlusOutlined />
-            添加动态参数
+            添加参数
           </a-button>
         </a-form-item>
 
         <a-form-item label="OpenAPI Schema">
-          <a-textarea v-model:value="cascadeConfig.api_schema" :rows="12" readonly />
+          <a-textarea v-model:value="cascadeConfig.api_schema" :rows="12" />
         </a-form-item>
         <a-form-item>
-          <a-space>
-            <a-button type="primary" :loading="cascadeSyncLoading" @click="handleSyncCascadeSchema">
-              <SyncOutlined />
-              同步选项
-            </a-button>
-            <a-button @click="showCascadeCurlModal">
-              <CodeOutlined />
-              从 curl 导入
-            </a-button>
-          </a-space>
+          <a-button @click="showCascadeCurlModal">
+            <CodeOutlined />
+            从 curl 导入
+          </a-button>
         </a-form-item>
 
       </a-form>
@@ -572,13 +563,12 @@ const curlForm = reactive({
 // 级联配置弹窗数据
 const cascadeModalVisible = ref(false)
 const cascadeModalLoading = ref(false)
-const cascadeSyncLoading = ref(false)
 const cascadeConfig = reactive({
   id: undefined as number | undefined,
   parent_field_id: undefined as number | undefined,
   parent_field_group_id: undefined as number | undefined,
-  field_name_pattern: 'parent.$.data[*].label + _child',
-  field_label_pattern: 'parent.$.data[*].value + -的二三级',
+  field_name_pattern: 'parent.$.data[*].label + -的二三级',
+  field_label_pattern: 'parent.$.data[*].label + -的二三级',
   dynamic_params: [] as { key: string; value: string }[],
   api_schema: '',
 })
@@ -1312,8 +1302,8 @@ const editCascadeConfig = (item: any) => {
   cascadeConfig.id = item.id
   cascadeConfig.parent_field_id = item.parent_field_id
   cascadeConfig.parent_field_group_id = item.parent_field_group_id
-  cascadeConfig.field_name_pattern = item.field_name_pattern || 'parent.$.data[*].label + _child'
-  cascadeConfig.field_label_pattern = item.field_label_pattern || 'parent.$.data[*].value + -的二三级'
+  cascadeConfig.field_name_pattern = item.field_name_pattern || 'parent.$.data[*].label + -的二三级'
+  cascadeConfig.field_label_pattern = item.field_label_pattern || 'parent.$.data[*].label + -的二三级'
   cascadeConfig.dynamic_params = item.dynamic_params || []
   cascadeConfig.api_schema = item.api_schema || ''
 
@@ -1324,8 +1314,8 @@ const resetCascadeConfig = () => {
   cascadeConfig.id = undefined
   cascadeConfig.parent_field_id = undefined
   cascadeConfig.parent_field_group_id = undefined
-  cascadeConfig.field_name_pattern = 'parent.$.data[*].label + _child'
-  cascadeConfig.field_label_pattern = 'parent.$.data[*].value + -的二三级'
+  cascadeConfig.field_name_pattern = 'parent.$.data[*].label + -的二三级'
+  cascadeConfig.field_label_pattern = 'parent.$.data[*].label + -的二三级'
   cascadeConfig.dynamic_params = []
   cascadeConfig.api_schema = ''
 }
@@ -1481,30 +1471,6 @@ const handleCancelCascadeCurlConfigModal = () => {
   cascadeCurlConfigModalVisible.value = false
 }
 
-const handleSyncCascadeSchema = async () => {
-  if (!cascadeConfig.api_schema) {
-    message.warning('请先配置OpenAPI Schema')
-    return
-  }
-
-  cascadeSyncLoading.value = true
-  try {
-    const res: any = await api.syncCascadeFields({ config_id: cascadeConfig.id })
-    if (res.code === 200) {
-      message.success(`同步成功: ${res.data?.synced_count || 0}/${res.data?.total_count || 0}`)
-      if (cascadeConfig.parent_field_id) {
-        await fetchFieldCascadeConfigs(cascadeConfig.parent_field_id)
-      }
-    } else {
-      message.error(res.msg || '同步失败')
-    }
-  } catch (error: any) {
-    message.error(error.message || '同步失败')
-  } finally {
-    cascadeSyncLoading.value = false
-  }
-}
-
 const handleCancelCascadeModal = () => {
   cascadeModalVisible.value = false
 }
@@ -1520,8 +1486,9 @@ const syncCascadeConfig = async (item: any) => {
     const res: any = await api.syncCascadeFields(params)
     if (res.code === 200) {
       message.success(`同步成功: ${res.data?.synced_count || 0}/${res.data?.total_count || 0}`)
-      if (cascadeConfig.parent_field_id) {
-        await fetchFieldCascadeConfigs(cascadeConfig.parent_field_id)
+      // 使用当前编辑的字段ID刷新级联配置列表
+      if (modalForm.id) {
+        await fetchFieldCascadeConfigs(modalForm.id)
       }
     } else {
       message.error(res.msg || '同步失败')
