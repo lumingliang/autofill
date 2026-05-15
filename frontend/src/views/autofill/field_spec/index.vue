@@ -9,8 +9,8 @@
       <template #filter-items>
         <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear
-              :options="tenantOptions" @change="handleTenantChange" />
+            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
+              @change="handleTenantChange" />
           </a-form-item>
         </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
@@ -197,25 +197,22 @@
 
           <!-- 级联配置 -->
           <a-divider orientation="left">级联配置</a-divider>
-          <a-form-item v-if="fieldCascadeConfigs.length === 0">
-            <a-button type="dashed" block @click="showAddCascadeModal">
-              <PlusOutlined />
-              添加级联子字段
-            </a-button>
-          </a-form-item>
+
+          <!-- 级联配置列表 -->
           <a-form-item v-if="fieldCascadeConfigs.length > 0">
             <a-list :data-source="fieldCascadeConfigs" item-layout="horizontal" size="small">
-              <template #renderItem="{ item }">
+              <template #renderItem="{ item, index }">
                 <a-list-item>
                   <template #actions>
                     <a-button type="link" size="small" @click="editCascadeConfig(item)">编辑</a-button>
-                    <a-button type="link" size="small" :loading="item.syncing" @click="syncCascadeConfig(item)">同步</a-button>
+                    <a-button type="link" size="small" :loading="item.syncing"
+                      @click="syncCascadeConfig(item)">同步</a-button>
                     <a-popconfirm title="确定删除该级联配置吗？" @confirm="deleteCascadeConfig(item)">
                       <a-button type="link" danger size="small">删除</a-button>
                     </a-popconfirm>
                   </template>
                   <a-list-item-meta>
-                    <template #title>{{ item.parent_field_name }} 子字段配置</template>
+                    <template #title>级联配置 {{ index + 1 }}: {{ item.parent_field_name }} 子字段</template>
                     <template #description>
                       <a-tag color="blue">字段名规则: {{ item.field_name_pattern }}</a-tag>
                       <a-tag color="cyan">字段标签规则: {{ item.field_label_pattern }}</a-tag>
@@ -231,6 +228,14 @@
                 </a-list-item>
               </template>
             </a-list>
+          </a-form-item>
+
+          <!-- 添加级联配置按钮（始终显示，支持多个） -->
+          <a-form-item>
+            <a-button type="dashed" block @click="showAddCascadeModal">
+              <PlusOutlined />
+              {{ fieldCascadeConfigs.length === 0 ? '添加级联子字段' : '添加更多级联子字段' }}
+            </a-button>
           </a-form-item>
 
           <a-divider orientation="left">选项列表</a-divider>
@@ -330,12 +335,14 @@
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="标签路径3">
-                <a-input v-model:value="curlForm.flatten_label_path3" placeholder="$.data[*].children[*].children[*].label" />
+                <a-input v-model:value="curlForm.flatten_label_path3"
+                  placeholder="$.data[*].children[*].children[*].label" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item label="值路径3">
-                <a-input v-model:value="curlForm.flatten_value_path3" placeholder="$.data[*].children[*].children[*].value" />
+                <a-input v-model:value="curlForm.flatten_value_path3"
+                  placeholder="$.data[*].children[*].children[*].value" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -361,7 +368,7 @@
         </a-form-item>
 
         <a-divider orientation="left">API配置</a-divider>
-        
+
         <!-- 动态参数配置 -->
         <a-form-item label="动态参数配置">
           <a-typography-text type="secondary" style="margin-bottom: 8px; display: block;">
@@ -403,8 +410,9 @@
     </a-modal>
 
     <!-- 级联配置 curl 解析弹窗 - 第一步：输入 curl 命令 -->
-    <a-modal v-model:open="cascadeCurlModalVisible" title="从 curl 命令导入 OpenAPI Schema" :confirm-loading="cascadeCurlModalLoading"
-      @ok="handleParseCascadeCurlStep1" @cancel="handleCancelCascadeCurlModal" width="700px">
+    <a-modal v-model:open="cascadeCurlModalVisible" title="从 curl 命令导入 OpenAPI Schema"
+      :confirm-loading="cascadeCurlModalLoading" @ok="handleParseCascadeCurlStep1"
+      @cancel="handleCancelCascadeCurlModal" width="700px">
       <a-form layout="vertical">
         <a-form-item label="curl 命令" required>
           <a-textarea v-model:value="cascadeCurlForm.curl_command"
@@ -415,8 +423,9 @@
     </a-modal>
 
     <!-- 级联配置 curl 解析弹窗 - 第二步：配置 JSONPath 和展平 -->
-    <a-modal v-model:open="cascadeCurlConfigModalVisible" title="配置字段映射" :confirm-loading="cascadeCurlConfigModalLoading"
-      @ok="handleParseCascadeCurlStep2" @cancel="handleCancelCascadeCurlConfigModal" width="800px">
+    <a-modal v-model:open="cascadeCurlConfigModalVisible" title="配置字段映射"
+      :confirm-loading="cascadeCurlConfigModalLoading" @ok="handleParseCascadeCurlStep2"
+      @cancel="handleCancelCascadeCurlConfigModal" width="800px">
       <a-form layout="vertical">
         <a-form-item label="标签字段 JSONPath">
           <a-input v-model:value="cascadeCurlForm.label_path" placeholder="$.data[*].label" />
@@ -446,24 +455,28 @@
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="标签路径2">
-                <a-input v-model:value="cascadeCurlForm.flatten_label_path2" placeholder="$.data[*].children[*].label" />
+                <a-input v-model:value="cascadeCurlForm.flatten_label_path2"
+                  placeholder="$.data[*].children[*].label" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item label="值路径2">
-                <a-input v-model:value="cascadeCurlForm.flatten_value_path2" placeholder="$.data[*].children[*].value" />
+                <a-input v-model:value="cascadeCurlForm.flatten_value_path2"
+                  placeholder="$.data[*].children[*].value" />
               </a-form-item>
             </a-col>
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="标签路径3">
-                <a-input v-model:value="cascadeCurlForm.flatten_label_path3" placeholder="$.data[*].children[*].children[*].label" />
+                <a-input v-model:value="cascadeCurlForm.flatten_label_path3"
+                  placeholder="$.data[*].children[*].children[*].label" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item label="值路径3">
-                <a-input v-model:value="cascadeCurlForm.flatten_value_path3" placeholder="$.data[*].children[*].children[*].value" />
+                <a-input v-model:value="cascadeCurlForm.flatten_value_path3"
+                  placeholder="$.data[*].children[*].children[*].value" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -478,10 +491,10 @@ import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
-import { CodeOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined, LinkOutlined } from '@ant-design/icons-vue'
+import { CodeOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import * as yaml from 'js-yaml'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
 interface Props {
   fieldGroupId?: number
@@ -960,8 +973,8 @@ const handleEdit = (record: any) => {
   // 确保 corrections 是数组，避免 null 导致的问题（必须在 openEditModal 之后执行，因为 openEditModal 内部会 Object.assign 覆盖值）
   // 由于 Object.assign 会将 null 直接赋值给 corrections，我们需要重新赋值为数组
   const corrections = Array.isArray(record.corrections) ? record.corrections : []
-  ; (modalForm as any).corrections = [...corrections]
-  
+    ; (modalForm as any).corrections = [...corrections]
+
   // 加载级联配置
   if (record.field_type === 'select_single' && record.id) {
     fetchFieldCascadeConfigs(record.id)
@@ -1339,10 +1352,10 @@ const resetCascadeConfig = () => {
 // 应用动态参数到 api_schema
 const applyDynamicParamsToSchema = () => {
   if (!cascadeConfig.api_schema) return cascadeConfig.api_schema
-  
+
   try {
     const schema = yaml.load(cascadeConfig.api_schema) as any
-    
+
     // 遍历所有 paths 和 methods，添加 x-api-params
     if (schema.paths) {
       for (const path in schema.paths) {
@@ -1362,7 +1375,7 @@ const applyDynamicParamsToSchema = () => {
         }
       }
     }
-    
+
     return yaml.dump(schema)
   } catch (e) {
     console.error('应用动态参数失败:', e)
