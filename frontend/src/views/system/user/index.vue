@@ -13,6 +13,12 @@
       <a-card>
         <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
           <a-row :gutter="16" class="filter-row">
+            <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
+              <a-form-item label="租户" class="filter-item">
+                <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
+                  @change="handleSearch" />
+              </a-form-item>
+            </a-col>
             <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
               <a-form-item label="名称" class="filter-item">
                 <a-input v-model:value="queryParams.username" placeholder="请输入用户名称" allow-clear
@@ -22,12 +28,6 @@
             <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
               <a-form-item label="邮箱" class="filter-item">
                 <a-input v-model:value="queryParams.email" placeholder="请输入邮箱" allow-clear @pressEnter="handleSearch" />
-              </a-form-item>
-            </a-col>
-            <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-              <a-form-item label="租户" class="filter-item">
-                <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-                  @change="handleSearch" />
               </a-form-item>
             </a-col>
             <a-col v-bind="getActionColProps" class="filter-actions-col"

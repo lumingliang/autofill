@@ -132,8 +132,8 @@ async def update_user(
     user_in: UserUpdate,
     token: str = Header(..., description="token验证"),
 ):
-    current_user = await AuthControl.is_authed(token)
-
+    await AuthControl.is_authed(token)
+    
     await user_controller.update(id=user_in.id, obj_in=user_in)
 
     return Success(msg="更新成功")

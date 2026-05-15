@@ -5,7 +5,7 @@ from fastapi import APIRouter, Header, Query
 from tortoise.expressions import Q
 
 from app.controllers.autofill import fill_data_record_controller
-from app.core.dependency import AuthControl, is_superuser, build_tenant_query
+from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.schemas.autofill import FillDataRecordUpdate
 from app.schemas.base import Fail, Success, SuccessExtra
 
@@ -63,9 +63,12 @@ async def update_record(
     current_user = await AuthControl.is_authed(token)
     record = await fill_data_record_controller.get(id=record_in.id)
 
-    if not is_superuser(current_user):
-        if record.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的记录")
+    # 使用公共方法验证更新权限
+    success, msg = TenantControl.validate_update_permission(
+        current_user, record.tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
 
     updated = await fill_data_record_controller.update(id=record_in.id, obj_in=record_in)
     return Success(data=await updated.to_dict())
@@ -79,9 +82,12 @@ async def delete_record(
     current_user = await AuthControl.is_authed(token)
     record = await fill_data_record_controller.get(id=id)
 
-    if not is_superuser(current_user):
-        if record.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权操作其他租户的记录")
+    # 使用公共方法验证删除权限
+    success, msg = TenantControl.validate_delete_permission(
+        current_user, record.tenant_id
+    )
+    if not success:
+        return Fail(code=403, msg=msg)
 
     await fill_data_record_controller.remove(id=id)
     return Success(msg="删除成功")

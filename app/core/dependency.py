@@ -137,7 +137,13 @@ async def get_current_user(token: str = Header(..., description="token验证")) 
 
 
 class TenantControl:
-    """租户权限控制类 - 统一处理创建/更新/删除操作的租户ID验证"""
+    """租户权限控制类 - 统一处理创建/更新/删除操作的租户ID验证
+    
+    设计原则:
+    - 查询: 超管可选筛选（可查所有），普通用户只能查本租户
+    - 创建: 超管必须指定租户，普通用户自动使用当前租户
+    - 更新/删除: 通过数据本身的 tenant_id 验证权限
+    """
 
     @classmethod
     def validate_create_tenant_id(cls, user: User, requested_tenant_id: int) -> tuple[bool, str, int]:
@@ -166,10 +172,58 @@ class TenantControl:
             return True, "", effective_tenant_id
 
     @classmethod
-    def validate_update_tenant_id(cls, user: User, requested_tenant_id: int, 
-                                   existing_tenant_id: int = 0) -> tuple[bool, str, int]:
+    def validate_update_permission(cls, user: User, existing_tenant_id: int) -> tuple[bool, str]:
         """
-        验证更新操作时的租户ID
+        验证更新操作的权限（通过数据本身的 tenant_id 验证）
+        
+        Args:
+            user: 当前用户
+            existing_tenant_id: 现有数据的租户ID
+            
+        Returns:
+            tuple: (是否成功, 错误信息)
+        """
+        if user.is_superuser:
+            # 超管可以更新任何租户的数据
+            return True, ""
+        else:
+            # 普通用户只能更新自己租户的数据
+            effective_tenant_id = getattr(user, "current_tenant_id", 0)
+            if effective_tenant_id <= 0:
+                return False, "您当前未选择租户，无法执行此操作"
+            if existing_tenant_id != effective_tenant_id:
+                return False, "您没有权限更新该租户的数据"
+            return True, ""
+
+    @classmethod
+    def validate_delete_permission(cls, user: User, existing_tenant_id: int) -> tuple[bool, str]:
+        """
+        验证删除操作的权限（通过数据本身的 tenant_id 验证）
+        
+        Args:
+            user: 当前用户
+            existing_tenant_id: 要删除数据的租户ID
+            
+        Returns:
+            tuple: (是否成功, 错误信息)
+        """
+        if user.is_superuser:
+            # 超管可以删除任何租户的数据
+            return True, ""
+        else:
+            # 普通用户只能删除自己租户的数据
+            effective_tenant_id = getattr(user, "current_tenant_id", 0)
+            if effective_tenant_id <= 0:
+                return False, "您当前未选择租户，无法执行此操作"
+            if existing_tenant_id != effective_tenant_id:
+                return False, "您没有权限删除该租户的数据"
+            return True, ""
+
+    @classmethod
+    def validate_update_tenant_id(cls, user: User, requested_tenant_id: int, 
+                                  existing_tenant_id: int = 0) -> tuple[bool, str, int]:
+        """
+        [Deprecated] 验证更新操作时的租户ID，建议使用 validate_update_permission
         
         Args:
             user: 当前用户
@@ -195,27 +249,3 @@ class TenantControl:
                 return False, "您没有权限更新该租户的数据", 0
             # 普通用户不能修改租户ID
             return True, "", effective_tenant_id
-
-    @classmethod
-    def validate_delete_permission(cls, user: User, existing_tenant_id: int = 0) -> tuple[bool, str]:
-        """
-        验证删除操作的权限
-        
-        Args:
-            user: 当前用户
-            existing_tenant_id: 要删除数据的租户ID
-            
-        Returns:
-            tuple: (是否成功, 错误信息)
-        """
-        if user.is_superuser:
-            # 超管可以删除任何租户的数据
-            return True, ""
-        else:
-            # 普通用户只能删除自己租户的数据
-            effective_tenant_id = getattr(user, "current_tenant_id", 0)
-            if effective_tenant_id <= 0:
-                return False, "您当前未选择租户，无法执行此操作"
-            if existing_tenant_id > 0 and existing_tenant_id != effective_tenant_id:
-                return False, "您没有权限删除该租户的数据"
-            return True, ""
