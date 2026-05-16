@@ -40,7 +40,7 @@ def build_fields_instructions(fields: List) -> str:
             if corrections:
                 corrections_text = "；".join([c['text'] for c in corrections])
                 desc += f"。人工补充规则：{corrections_text}"
-            lines.append(f"- {field_label}（字段名：`{field_name}`）：{desc}")
+            lines.append(f"- `{field_name}`：{desc}")
 
         elif field_type in ['select_single', 'select_multi']:
             items = [opt for opt in (options or {}).get('items', []) if not opt.get('is_deleted', False)]
@@ -65,10 +65,10 @@ def build_fields_instructions(fields: List) -> str:
             if field_type == 'select_multi':
                 # 多选模式
                 count_desc = f"请选择 {min_selections} 到 {max_selections} 个选项" if max_selections > 0 else f"请至少选择 {min_selections} 个选项"
-                lines.append(f"- {field_label}（字段名：`{field_name}`）：{global_inst}\n{options_block}\n  【多选】{count_desc}，以数组形式返回选中的值。")
+                lines.append(f"- `{field_name}`：{global_inst}\n{options_block}\n  【多选】{count_desc}，以数组形式返回选中的值。")
             else:
                 # 单选模式
-                lines.append(f"- {field_label}（字段名：`{field_name}`）：{global_inst}\n{options_block}\n  【单选】只能从上述选项中选择一个值。")
+                lines.append(f"- `{field_name}`：{global_inst}\n{options_block}\n  【单选】只能从上述选项中选择一个值。")
 
     return "\n".join(lines)
 

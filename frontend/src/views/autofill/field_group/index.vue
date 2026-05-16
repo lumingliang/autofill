@@ -474,12 +474,27 @@ const handleAdd = () => {
   modalForm.group_code = ''
   modalForm.page_id = undefined
   modalForm.page_name = ''
-  modalForm.prompt_template_base = `你是一个智能填单助手。请根据输入内容，提取指定字段的信息。
+  modalForm.prompt_template_base = `你是专业的车企售后工单智能填写助手。
+请根据用户描述，严格提取信息并填写以下字段。
+
+【强制提取规则 · 必须严格遵守】
+1. 能明确提取到信息 → 精准填写
+2. 未提及、信息不足、无法确定 → **统一填空字符串 ""**
+3. 绝对禁止输出：未知、未提供、无、无相关数据、不详、未提及、不适用
+4. 单选字段必须从提供的可选值中选择，无匹配则填 ""
+5. 日期格式：YYYY-MM-DD，无法提取填 ""
+6. 数字字段只填数字，无信息填 ""
+7. 只返回标准JSON，无任何多余文字
+
+【字段理解规则】
+1. 带有填写说明的字段 → 严格按说明提取
+2. **没有填写说明的字段 → 请根据字段名称的字面含义 + 车企售后行业常识自动理解**
+3. 不需要我解释字段含义，你必须自动识别所有字段的业务意义
 
 需要提取的字段：
 {{fields_instructions}}
 
-请严格按照字段要求提取信息，并以JSON格式返回结果。`
+严格遵守所有规则，只返回干净JSON结果。`
   modalForm.output_templates = {}
   modalForm.description = ''
   modalForm.tenant_id = userStore.isSuperUser ? undefined : userStore.userInfo?.current_tenant_id

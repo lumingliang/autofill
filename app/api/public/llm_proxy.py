@@ -26,10 +26,8 @@ async def llm_proxy(
     try:
         params = await parse_request_params(request, LLMProxyRequest)
 
-        # 获取租户对应的 LLM 配置
-        tenant_id = auth_info.get("tenant_id", 0)
-        app_name = auth_info.get("app_name", None)
-        config = await llm_config_service.get_config_for_tenant(tenant_id, app_name)
+        # 获取默认 LLM 配置
+        config = await llm_config_service.get_default_config()
 
         if not config:
             return Fail(code=400, msg="未找到 LLM 配置")

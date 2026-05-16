@@ -236,12 +236,9 @@ class LiteLLMSyncService:
             logger.error(f"Failed to get models from LiteLLM: {e}")
             return []
 
-    async def sync_from_gateway(self, tenant_id: int = 0) -> Dict[str, Any]:
+    async def sync_from_gateway(self) -> Dict[str, Any]:
         """
         从 LiteLLM 网关同步模型配置到本地数据库
-
-        Args:
-            tenant_id: 租户ID，用于新导入的模型
 
         Returns:
             Dict: 同步结果统计
@@ -303,7 +300,6 @@ class LiteLLMSyncService:
                             litellm_params=litellm_params,
                             model_info=model_info,
                             capabilities=LLMConfig.get_default_capabilities(),
-                            tenant_id=tenant_id,
                             is_active=True,
                             is_default=False,
                             description=f"从 LiteLLM 网关同步导入"

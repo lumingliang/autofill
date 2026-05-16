@@ -308,7 +308,24 @@ class StructuredOutputMethods:
 
             if full_response and hasattr(full_response, 'tool_calls') and full_response.tool_calls:
                 tool_call = full_response.tool_calls[0]
-                args = tool_call.get("args", {})
+                # 处理不同格式的 tool_call
+                if isinstance(tool_call, dict):
+                    # 检查是否是 OpenAI 格式 (function.arguments)
+                    if "function" in tool_call:
+                        function_data = tool_call["function"]
+                        args_str = function_data.get("arguments", "{}")
+                        try:
+                            import json
+                            args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                        except json.JSONDecodeError:
+                            args = {}
+                    else:
+                        # LangChain 格式 (args)
+                        args = tool_call.get("args", {})
+                else:
+                    # 对象格式
+                    args = getattr(tool_call, 'args', {})
+                
                 result = StructuredOutputResult(
                     success=True,
                     data=args,

@@ -24,14 +24,12 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
 
     async def create_config(self, obj_in: LLMConfigCreate) -> LLMConfig:
         """创建 LLM 配置"""
-        # 检查同一租户下配置名称是否已存在
-        tenant_id = obj_in.tenant_id or 0
+        # 检查配置名称是否已存在
         existing = await self.model.filter(
-            tenant_id=tenant_id,
             name=obj_in.name
         ).first()
         if existing:
-            raise HTTPException(status_code=400, detail="该租户下已存在同名配置")
+            raise HTTPException(status_code=400, detail="已存在同名配置")
 
         # 准备数据
         data = obj_in.model_dump()
@@ -39,7 +37,7 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
 
         # 如果设置为默认配置，取消其他默认配置
         if data.get("is_default"):
-            await self.model.filter(tenant_id=tenant_id).update(is_default=False)
+            await self.model.filter(is_default=True).update(is_default=False)
 
         # 创建配置
         config = await self.create(data)
@@ -62,18 +60,15 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
 
         # 如果修改了名称，检查唯一性
         if obj_in.name and obj_in.name != config.name:
-            tenant_id = obj_in.tenant_id or config.tenant_id or 0
             existing = await self.model.filter(
-                tenant_id=tenant_id,
                 name=obj_in.name
             ).exclude(id=id).first()
             if existing:
-                raise HTTPException(status_code=400, detail="该租户下已存在同名配置")
+                raise HTTPException(status_code=400, detail="已存在同名配置")
 
         # 如果设置为默认配置，取消其他默认配置
         if obj_in.is_default:
-            tenant_id = obj_in.tenant_id or config.tenant_id or 0
-            await self.model.filter(tenant_id=tenant_id).exclude(id=id).update(is_default=False)
+            await self.model.filter(is_default=True).exclude(id=id).update(is_default=False)
 
         # 准备更新数据
         update_data = obj_in.model_dump(exclude_unset=True, exclude={"id"})
@@ -273,18 +268,15 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
                 "message": f"同步失败: {str(e)}"
             }
 
-    async def sync_from_gateway(self, tenant_id: int = 0) -> Dict[str, Any]:
+    async def sync_from_gateway(self) -> Dict[str, Any]:
         """
         从 LiteLLM 网关同步模型配置到本地
-
-        Args:
-            tenant_id: 租户ID，用于新导入的模型
 
         Returns:
             Dict: 同步结果统计
         """
         try:
-            result = await litellm_sync_service.sync_from_gateway(tenant_id=tenant_id)
+            result = await litellm_sync_service.sync_from_gateway()
             return result
         except Exception as e:
             logger = logging.getLogger(__name__)
