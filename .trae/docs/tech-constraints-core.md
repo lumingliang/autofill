@@ -288,6 +288,41 @@ from app.controllers.llm_config import llm_config_controller  # 禁止！
 from app.models.llm_config import LLMConfig
 ```
 
+### 5.3 LLM 配置全局化约束
+
+**核心原则：LLM 配置是全局资源，不涉及租户隔离**
+
+```python
+# ❌ 禁止：LLMConfig 包含租户相关字段
+tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
+
+# ❌ 禁止：Service 层接收租户参数
+async def get_default_config(tenant_id: int, app_name: str)  # 禁止！
+
+# ✅ 正确：LLMConfig 纯全局配置
+class LLMConfig(BaseModel):
+    name = fields.CharField(max_length=128, description="配置名称")
+    is_default = fields.BooleanField(default=False, description="是否为默认配置")
+    # ... 其他配置字段
+
+# ✅ 正确：Service 层无租户参数
+async def get_default_config() -> Optional[LLMConfig]:
+    return await LLMConfig.filter(is_default=True, is_active=True).first()
+```
+
+**调用规范：**
+```python
+# ✅ 正确：Handler 直接调用 Service
+from app.services.llm.llm_config_service import llm_config_service
+
+config = await llm_config_service.get_default_config()
+
+# ✅ 正确：Controller 复用 Service 逻辑
+async def get_default_config(self) -> Optional[LLMConfig]:
+    return await llm_config_service.get_default_config()
+```
+
 ### 5.2 控制器继承 CRUDBase
 
 ```python

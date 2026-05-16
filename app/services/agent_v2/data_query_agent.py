@@ -16,7 +16,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from app.log import logger
-from app.services.llm.llm_config_utils import get_default_llm_config
+from app.services.llm.llm_config_service import llm_config_service
 from app.settings.config import settings
 
 from .openapi_parser import OpenAPIParser
@@ -113,10 +113,7 @@ class DataQueryAgent:
     async def _create_llm(self) -> ChatOpenAI:
         """创建 LLM 实例"""
         # 获取 LLM 配置
-        config = await get_default_llm_config(
-            tenant_id=self.tenant_id,
-            app_name=self.app_name
-        )
+        config = await llm_config_service.get_default_config()
 
         if config is None:
             raise ValueError("No LLM configuration found")

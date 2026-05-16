@@ -235,8 +235,7 @@ async def get_field_groups_schema(
 
 async def _prepare_llm_fill_context(tenant_id: int, app_name: str, params: dict) -> tuple:
     """准备 LLM 填单的上下文数据"""
-    from app.controllers.llm_config import llm_config_controller
-    from app.services.autofill.prompt_service import build_fields_instructions
+    from app.services.llm.llm_config_service import llm_config_service
     
     group_fields = params.get("group_fields", {}) or {}
     additional_data = params.get("additional_data", {}) or {}
@@ -268,7 +267,8 @@ async def _prepare_llm_fill_context(tenant_id: int, app_name: str, params: dict)
     if not query:
         raise HTTPException(status_code=400, detail="query is required")
     
-    config = await llm_config_controller.get_default_config(tenant_id=tenant_id, app_name=app_name)
+    # 通过 service 层获取默认配置
+    config = await llm_config_service.get_default_config()
     if not config:
         raise HTTPException(status_code=500, detail="No LLM configuration found")
 
@@ -276,40 +276,9 @@ async def _prepare_llm_fill_context(tenant_id: int, app_name: str, params: dict)
 
     base_prompt = params.get("system_prompt") or result_data.get("combined_prompt", "你是一个智能填单助手。")
 
-    # 获取调用方法，根据方法类型决定是否拼接 field_instructions
-    method = params.get("method")
-
-    # Toolcall 相关方法：系统提示词保持简单，不需要拼接 field_instructions
-    # 因为 toolcall 的参数已经通过 tools 参数传递给 LLM
-    toolcall_methods = {
-        "with_structured_output",
-        "bind_tools_non_stream",
-        "bind_tools_stream",
-        "custom_fc_non_stream",
-        "custom_fc_stream"
-    }
-
-    # 非 toolcall 方法（如 pydantic_parser, json_parser, plain）：需要拼接 field_instructions
-    # 因为这些方法依赖系统提示词来指导 LLM 生成正确的输出
-    if method in toolcall_methods:
-        # Toolcall 方法：使用简单的系统提示词，不包含 field_instructions
-        if "{fields_instructions}" in base_prompt:
-            system_prompt = base_prompt.replace("{fields_instructions}", "")
-        else:
-            system_prompt = base_prompt
-    elif field_specs:
-        # 非 toolcall 方法：需要拼接 field_instructions
-        fields_instructions = build_fields_instructions(field_specs)
-        if "{fields_instructions}" in base_prompt:
-            system_prompt = base_prompt.replace("{fields_instructions}", fields_instructions)
-        else:
-            system_prompt = f"""{base_prompt}
-
-请根据以下字段指引从对话中提取信息：
-
-{fields_instructions}
-
-请严格按照字段要求提取信息。"""
+    # 下层会根据 tools 自动处理 format_instructions，直接使用 base_prompt
+    if "{fields_instructions}" in base_prompt:
+        system_prompt = base_prompt.replace("{fields_instructions}", "")
     else:
         system_prompt = base_prompt
 

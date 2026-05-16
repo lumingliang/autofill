@@ -35,12 +35,13 @@ class SessionHistoryManager:
         """
         修剪历史消息，保留最近N轮对话
         每轮对话包含一条HumanMessage和一条AIMessage
+        max_rounds=0 表示清空所有历史消息
         """
         if session_id not in self._histories:
             return
 
         history = self._histories[session_id]
-        max_rounds = max_rounds or self.max_rounds
+        max_rounds = self.max_rounds if max_rounds is None else max_rounds
         max_messages = max_rounds * 2  # 每轮2条消息
 
         messages = history.messages

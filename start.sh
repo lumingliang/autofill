@@ -19,6 +19,9 @@ WEB_DIR="$PROJECT_DIR/web"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
 BACKEND_PID_FILE="/tmp/autofill_backend.pid"
 FRONTEND_PID_FILE="/tmp/autofill_frontend.pid"
+LOGS_DIR="$PROJECT_DIR/logs"
+BACKEND_LOG_FILE="$LOGS_DIR/app.log"
+FRONTEND_LOG_FILE="$LOGS_DIR/frontend.log"
 BACKEND_PORT=9999
 FRONTEND_PORT=3200
 
@@ -165,7 +168,7 @@ start_backend() {
         if check_port "$BACKEND_PORT"; then
             log_success "后端服务已启动 (PID: $pid, 端口: $BACKEND_PORT)"
         else
-            log_error "后端服务启动失败，请检查日志: ./logs/app.log"
+            log_error "后端服务启动失败，请检查日志: $BACKEND_LOG_FILE"
             exit 1
         fi
     )
@@ -210,9 +213,9 @@ start_frontend() {
         log_info "启动 Vite 开发服务器 (端口: $FRONTEND_PORT)..."
         
         if command -v pnpm &> /dev/null; then
-            pnpm dev --port $FRONTEND_PORT > /tmp/autofill_frontend.log 2>&1 &
+            pnpm dev --port $FRONTEND_PORT > "$FRONTEND_LOG_FILE" 2>&1 &
         elif command -v npm &> /dev/null; then
-            npm run dev -- --port $FRONTEND_PORT > /tmp/autofill_frontend.log 2>&1 &
+            npm run dev -- --port $FRONTEND_PORT > "$FRONTEND_LOG_FILE" 2>&1 &
         else
             log_error "未找到 pnpm 或 npm"
             exit 1
@@ -349,17 +352,17 @@ show_logs() {
     
     case "$service" in
         backend|be)
-            if [ -f /tmp/autofill_backend.log ]; then
-                tail -f /tmp/autofill_backend.log
+            if [ -f "$BACKEND_LOG_FILE" ]; then
+                tail -f "$BACKEND_LOG_FILE"
             else
-                log_error "后端日志不存在"
+                log_error "后端日志不存在: $BACKEND_LOG_FILE"
             fi
             ;;
         frontend|fe)
-            if [ -f /tmp/autofill_frontend.log ]; then
-                tail -f /tmp/autofill_frontend.log
+            if [ -f "$FRONTEND_LOG_FILE" ]; then
+                tail -f "$FRONTEND_LOG_FILE"
             else
-                log_error "前端日志不存在"
+                log_error "前端日志不存在: $FRONTEND_LOG_FILE"
             fi
             ;;
         *)

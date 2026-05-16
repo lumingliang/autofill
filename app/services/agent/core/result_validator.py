@@ -5,7 +5,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.log import logger
-from app.services.llm.llm_config_utils import get_default_llm_config
+from app.services.llm.llm_config_service import llm_config_service
 from app.services.llm.llm_proxy_service import llm_proxy_service
 
 from ..base.types import APIResult
@@ -47,10 +47,7 @@ class ResultValidator:
             )
 
             # 获取 LLM 配置
-            config = await get_default_llm_config(
-                tenant_id=self.tenant_id,
-                app_name=self.app_name
-            )
+            config = await llm_config_service.get_default_config()
 
             if not config:
                 logger.warning("[ResultValidator] 未找到 LLM 配置，跳过验证")

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from app.log import logger
 from app.models.llm_config import LLMConfig
 from app.services.llm.structured_output import StructuredOutputResult, StructuredOutputService
-from app.services.llm.llm_config_utils import get_default_llm_config
+from app.services.llm.llm_config_service import llm_config_service
 
 
 class LLMProxyService:
@@ -51,7 +51,7 @@ class LLMProxyService:
         """
         # 获取配置
         if config is None:
-            config = await get_default_llm_config(tenant_id=tenant_id, app_name=app_name)
+            config = await llm_config_service.get_default_config()
             if config is None:
                 raise ValueError("No LLM configuration found")
 
@@ -104,7 +104,7 @@ class LLMProxyService:
             Dict: 健康检查结果
         """
         if config is None:
-            config = await get_default_llm_config()
+            config = await llm_config_service.get_default_config()
             if config is None:
                 return {
                     "status": "unhealthy",

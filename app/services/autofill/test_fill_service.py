@@ -10,9 +10,9 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi.exceptions import HTTPException
 
-from app.controllers.llm_config import llm_config_controller
 from app.log import logger
 from app.models.autofill import AppManagement, FillPage, FieldGroupConfig, FieldSpec
+from app.services.llm.llm_config_service import llm_config_service
 
 
 class TestFillService:
@@ -62,10 +62,7 @@ class TestFillService:
             session_id = f"chat_{uuid.uuid4().hex[:16]}"
 
         # 获取LLM配置
-        config = await llm_config_controller.get_default_config(
-            tenant_id=tenant_id,
-            app_name=app_name
-        )
+        config = await llm_config_service.get_default_config()
 
         if not config:
             raise HTTPException(status_code=500, detail="No LLM configuration found")

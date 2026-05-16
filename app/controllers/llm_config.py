@@ -14,6 +14,7 @@ from app.core.crud import CRUDBase
 from app.models.llm_config import LLMConfig
 from app.schemas.llm_config import LLMConfigCreate, LLMConfigUpdate
 from app.services.llm.litellm_sync_service import litellm_sync_service
+from app.services.llm.llm_config_service import llm_config_service
 from app.settings.config import settings
 
 
@@ -105,34 +106,9 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
         # 删除配置
         await config.delete()
 
-    async def get_default_config(self, tenant_id: int = 0, app_name: str = None) -> Optional[LLMConfig]:
+    async def get_default_config(self) -> Optional[LLMConfig]:
         """获取默认配置"""
-        q = Q(tenant_id=tenant_id, is_active=True)
-        if app_name:
-            q &= Q(app_name=app_name)
-
-        # 优先获取租户+应用的默认配置
-        config = await self.model.filter(q, is_default=True).first()
-        if config:
-            return config
-
-        # 其次获取租户级别的默认配置
-        config = await self.model.filter(tenant_id=tenant_id, is_default=True, is_active=True).first()
-        if config:
-            return config
-
-        # 最后获取系统级别的默认配置 (tenant_id=0)
-        config = await self.model.filter(tenant_id=0, is_default=True, is_active=True).first()
-        if config:
-            return config
-
-        # 获取任意一个默认配置（不限租户）
-        config = await self.model.filter(is_default=True, is_active=True).first()
-        if config:
-            return config
-
-        # 如果没有默认配置，返回第一个活跃配置（不限租户）
-        return await self.model.filter(is_active=True).first()
+        return await llm_config_service.get_default_config()
 
     async def list_configs(
         self,

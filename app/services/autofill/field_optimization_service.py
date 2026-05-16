@@ -10,9 +10,9 @@ from app.controllers.autofill import (
     field_group_config_controller,
     field_spec_controller,
 )
-from app.controllers.llm_config import llm_config_controller
 from app.log import logger
 from app.models.autofill import FieldGroupFieldSpec
+from app.services.llm.llm_config_service import llm_config_service
 from app.services.llm.structured_output import StructuredOutputService
 
 
@@ -94,11 +94,8 @@ class FieldOptimizationService:
         if not field_specs:
             return {"optimized_count": 0, "results": []}
         
-        config = await llm_config_controller.get_default_config(
-            tenant_id=tenant_id,
-            app_name=app_name
-        )
-        
+        config = await llm_config_service.get_default_config()
+
         if not config:
             raise HTTPException(status_code=500, detail="No LLM configuration found")
         

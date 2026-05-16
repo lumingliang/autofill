@@ -32,14 +32,12 @@ class LLMProvider(BaseModel, TimestampMixin):
 
 
 class LLMConfig(BaseModel, TimestampMixin):
-    """LLM 模型配置表"""
+    """LLM 模型配置表（全局配置）"""
     name = fields.CharField(max_length=128, default="", description="配置名称", index=True)
     model_provider = fields.CharField(max_length=64, default="", description="模型提供商", index=True)
     litellm_params = fields.JSONField(default=dict, description="LiteLLM 参数配置")
     model_info = fields.JSONField(default=dict, description="模型元信息")
     capabilities = fields.JSONField(default=dict, description="结构化输出方法能力配置")
-    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
-    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     is_active = fields.BooleanField(default=True, description="是否启用", index=True)
     is_default = fields.BooleanField(default=False, description="是否为默认配置", index=True)
     description = fields.TextField(default="", description="配置描述")
@@ -100,8 +98,6 @@ class LLMConfig(BaseModel, TimestampMixin):
             "litellm_params": self.litellm_params,
             "model_info": self.model_info,
             "capabilities": self.capabilities,
-            "tenant_id": self.tenant_id,
-            "app_name": self.app_name,
             "is_active": self.is_active,
             "is_default": self.is_default,
             "description": self.description,
