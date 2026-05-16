@@ -147,7 +147,7 @@
               </a-tag>
             </a-descriptions-item>
             <a-descriptions-item label="描述" :span="3">{{ detailData.basic_info?.description || '-'
-              }}</a-descriptions-item>
+            }}</a-descriptions-item>
           </a-descriptions>
         </a-card>
 
@@ -478,9 +478,6 @@ const handleAdd = () => {
 
 需要提取的字段：
 {{fields_instructions}}
-
-对话内容：
-{{query}}
 
 请严格按照字段要求提取信息，并以JSON格式返回结果。`
   modalForm.output_templates = {}
