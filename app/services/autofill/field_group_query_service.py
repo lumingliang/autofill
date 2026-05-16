@@ -10,7 +10,7 @@ from app.controllers.autofill import (
     fill_page_controller,
 )
 from app.models.autofill import FieldGroupFieldSpec
-from app.services.autofill.prompt_service import build_function_schema
+from app.services.llm.structured_output.schema_builder import FCSchemaBuilder
 
 
 class FieldGroupQueryService:
@@ -177,23 +177,24 @@ class FieldGroupQueryService:
         page_name: str
     ) -> Dict[str, Any]:
         """组装结果返回"""
-        
+
         field_groups_result = []
-        all_properties = {}
+        all_db_fields = []  # 收集所有字段用于生成统一 schema
         system_prompts = []
-        
+
         additional_field_names = set(additional_data.keys()) if use_additional_data and additional_data else set()
-        
+
+        # 第一步：收集所有字段组和字段信息
         for fg in field_groups:
             query_info = group_query_info.get(fg.id, {})
             query_type = query_info.get("type", "full")
-            
+
             # 获取字段列表
             if query_type == "specified":
                 target_names = query_info.get("field_names", set())
                 field_specs = [
-                    all_field_specs_map[name] 
-                    for name in target_names 
+                    all_field_specs_map[name]
+                    for name in target_names
                     if name in all_field_specs_map
                 ]
                 if not field_specs:
@@ -201,25 +202,33 @@ class FieldGroupQueryService:
             else:
                 spec_ids = set(group_to_spec_ids.get(fg.id, []))
                 field_specs = [
-                    fs for fs in all_field_specs_map.values() 
+                    fs for fs in all_field_specs_map.values()
                     if fs.id in spec_ids
                 ]
-            
+
             # 使用附加数据过滤
             if use_additional_data and additional_field_names:
                 field_specs = [fs for fs in field_specs if fs.field_name not in additional_field_names]
                 if not field_specs:
                     continue
-            
-            function_schema = build_function_schema(fg, field_specs, include_reason)
-            
-            if function_schema:
-                props = function_schema.get("function", {}).get("parameters", {}).get("properties", {})
-                all_properties.update(props)
-            
+
+            # 转换 field_specs 为 db_fields 格式并收集
+            db_fields = [
+                {
+                    "field_name": fs.field_name,
+                    "field_label": fs.field_label,
+                    "field_type": fs.field_type.value if hasattr(fs.field_type, 'value') else fs.field_type,
+                    "fill_instruction": fs.fill_instruction,
+                    "options": fs.options,
+                    "corrections": fs.corrections,
+                }
+                for fs in field_specs
+            ]
+            all_db_fields.extend(db_fields)
+
             if fg.prompt_template_base and not system_prompts:
                 system_prompts.append(fg.prompt_template_base)
-            
+
             field_groups_result.append({
                 "id": fg.id,
                 "group_name": fg.group_name,
@@ -247,12 +256,18 @@ class FieldGroupQueryService:
                 "prompt_info": {
                     "template_base": fg.prompt_template_base,
                 },
-                "function_calling": {
-                    "schema": function_schema,
-                    "json_schema": json.dumps(function_schema, ensure_ascii=False, indent=2),
-                },
             })
-        
+
+        # 第二步：一次性生成统一的 Function Calling Schema
+        unified_function_schema = None
+        if all_db_fields:
+            unified_function_schema = FCSchemaBuilder.build_fc_tools(
+                all_db_fields,
+                function_name="fill_form",
+                include_reason=include_reason,
+                description="从对话中提取表单数据"
+            )
+
         # 构建统一字段列表
         all_field_specs = [
             {
@@ -267,49 +282,9 @@ class FieldGroupQueryService:
             }
             for fs in all_field_specs_map.values()
         ]
-        
-        # 构建统一 Function Calling Schema
-        unified_function_schema = None
-        if all_properties:
-            has_specified = any(
-                query_info.get("type") == "specified"
-                for query_info in group_query_info.values()
-            )
-            
-            if has_specified:
-                specified_field_names = set()
-                for fg_id, query_info in group_query_info.items():
-                    if query_info.get("type") == "specified":
-                        target_names = query_info.get("field_names", set())
-                        for name in target_names:
-                            if name in all_field_specs_map:
-                                specified_field_names.add(name)
-                
-                required_fields = []
-                for name in specified_field_names:
-                    if name in all_properties:
-                        required_fields.append(name)
-                        reason_field = f"{name}_reason"
-                        if reason_field in all_properties:
-                            required_fields.append(reason_field)
-            else:
-                required_fields = list(all_properties.keys())
-            
-            unified_function_schema = {
-                "type": "function",
-                "function": {
-                    "name": "fill_form",
-                    "description": "从对话中提取表单数据",
-                    "parameters": {
-                        "type": "object",
-                        "properties": all_properties,
-                        "required": required_fields
-                    }
-                }
-            }
-        
+
         combined_prompt = system_prompts[0] if system_prompts else ""
-        
+
         return {
             "page_name": page.page_name if page else page_name,
             "field_groups": field_groups_result,

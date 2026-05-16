@@ -14,7 +14,7 @@ from app.controllers.autofill import (
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import FieldGroupConfigCreate, FieldGroupConfigUpdate
-from app.services.autofill.prompt_service import build_function_schema
+from app.services.llm.structured_output.schema_builder import FCSchemaBuilder
 
 router = APIRouter()
 
@@ -183,7 +183,24 @@ async def get_field_group_detail(
             return Fail(code=403, msg="无权查看其他租户的字段组")
 
     fields = await field_spec_controller.get_by_field_group(id)
-    function_schema = build_function_schema(group, fields)
+
+    # 转换 fields 为 db_fields 格式
+    db_fields = [
+        {
+            "field_name": f.field_name,
+            "field_label": f.field_label,
+            "field_type": f.field_type.value if hasattr(f.field_type, 'value') else f.field_type,
+            "fill_instruction": f.fill_instruction,
+            "options": f.options,
+            "corrections": f.corrections,
+        }
+        for f in fields
+    ]
+    function_schema = FCSchemaBuilder.build_fc_tools(
+        db_fields,
+        function_name="extract_form_data",
+        description=group.description or "从对话中提取表单数据"
+    )
 
     # 构建字段指引并生成组装后的Prompt
     from app.services.autofill.prompt_service import build_fields_instructions
@@ -367,7 +384,23 @@ def _build_field_group_markdown(group, fields) -> str:
     lines.append("```")
     lines.append("")
 
-    function_schema = build_function_schema(group, fields)
+    # 转换 fields 为 db_fields 格式
+    db_fields = [
+        {
+            "field_name": f.field_name,
+            "field_label": f.field_label,
+            "field_type": f.field_type.value if hasattr(f.field_type, 'value') else f.field_type,
+            "fill_instruction": f.fill_instruction,
+            "options": f.options,
+            "corrections": f.corrections,
+        }
+        for f in fields
+    ]
+    function_schema = FCSchemaBuilder.build_fc_tools(
+        db_fields,
+        function_name="extract_form_data",
+        description=group.description or "从对话中提取表单数据"
+    )
     lines.append("## Function Calling Schema")
     lines.append("")
     lines.append("```json")

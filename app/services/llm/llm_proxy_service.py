@@ -1,64 +1,51 @@
 """
-LLM 代理服务
-处理 LLM 代理请求
+LLM 代理服务 - 统一的结构化输出调用入口
 """
 from typing import Any, Dict, List, Optional
 
-from app.log import logger
 from app.models.llm_config import LLMConfig
-from app.services.llm.structured_output import StructuredOutputResult, StructuredOutputService
-from app.services.llm.llm_config_service import llm_config_service
+from app.services.llm.structured_output.service import StructuredOutputService
 
 
 class LLMProxyService:
-    """LLM 代理服务"""
+    """LLM 代理服务 - 提供统一的结构化输出调用接口"""
 
     async def process_request(
         self,
         query: str,
         tools: List[Dict[str, Any]] = None,
         system_prompt: str = None,
-        config: LLMConfig = None,
-        session_id: str = None,
-        memory_rounds: int = None,
         tool_choice: str = "auto",
         method: str = None,
-        tenant_id: int = 0,
-        app_name: str = None,
-        field_specs: List[Dict[str, Any]] = None,
-        include_reason: bool = False
+        config: LLMConfig = None,
+        session_id: str = None,
+        memory_rounds: int = None
     ) -> Dict[str, Any]:
         """
-        处理 LLM 代理请求
+        处理 LLM 结构化输出请求
 
         Args:
             query: 用户查询
-            tools: 工具/函数定义列表（plain模式可为空）
+            tools: FC Schema 工具列表（plain 方法可不传）
             system_prompt: 系统提示词
-            config: LLM 配置，如果为 None 则使用默认配置
-            session_id: 会话ID，用于多轮对话记忆
-            memory_rounds: 记忆轮数限制
-            tool_choice: 工具选择模式，可选 "auto", "none", "required" 或指定工具名
-            method: 指定使用的方法，可选 "with_structured_output", "bind_tools_stream",
-                   "custom_fc_non_stream", "custom_fc_stream", "pydantic_parser", "json_parser", "plain"
-            tenant_id: 租户ID
-            app_name: 应用名称
-            field_specs: 字段规格列表（用于plain模式）
-            include_reason: 是否包含理由（用于plain模式）
+            tool_choice: 工具选择策略
+            method: 指定使用的结构化输出方法
+            config: LLM 配置
+            session_id: 会话 ID
+            memory_rounds: 记忆轮数
 
         Returns:
-            Dict: 包含结构化输出结果和元信息
+            Dict 包含处理结果
         """
-        # 获取配置
-        if config is None:
-            config = await llm_config_service.get_default_config()
-            if config is None:
-                raise ValueError("No LLM configuration found")
+        # plain 方法不需要 tools
+        if method != "plain" and not tools:
+            raise ValueError("tools 参数不能为空（plain 方法除外）")
 
-        # 创建结构化输出服务
+        if not config:
+            raise ValueError("config 参数不能为空")
+
         service = StructuredOutputService(config)
 
-        # 生成结构化输出（支持多轮对话记忆）
         result = await service.generate(
             query=query,
             tools=tools or [],
@@ -66,59 +53,15 @@ class LLMProxyService:
             session_id=session_id,
             memory_rounds=memory_rounds,
             tool_choice=tool_choice,
-            method=method,
-            field_specs=field_specs,
-            include_reason=include_reason
+            method=method
         )
 
-        if not result.success:
-            raise ValueError(f"Failed to generate structured output: {result.error}")
-
-        # 构建响应
-        response_data = result.data.copy()
-
-        # 将 None 值转换为空字符串
-        for key, value in response_data.items():
-            if value is None:
-                response_data[key] = ""
-
-        # 添加元信息
-        response_data["_meta"] = {
-            "method_used": result.method,
-            "model": config.litellm_params.get("model", "unknown"),
-            "latency_ms": result.latency_ms,
-            "prompt_tokens": result.prompt_tokens,
-            "completion_tokens": result.completion_tokens
-        }
-
-        return response_data
-
-    async def health_check(self, config: LLMConfig = None) -> Dict[str, Any]:
-        """
-        健康检查
-
-        Args:
-            config: LLM 配置，如果为 None 则使用默认配置
-
-        Returns:
-            Dict: 健康检查结果
-        """
-        if config is None:
-            config = await llm_config_service.get_default_config()
-            if config is None:
-                return {
-                    "status": "unhealthy",
-                    "error": "No LLM configuration found"
-                }
-
         return {
-            "status": "healthy",
-            "tenant_id": config.tenant_id,
-            "app_name": config.app_name,
-            "llm_config": {
-                "name": config.name,
-                "model": config.litellm_params.get("model", "unknown")
-            }
+            "success": result.success,
+            "data": result.data,
+            "error": result.error,
+            "method": result.method,
+            "latency_ms": result.latency_ms
         }
 
 

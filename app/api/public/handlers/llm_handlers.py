@@ -276,11 +276,22 @@ async def _prepare_llm_fill_context(tenant_id: int, app_name: str, params: dict)
 
     base_prompt = params.get("system_prompt") or result_data.get("combined_prompt", "你是一个智能填单助手。")
 
-    # 下层会根据 tools 自动处理 format_instructions，直接使用 base_prompt
-    if "{fields_instructions}" in base_prompt:
-        system_prompt = base_prompt.replace("{fields_instructions}", "")
-    else:
-        system_prompt = base_prompt
+    system_prompt = base_prompt
+    # # 构建字段指令
+    # from app.services.autofill import build_fields_instructions
+    # if field_specs:
+    #     fields_instructions = build_fields_instructions(field_specs)
+    # else:
+    #     fields_instructions = ""
+
+    # # 拼接 field_instructions 到 system_prompt
+    # if "{fields_instructions}" in base_prompt:
+    #     system_prompt = base_prompt.replace("{fields_instructions}", fields_instructions)
+    # else:
+    #     if fields_instructions:
+    #         system_prompt = f"{base_prompt}\n\n{fields_instructions}"
+    #     else:
+    #         system_prompt = base_prompt
 
     return result_data, config, system_prompt, field_specs, unified_function_schema, query
 
@@ -291,16 +302,17 @@ async def _execute_llm_fill(query: str, system_prompt: str, unified_function_sch
     include_reason = params.get("include_reason", False)
     memory_rounds = params.get("memory_rounds", 0)
     session_id = params.get("session_id")
-    
+
+    # plain 方法不需要 tools
+    tools = [unified_function_schema] if method != "plain" and unified_function_schema else None
+
     return await llm_proxy_service.process_request(
         query=query,
-        tools=[unified_function_schema] if method != "plain" else None,
+        tools=tools,
         system_prompt=system_prompt,
-        tool_choice={"type": "function", "function": {"name": "fill_form"}},
+        tool_choice="auto",
         config=config,
         method=method,
-        field_specs=field_specs,
-        include_reason=include_reason,
         memory_rounds=memory_rounds,
         session_id=session_id
     )

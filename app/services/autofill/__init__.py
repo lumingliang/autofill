@@ -5,7 +5,6 @@
 from .ai_fill_service import AIFillService, get_ai_fill_service
 from .prompt_service import (
     build_fields_instructions,
-    build_function_schema,
     assemble_output_prompts,
     get_field_group_with_fields,
     get_field_group_by_code_with_fields,
@@ -15,7 +14,6 @@ __all__ = [
     "AIFillService",
     "get_ai_fill_service",
     "build_fields_instructions",
-    "build_function_schema",
     "assemble_output_prompts",
     "get_field_group_with_fields",
     "get_field_group_by_code_with_fields",

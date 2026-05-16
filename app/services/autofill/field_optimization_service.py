@@ -185,7 +185,7 @@ class FieldOptimizationService:
                 query=prompt,
                 tools=[function_schema],
                 system_prompt="你是一个专业的表单设计专家，擅长编写清晰、准确的字段填写指引。",
-                tool_choice={"type": "function", "function": {"name": "optimize_field_instructions"}},
+                tool_choice="auto",
                 method="bind_tools_non_stream"
             )
             

@@ -3,7 +3,7 @@
 """
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from app.log import logger
 from app.models.llm_config import LLMConfig
@@ -81,7 +81,7 @@ class StructuredOutputService:
     async def generate(
         self,
         query: str,
-        tools: List[dict],
+        tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
         memory_rounds: int = None,
@@ -164,7 +164,7 @@ class StructuredOutputService:
         self,
         method: str,
         query: str,
-        tools: List[dict],
+        tools: List[Dict[str, Any]],
         system_prompt: str = None,
         session_id: str = None,
         memory_rounds: int = None,

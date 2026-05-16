@@ -2,24 +2,20 @@
 结构化输出方法实现
 """
 import json
-import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from langchain_core.output_parsers import JsonOutputParser, PydanticOutputParser
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
-from pydantic import BaseModel, Field
 
 from app.log import logger
 from app.services.llm.structured_output.history_manager import SessionHistoryManager
 from app.services.llm.structured_output.result import StructuredOutputResult
-from app.services.llm.structured_output.utils import (
-    create_dynamic_model,
-    parse_text_function_call,
-)
+from app.services.llm.structured_output.schema_builder import FCSchemaBuilder
+from app.services.llm.structured_output.utils import parse_text_function_call
 
 
 class StructuredOutputMethods:
@@ -96,12 +92,14 @@ class StructuredOutputMethods:
         start_time = time.time()
         method_name = "with_structured_output"
 
-        # 使用简单的 tool_call 系统提示词，禁止使用传入的 system_prompt
         tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         try:
             llm = self._create_llm()
-            DynamicModel = create_dynamic_model(tools)
+
+            # 使用第一个 tool 的 schema 创建 Pydantic 模型
+            fc_schema = tools[0] if tools else {}
+            DynamicModel = FCSchemaBuilder.build_pydantic_model_from_fc(fc_schema)
             structured_llm = llm.with_structured_output(DynamicModel)
             messages = self._build_messages_with_history(
                 query, tool_call_system_prompt, session_id, memory_rounds, history_manager
@@ -150,7 +148,6 @@ class StructuredOutputMethods:
         start_time = time.time()
         method_name = "bind_tools_non_stream"
 
-        # 使用简单的 tool_call 系统提示词，禁止使用传入的 system_prompt
         tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         try:
@@ -233,7 +230,6 @@ class StructuredOutputMethods:
         try:
             llm = self._create_llm()
 
-            # 构建消息列表
             messages = []
             if system_prompt:
                 messages.append(SystemMessage(content=system_prompt))
@@ -250,7 +246,6 @@ class StructuredOutputMethods:
 
             latency_ms = (time.time() - start_time) * 1000
 
-            # 构建结果数据
             result_data = {
                 "raw_response": content,
                 "content": content
@@ -295,7 +290,6 @@ class StructuredOutputMethods:
         start_time = time.time()
         method_name = "bind_tools_stream"
 
-        # 使用简单的 tool_call 系统提示词，禁止使用传入的 system_prompt
         tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         try:
@@ -363,7 +357,6 @@ class StructuredOutputMethods:
         start_time = time.time()
         method_name = "custom_fc_non_stream"
 
-        # 使用简单的 tool_call 系统提示词，禁止使用传入的 system_prompt
         tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         try:
@@ -447,7 +440,6 @@ class StructuredOutputMethods:
         start_time = time.time()
         method_name = "custom_fc_stream"
 
-        # 使用简单的 tool_call 系统提示词，禁止使用传入的 system_prompt
         tool_call_system_prompt = "You are a helpful assistant that can use tools to complete tasks."
 
         try:
@@ -480,14 +472,11 @@ class StructuredOutputMethods:
                 stream=True
             )
 
-            # 收集 tool_calls
             tool_calls_data = {}
             async for chunk in response:
                 delta = chunk.choices[0].delta
-                # 处理 content
                 if delta.content:
-                    pass  # 忽略 content，只关注 tool_calls
-                # 处理 tool_calls
+                    pass
                 if delta.tool_calls:
                     for tool_call in delta.tool_calls:
                         index = tool_call.index
@@ -503,7 +492,6 @@ class StructuredOutputMethods:
 
             latency_ms = (time.time() - start_time) * 1000
 
-            # 解析第一个 tool_call 的参数
             if tool_calls_data:
                 first_tool_call = tool_calls_data[0]
                 try:
@@ -558,9 +546,10 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法6: PydanticOutputParser - 使用简单系统提示词
+        """方法6: PydanticOutputParser - 使用 FC Schema 反向生成 Pydantic 模型
 
-        注意: 此方法不使用 tool_call，禁止使用 tools 进行参数封装，系统提示词仅使用传参的 system_prompt
+        架构: FC Schema → 反向生成 Pydantic 动态模型
+        注意: 此方法不使用 tool_call，系统提示词仅使用传参的 system_prompt
         """
         start_time = time.time()
         method_name = "pydantic_parser"
@@ -568,11 +557,12 @@ class StructuredOutputMethods:
         try:
             llm = self._create_llm()
 
-            # 创建动态 Pydantic 模型
-            pydantic_model = create_dynamic_model(tools)
+            # 使用第一个 tool 的 schema
+            fc_schema = tools[0] if tools else {}
+            pydantic_model = FCSchemaBuilder.build_pydantic_model_from_fc(fc_schema)
+            logger.info(f"[method_pydantic_parser] pydantic_model schema: {pydantic_model.model_json_schema()}")
             parser = PydanticOutputParser(pydantic_object=pydantic_model)
 
-            # 构建消息，将 format_instructions 融入系统提示词
             messages = []
             if system_prompt:
                 full_system_prompt = f"{system_prompt}\n\n{parser.get_format_instructions()}"
@@ -589,12 +579,15 @@ class StructuredOutputMethods:
 
             response = await llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
+            logger.debug(f"[method_pydantic_parser] LLM response content: {content}")
 
-            # 使用 PydanticOutputParser 解析并验证
             try:
                 parsed_result = parser.parse(content)
                 parsed_data = parsed_result.model_dump()
+                logger.debug(f"[method_pydantic_parser] parsed_data: {json.dumps(parsed_data, ensure_ascii=False)}")
             except Exception as parse_error:
+                logger.error(f"[method_pydantic_parser] parse_error: {parse_error}")
+                logger.error(f"[method_pydantic_parser] content that failed to parse: {content}")
                 latency_ms = (time.time() - start_time) * 1000
                 result = StructuredOutputResult(
                     success=False,
@@ -638,9 +631,10 @@ class StructuredOutputMethods:
         tool_choice: str = "auto",
         history_manager: SessionHistoryManager = None
     ) -> StructuredOutputResult:
-        """方法7: JsonOutputParser - 使用简单系统提示词
+        """方法7: JsonParser - 使用 FC Schema + JsonOutputParser
 
-        注意: 此方法不使用 tool_call，禁止使用 tools 进行参数封装，系统提示词仅使用传参的 system_prompt
+        架构: FC Schema → 反向生成 JSON 动态提示词 → JsonOutputParser 解析
+        注意: 此方法不使用 tool_call，系统提示词仅使用传参的 system_prompt
         """
         start_time = time.time()
         method_name = "json_parser"
@@ -648,16 +642,17 @@ class StructuredOutputMethods:
         try:
             llm = self._create_llm()
 
-            # 使用 LangChain 的 JsonOutputParser
+            # 使用第一个 tool 的 schema
+            fc_schema = tools[0] if tools else {}
+            json_format_prompt = FCSchemaBuilder.build_json_prompt_from_fc(fc_schema)
             parser = JsonOutputParser()
 
-            # 构建消息，将 format_instructions 融入系统提示词
             messages = []
             if system_prompt:
-                full_system_prompt = f"{system_prompt}\n\n{parser.get_format_instructions()}"
+                full_system_prompt = f"{system_prompt}\n\n{json_format_prompt}\n\n{parser.get_format_instructions()}"
                 messages.append(SystemMessage(content=full_system_prompt))
             else:
-                messages.append(SystemMessage(content=parser.get_format_instructions()))
+                messages.append(SystemMessage(content=f"{json_format_prompt}\n\n{parser.get_format_instructions()}"))
 
             if session_id and history_manager:
                 history_manager.trim_history(session_id, memory_rounds)
@@ -669,7 +664,6 @@ class StructuredOutputMethods:
             response = await llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
 
-            # 使用 JsonOutputParser 解析
             try:
                 parsed_data = parser.parse(content)
             except Exception as parse_error:
@@ -683,10 +677,6 @@ class StructuredOutputMethods:
                 return result
 
             latency_ms = (time.time() - start_time) * 1000
-
-            # 处理嵌套结构：如果包含 fill_form 键，提取其值
-            if isinstance(parsed_data, dict) and "fill_form" in parsed_data:
-                parsed_data = parsed_data["fill_form"]
 
             result = StructuredOutputResult(
                 success=True,

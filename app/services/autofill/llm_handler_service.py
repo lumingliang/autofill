@@ -17,6 +17,7 @@ from app.log import logger
 from app.models.autofill import FieldGroupFieldSpec, FillPage
 from app.services.autofill.field_group_query_service import field_group_query_service
 from app.services.autofill.prompt_service import build_fields_instructions
+from app.services.llm.structured_output.schema_builder import FCSchemaBuilder
 from app.services.llm.llm_proxy_service import llm_proxy_service
 
 
@@ -168,8 +169,24 @@ class FieldGroupSchemaService:
 
 请严格按照字段要求提取信息，并以JSON格式返回结果。"""
         
-        function_schema = FieldGroupSchemaService._build_function_schema(field_specs)
-        
+        # 转换 field_specs 为 db_fields 格式
+        db_fields = [
+            {
+                "field_name": fs.field_name,
+                "field_label": fs.field_label,
+                "field_type": fs.field_type.value if hasattr(fs.field_type, 'value') else fs.field_type,
+                "fill_instruction": fs.fill_instruction,
+                "options": fs.options,
+                "corrections": fs.corrections,
+            }
+            for fs in field_specs
+        ]
+        function_schema = FCSchemaBuilder.build_fc_tools(
+            db_fields,
+            function_name="fill_form",
+            description="从对话中提取表单数据"
+        )
+
         return {
             "fields": [
                 {
@@ -217,58 +234,5 @@ class FieldGroupSchemaService:
         
         return merged
     
-    @staticmethod
-    def _build_function_schema(field_specs: List) -> Dict[str, Any]:
-        """构建 Function Calling Schema"""
-        function_schema = {
-            "type": "function",
-            "function": {
-                "name": "fill_form",
-                "description": "从对话中提取表单数据",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            }
-        }
-        
-        for fs in field_specs:
-            param_info = FieldGroupSchemaService._build_field_param(fs)
-            function_schema["function"]["parameters"]["properties"][fs.field_name] = param_info
-            function_schema["function"]["parameters"]["required"].append(fs.field_name)
-        
-        return function_schema
-    
-    @staticmethod
-    def _build_field_param(field_spec) -> Dict[str, Any]:
-        """构建单个字段的参数定义"""
-        description = field_spec.fill_instruction or field_spec.field_label or field_spec.field_name
-        
-        param_info = {"type": "string", "description": description}
-        
-        if field_spec.options and field_spec.options.get("items"):
-            items = field_spec.options.get("items", [])
-            valid_items = [item for item in items if not item.get("is_deleted", False)]
-            if valid_items:
-                param_info["enum"] = [item.get("label") for item in valid_items if item.get("label")]
-                
-                option_descs = []
-                for item in valid_items[:10]:
-                    label = item.get("label", "")
-                    fill_inst = item.get("fill_instruction", "")
-                    if fill_inst:
-                        option_descs.append(f"{label}: {fill_inst}")
-                    else:
-                        option_descs.append(label)
-                
-                if option_descs:
-                    param_info["description"] = f"{description}。可选值：{', '.join(option_descs)}"
-                    if len(valid_items) > 10:
-                        param_info["description"] += f" 等共{len(valid_items)}个选项"
-        
-        return param_info
-
-
 llm_fill_data_service = LLMFillDataService()
 field_group_schema_service = FieldGroupSchemaService()
