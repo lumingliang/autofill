@@ -161,13 +161,9 @@ class FieldGroupSchemaService:
         if not field_specs:
             return {"fields": [], "merged_config": {}, "prompt_info": {}, "function_calling": {}}
         
+        from app.services.autofill.constants import DEFAULT_PROMPT_TEMPLATE_BASE
         merged_config = FieldGroupSchemaService._merge_field_groups_config(field_groups)
-        template_base = merged_config.get("prompt_template_base") or """你是一个智能填单助手。请根据输入内容，提取指定字段的信息。
-
-需要提取的字段：
-{{fields_instructions}}
-
-请严格按照字段要求提取信息，并以JSON格式返回结果。"""
+        template_base = merged_config.get("prompt_template_base") or DEFAULT_PROMPT_TEMPLATE_BASE
         
         # 转换 field_specs 为 db_fields 格式
         db_fields = [

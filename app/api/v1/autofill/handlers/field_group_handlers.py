@@ -204,8 +204,9 @@ async def get_field_group_detail(
 
     # 构建字段指引并生成组装后的Prompt
     from app.services.autofill.prompt_service import build_fields_instructions
+    from app.services.autofill.constants import DEFAULT_PROMPT_TEMPLATE_BASE
     fields_instructions = build_fields_instructions(fields)
-    template_base = group.prompt_template_base or "你是一个智能填单助手。请根据输入内容，提取指定字段的信息。"
+    template_base = group.prompt_template_base or DEFAULT_PROMPT_TEMPLATE_BASE
 
     # 替换 {fields_instructions} 占位符
     if "{fields_instructions}" in template_base:

@@ -274,29 +274,29 @@ async def _prepare_llm_fill_context(tenant_id: int, app_name: str, params: dict)
 
     field_specs = result_data.get("all_field_specs", [])
 
-    base_prompt = params.get("system_prompt") or result_data.get("combined_prompt", "你是一个智能填单助手。")
+    from app.services.autofill.constants import DEFAULT_PROMPT_TEMPLATE_BASE
+    base_prompt = params.get("system_prompt") or result_data.get("combined_prompt") or DEFAULT_PROMPT_TEMPLATE_BASE
 
-    system_prompt = base_prompt
-    # # 构建字段指令
-    # from app.services.autofill import build_fields_instructions
-    # if field_specs:
-    #     fields_instructions = build_fields_instructions(field_specs)
-    # else:
-    #     fields_instructions = ""
+    # 构建字段指令
+    from app.services.autofill.prompt_service import build_fields_instructions
+    if field_specs:
+        fields_instructions = build_fields_instructions(field_specs)
+    else:
+        fields_instructions = ""
 
-    # # 拼接 field_instructions 到 system_prompt
-    # if "{fields_instructions}" in base_prompt:
-    #     system_prompt = base_prompt.replace("{fields_instructions}", fields_instructions)
-    # else:
-    #     if fields_instructions:
-    #         system_prompt = f"{base_prompt}\n\n{fields_instructions}"
-    #     else:
-    #         system_prompt = base_prompt
+    # 拼接 field_instructions 到 system_prompt，生成 full_system_prompt
+    if "{fields_instructions}" in base_prompt:
+        full_system_prompt = base_prompt.replace("{fields_instructions}", fields_instructions)
+    else:
+        if fields_instructions:
+            full_system_prompt = f"{base_prompt}\n\n{fields_instructions}"
+        else:
+            full_system_prompt = base_prompt
 
-    return result_data, config, system_prompt, field_specs, unified_function_schema, query
+    return result_data, config, full_system_prompt, field_specs, unified_function_schema, query
 
 
-async def _execute_llm_fill(query: str, system_prompt: str, unified_function_schema: dict, config, field_specs: list, params: dict) -> dict:
+async def _execute_llm_fill(query: str, system_prompt: str, unified_function_schema: dict, config, field_specs: list, params: dict, full_system_prompt: str = None) -> dict:
     """执行 LLM 填单调用"""
     method = params.get("method")
     include_reason = params.get("include_reason", False)
@@ -314,17 +314,20 @@ async def _execute_llm_fill(query: str, system_prompt: str, unified_function_sch
         config=config,
         method=method,
         memory_rounds=memory_rounds,
-        session_id=session_id
+        session_id=session_id,
+        full_system_prompt=full_system_prompt
     )
 
 
 async def _process_llm_result(llm_result: dict, field_specs: list, result_data: dict, params: dict) -> dict:
     """处理 LLM 结果"""
     method = params.get("method")
-    extracted_data = {k: v for k, v in llm_result.items() if not k.startswith('_')}
     
     if method == "plain":
         return {"result": llm_result, "method": "plain", "_meta": llm_result.get("_meta", {})}
+    
+    # 从 llm_result['data'] 获取提取的数据（llm_proxy_service.process_request 的返回格式）
+    extracted_data = llm_result.get("data", {}) or {}
     
     additional_data = params.get("additional_data", {}) or {}
     use_additional_data = params.get("use_additional_data", False)
@@ -353,17 +356,18 @@ async def llm_fill(
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
     
-    result_data, config, system_prompt, field_specs, unified_function_schema, query = \
+    result_data, config, full_system_prompt, field_specs, unified_function_schema, query = \
         await _prepare_llm_fill_context(tenant_id, app_name, params)
-    
+
     try:
         llm_result = await _execute_llm_fill(
             query=query,
-            system_prompt=system_prompt,
+            system_prompt=full_system_prompt,
             unified_function_schema=unified_function_schema,
             config=config,
             field_specs=field_specs,
-            params=params
+            params=params,
+            full_system_prompt=full_system_prompt
         )
         
         processed_result = await _process_llm_result(
@@ -471,14 +475,14 @@ async def step_llm_fill(
     logger.info(f"Step LLM fill: session_id={session_id}, step={current_step}, is_last={is_last}")
     
     step_start_time = time.time()
-    
-    result_data, config, system_prompt, field_specs, unified_function_schema, query = \
+
+    result_data, config, full_system_prompt, field_specs, unified_function_schema, query = \
         await _prepare_llm_fill_context(tenant_id, app_name, params)
-    
+
     method = params.get("method")
     page_name = params.get("page_name")
     group_fields = params.get("group_fields", {}) or {}
-    
+
     await step_llm_fill_service.save_step_request(
         session_id=session_id,
         tenant_id=tenant_id,
@@ -491,15 +495,16 @@ async def step_llm_fill(
             "method": method
         }
     )
-    
+
     try:
         llm_result = await _execute_llm_fill(
             query=query,
-            system_prompt=system_prompt,
+            system_prompt=full_system_prompt,
             unified_function_schema=unified_function_schema,
             config=config,
             field_specs=field_specs,
-            params=params
+            params=params,
+            full_system_prompt=full_system_prompt
         )
         
         processed_result = await _process_llm_result(

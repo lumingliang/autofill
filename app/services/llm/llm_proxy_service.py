@@ -19,7 +19,8 @@ class LLMProxyService:
         method: str = None,
         config: LLMConfig = None,
         session_id: str = None,
-        memory_rounds: int = None
+        memory_rounds: int = None,
+        full_system_prompt: str = None
     ) -> Dict[str, Any]:
         """
         处理 LLM 结构化输出请求
@@ -33,6 +34,7 @@ class LLMProxyService:
             config: LLM 配置
             session_id: 会话 ID
             memory_rounds: 记忆轮数
+            full_system_prompt: 完整的系统提示词（包含字段指引，用于 json_parser 方法）
 
         Returns:
             Dict 包含处理结果
@@ -53,7 +55,8 @@ class LLMProxyService:
             session_id=session_id,
             memory_rounds=memory_rounds,
             tool_choice=tool_choice,
-            method=method
+            method=method,
+            full_system_prompt=full_system_prompt
         )
 
         return {

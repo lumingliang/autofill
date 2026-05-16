@@ -88,7 +88,8 @@ class StructuredOutputService:
         tool_choice: str = "auto",
         method: str = None,
         field_specs: List[Dict[str, Any]] = None,
-        include_reason: bool = False
+        include_reason: bool = False,
+        full_system_prompt: str = None
     ) -> StructuredOutputResult:
         """
         生成结构化输出，支持多轮对话记忆
@@ -107,7 +108,8 @@ class StructuredOutputService:
                     memory_rounds=memory_rounds,
                     tool_choice=tool_choice,
                     field_specs=field_specs,
-                    include_reason=include_reason
+                    include_reason=include_reason,
+                    full_system_prompt=full_system_prompt
                 )
                 if result.success:
                     result.latency_ms = int((time.time() - start_time) * 1000)
@@ -170,7 +172,8 @@ class StructuredOutputService:
         memory_rounds: int = None,
         tool_choice: str = "auto",
         field_specs: List[Dict[str, Any]] = None,
-        include_reason: bool = False
+        include_reason: bool = False,
+        full_system_prompt: str = None
     ) -> StructuredOutputResult:
         """尝试使用指定方法"""
         # plain 模式特殊处理（参数签名不同）
@@ -200,6 +203,18 @@ class StructuredOutputService:
                 success=False,
                 error=f"未知方法: {method}",
                 method=method
+            )
+
+        # json_parser 方法使用 full_system_prompt
+        if method == "json_parser":
+            return await method_map[method](
+                query=query,
+                tools=tools,
+                system_prompt=full_system_prompt or system_prompt,
+                session_id=session_id,
+                memory_rounds=memory_rounds,
+                tool_choice=tool_choice,
+                history_manager=self._history_manager
             )
 
         return await method_map[method](

@@ -17,6 +17,7 @@ from app.models.autofill import (
 )
 from app.schemas.fill_page import OutputTemplateItem, FieldGroupConfigCreate
 from app.services.autofill.field_spec_service import upsert_field_spec
+from app.services.autofill.constants import DEFAULT_PROMPT_TEMPLATE_BASE
 
 
 class FieldGroupService:
@@ -90,7 +91,7 @@ class FieldGroupService:
                 app_name=app_name,
                 tenant_id=tenant_id,
                 output_templates=formatted_templates,
-                prompt_template_base=prompt_template_base or ""
+                prompt_template_base=prompt_template_base or DEFAULT_PROMPT_TEMPLATE_BASE
             )
             field_group = await field_group_config_controller.create_field_group(obj_in=create_data)
         

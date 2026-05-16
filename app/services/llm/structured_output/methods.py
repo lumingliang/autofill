@@ -557,7 +557,7 @@ class StructuredOutputMethods:
         try:
             llm = self._create_llm()
 
-            # 使用第一个 tool 的 schema
+            # 使用第一个 tool 的 schema 构建 pydantic_model（后续解析需要）
             fc_schema = tools[0] if tools else {}
             pydantic_model = FCSchemaBuilder.build_pydantic_model_from_fc(fc_schema)
             logger.info(f"[method_pydantic_parser] pydantic_model schema: {pydantic_model.model_json_schema()}")
@@ -565,8 +565,8 @@ class StructuredOutputMethods:
 
             messages = []
             if system_prompt:
-                full_system_prompt = f"{system_prompt}\n\n{parser.get_format_instructions()}"
-                messages.append(SystemMessage(content=full_system_prompt))
+                # 如果传入了 system_prompt（已经是完整的 full_system_prompt），直接使用
+                messages.append(SystemMessage(content=system_prompt))
             else:
                 messages.append(SystemMessage(content=parser.get_format_instructions()))
 
@@ -642,16 +642,16 @@ class StructuredOutputMethods:
         try:
             llm = self._create_llm()
 
-            # 使用第一个 tool 的 schema
-            fc_schema = tools[0] if tools else {}
-            json_format_prompt = FCSchemaBuilder.build_json_prompt_from_fc(fc_schema)
             parser = JsonOutputParser()
 
             messages = []
             if system_prompt:
-                full_system_prompt = f"{system_prompt}\n\n{json_format_prompt}\n\n{parser.get_format_instructions()}"
-                messages.append(SystemMessage(content=full_system_prompt))
+                # 如果传入了 system_prompt（已经是完整的 full_system_prompt），直接使用
+                messages.append(SystemMessage(content=system_prompt))
             else:
+                # 只有在没有传入 system_prompt 时才构建 json_format_prompt
+                fc_schema = tools[0] if tools else {}
+                json_format_prompt = FCSchemaBuilder.build_json_prompt_from_fc(fc_schema)
                 messages.append(SystemMessage(content=f"{json_format_prompt}\n\n{parser.get_format_instructions()}"))
 
             if session_id and history_manager:

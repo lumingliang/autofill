@@ -231,3 +231,76 @@ python scripts/cleanup_and_recreate.py --skip-cleanup
 1. 编辑相应的CSV数据文件
 2. 如需修改字段创建逻辑，编辑对应的脚本
 3. 测试并验证结果
+
+
+## 测试命令
+
+### test_step_llm_fill.py - 分步LLM填单测试
+
+**功能**：测试基于session的分步填单流程，支持多种LLM调用方法。
+
+**基本用法**：
+```bash
+python data_import/scripts/test_step_llm_fill.py
+```
+
+**可用方法**（--method 参数）：
+
+```bash
+# 1. with_structured_output - LangChain 官方结构化输出
+python data_import/scripts/test_step_llm_fill.py --method with_structured_output
+
+# 2. bind_tools_non_stream - bind_tools + 非流式
+python data_import/scripts/test_step_llm_fill.py --method bind_tools_non_stream
+
+# 3. bind_tools_stream - bind_tools + 流式
+python data_import/scripts/test_step_llm_fill.py --method bind_tools_stream
+
+# 4. custom_fc_non_stream - 自定义 Function Calling + 非流式
+python data_import/scripts/test_step_llm_fill.py --method custom_fc_non_stream
+
+# 5. custom_fc_stream - 自定义 Function Calling + 流式
+python data_import/scripts/test_step_llm_fill.py --method custom_fc_stream
+
+# 6. pydantic_parser - PydanticOutputParser
+python data_import/scripts/test_step_llm_fill.py --method pydantic_parser
+
+# 7. json_parser - JsonOutputParser
+python data_import/scripts/test_step_llm_fill.py --method json_parser
+
+# 8. plain - 纯文本模式（不提取结构化数据）
+python data_import/scripts/test_step_llm_fill.py --method plain
+```
+
+**其他参数**：
+
+```bash
+# 指定测试场景（rescue/maintenance/quality/400）
+python data_import/scripts/test_step_llm_fill.py --scenario rescue
+
+# 指定 session_id
+python data_import/scripts/test_step_llm_fill.py --session-id my_session_001
+
+# 保存结果到文件
+python data_import/scripts/test_step_llm_fill.py --output result.json
+
+# 运行所有测试场景
+python data_import/scripts/test_step_llm_fill.py --test-all
+
+# 指定记忆轮数
+python data_import/scripts/test_step_llm_fill.py --memory-rounds 5
+
+# 指定API地址
+python data_import/scripts/test_step_llm_fill.py --base-url http://localhost:9999
+
+# 指定API Key
+python data_import/scripts/test_step_llm_fill.py --api-key your_api_key
+
+# 指定页面名称
+python data_import/scripts/test_step_llm_fill.py --page-name "话务工作台"
+```
+
+**注意事项**：
+- 超时时间已设置为1小时（3600秒），适用于长对话测试
+- 默认测试场景为道路救援（rescue）
+- 支持多轮对话记忆，可通过 `--memory-rounds` 指定保留轮数

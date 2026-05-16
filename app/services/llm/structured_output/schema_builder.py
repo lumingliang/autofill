@@ -205,6 +205,9 @@ class FCSchemaBuilder:
     def build_pydantic_model_from_fc(fc_schema: Dict[str, Any]) -> Type[BaseModel]:
         """
         FC Schema → 动态 Pydantic 模型
+
+        注意：所有字段都使用 Optional 类型，允许 LLM 返回 null 值
+        （表示无法从对话中提取该字段信息）
         """
         if not fc_schema:
             raise ValueError("fc_schema 不能为空")
@@ -212,32 +215,24 @@ class FCSchemaBuilder:
         func = fc_schema.get("function", {})
         params = func.get("parameters", {})
         properties = params.get("properties", {})
-        required = params.get("required", [])
 
         fields = {}
 
         for name, prop in properties.items():
             desc = prop.get("description", "")
             type_ = prop.get("type")
-            is_required = name in required
 
             if type_ == "string":
                 if "enum" in prop:
-                    # 单选 enum 类型
+                    # 单选 enum 类型 - 使用 Optional 允许 null
                     literal = Literal[tuple(prop["enum"])]
-                    if is_required:
-                        fields[name] = (literal, Field(..., description=desc))
-                    else:
-                        fields[name] = (Optional[literal], Field(default=None, description=desc))
+                    fields[name] = (Optional[literal], Field(default=None, description=desc))
                 else:
-                    # 文本
-                    if is_required:
-                        fields[name] = (str, Field(..., description=desc))
-                    else:
-                        fields[name] = (Optional[str], Field(default=None, description=desc))
+                    # 文本 - 使用 Optional[str] 允许 null
+                    fields[name] = (Optional[str], Field(default=None, description=desc))
 
             elif type_ == "array":
-                # 多选
+                # 多选 - 使用 Optional 允许 null
                 items = prop.get("items", {})
                 enum_vals = items.get("enum", [])
                 if enum_vals:
@@ -246,35 +241,20 @@ class FCSchemaBuilder:
                 else:
                     list_type = List[str]
 
-                if is_required:
-                    fields[name] = (list_type, Field(..., description=desc))
-                else:
-                    fields[name] = (Optional[list_type], Field(default=None, description=desc))
+                fields[name] = (Optional[list_type], Field(default=None, description=desc))
 
             elif type_ == "integer":
-                if is_required:
-                    fields[name] = (int, Field(..., description=desc))
-                else:
-                    fields[name] = (Optional[int], Field(default=None, description=desc))
+                fields[name] = (Optional[int], Field(default=None, description=desc))
 
             elif type_ == "number":
-                if is_required:
-                    fields[name] = (float, Field(..., description=desc))
-                else:
-                    fields[name] = (Optional[float], Field(default=None, description=desc))
+                fields[name] = (Optional[float], Field(default=None, description=desc))
 
             elif type_ == "boolean":
-                if is_required:
-                    fields[name] = (bool, Field(..., description=desc))
-                else:
-                    fields[name] = (Optional[bool], Field(default=None, description=desc))
+                fields[name] = (Optional[bool], Field(default=None, description=desc))
 
             else:
-                # 默认字符串
-                if is_required:
-                    fields[name] = (str, Field(..., description=desc))
-                else:
-                    fields[name] = (Optional[str], Field(default=None, description=desc))
+                # 默认字符串 - 使用 Optional 允许 null
+                fields[name] = (Optional[str], Field(default=None, description=desc))
 
         return create_model("DynamicFormModel", **fields)
 
