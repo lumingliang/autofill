@@ -86,7 +86,7 @@
         </a-form-item>
         <a-form-item label="Prompt模板" name="prompt_template_base">
           <a-textarea v-model:value="form.prompt_template_base"
-            placeholder="请输入Prompt基础模板，使用{{fields_instructions}}和{{query}}作为占位符" :rows="6" />
+            placeholder="请输入Prompt基础模板，使用{{fields_instructions}}作为占位符" :rows="6" />
         </a-form-item>
         <a-form-item label="输出模板" name="output_templates">
           <div class="output-templates-editor">
@@ -474,7 +474,7 @@ const handleAdd = () => {
   modalForm.group_code = ''
   modalForm.page_id = undefined
   modalForm.page_name = ''
-  modalForm.prompt_template_base = `你是一个智能填单助手。请根据以下对话内容，提取指定字段的信息。
+  modalForm.prompt_template_base = `你是一个智能填单助手。请根据输入内容，提取指定字段的信息。
 
 需要提取的字段：
 {{fields_instructions}}

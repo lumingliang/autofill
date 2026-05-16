@@ -161,13 +161,10 @@ class FieldGroupSchemaService:
             return {"fields": [], "merged_config": {}, "prompt_info": {}, "function_calling": {}}
         
         merged_config = FieldGroupSchemaService._merge_field_groups_config(field_groups)
-        template_base = merged_config.get("prompt_template_base") or """你是一个智能填单助手。请根据以下对话内容，提取指定字段的信息。
+        template_base = merged_config.get("prompt_template_base") or """你是一个智能填单助手。请根据输入内容，提取指定字段的信息。
 
 需要提取的字段：
 {{fields_instructions}}
-
-对话内容：
-{{query}}
 
 请严格按照字段要求提取信息，并以JSON格式返回结果。"""
         

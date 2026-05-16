@@ -130,7 +130,7 @@ class FieldGroupConfig(BaseModel, TimestampMixin):
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
     page_id = fields.BigIntField(default=0, description="关联页面ID", index=True)
     page_name = fields.CharField(max_length=64, default="", description="页面名称")
-    prompt_template_base = fields.TextField(default="", description="Prompt基础模板，包含{{fields_instructions}}和{{query}}占位符")
+    prompt_template_base = fields.TextField(default="", description="Prompt基础模板，包含{{fields_instructions}}占位符")
     output_templates = fields.JSONField(default=dict, description="多输出模板配置，如{key: {template, description}}")
     description = fields.TextField(default="", description="字段组描述")
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
