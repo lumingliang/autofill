@@ -80,9 +80,11 @@ class TestFillService:
             elapsed_time = time.time() - start_time
 
             # plain 模式返回的数据结构
-            assistant_content = result.get("raw_response", "")
+            # result 结构: {"success": ..., "data": {"raw_response": ..., "content": ...}, ...}
+            data = result.get("data", {})
+            assistant_content = data.get("raw_response", "")
             if not assistant_content:
-                assistant_content = result.get("content", "") or result.get("response", "") or str(result)
+                assistant_content = data.get("content", "") or data.get("response", "") or str(result)
 
             # 构建历史记录
             history = [

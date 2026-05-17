@@ -150,13 +150,13 @@
                         <div v-if="fillResult" class="fill-result">
                             <a-card title="填单结果" size="small">
                                 <a-descriptions :column="2" bordered size="small">
-                                    <a-descriptions-item label="Session ID">{{ fillResult.session_id
+                                    <a-descriptions-item label="Session ID">{{ fillResult.data?.session_id
                                     }}</a-descriptions-item>
-                                    <a-descriptions-item label="页面">{{ fillResult.page_name }}</a-descriptions-item>
+                                    <a-descriptions-item label="页面">{{ fillResult.data?.page_name }}</a-descriptions-item>
                                     <a-descriptions-item label="状态">
-                                        <a-tag color="green">{{ fillResult.status }}</a-tag>
+                                        <a-tag color="green">{{ fillResult.data?.status }}</a-tag>
                                     </a-descriptions-item>
-                                    <a-descriptions-item label="用时">{{ fillResult.elapsed_time?.toFixed(2)
+                                    <a-descriptions-item label="用时">{{ fillResult.data?.elapsed_time?.toFixed(2)
                                     }}s</a-descriptions-item>
                                 </a-descriptions>
 
@@ -353,13 +353,15 @@ const resultColumns = [
 ]
 
 const resultTableData = computed(() => {
-    if (!fillResult.value?.result) return []
+    // fillResult 结构: { code, msg, data: { result: {...} } }
+    const result = fillResult.value?.data?.result
+    if (!result) return []
 
-    return Object.entries(fillResult.value.result).map(([key, value]: [string, any]) => ({
+    return Object.entries(result).map(([key, value]: [string, any]) => ({
         field_name: key,
-        field_label: value?.field_label || key,
-        field_type: value?.field_type || 'text',
-        value: typeof value === 'object' ? JSON.stringify(value) : value
+        field_label: value?.label || value?.field_label || key,
+        field_type: value?.type || value?.field_type || 'text',
+        value: value?.value !== undefined ? value.value : (typeof value === 'object' ? JSON.stringify(value) : value)
     }))
 })
 
