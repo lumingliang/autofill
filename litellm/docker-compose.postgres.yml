@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库服务
+  postgres:
+    image: postgres:16-alpine
+    container_name: litellm-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      # PostgreSQL 配置
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm123456
+      - POSTGRES_DB=litellm
+      # 时区设置
+      - TZ=Asia/Shanghai
+      - PGTZ=Asia/Shanghai
+    volumes:
+      # 数据持久化
+      - postgres-data:/var/lib/postgresql/data
+      # 初始化脚本目录（可选）
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - litellm-network
+
+  # LiteLLM 网关服务 - 暂时注释掉，使用外部 litellm-gateway.sh 启动
+  # litellm:
+  #   image: ghcr.io/berriai/litellm:main-latest
+  #   container_name: litellm
+  #   ports:
+  #     - "4000:4000"
+  #   volumes:
+  #     - ./config.yaml:/app/config.yaml
+  #   environment:
+  #     # 配置文件路径
+  #     - CONFIG_FILE_PATH=/app/config.yaml
+  #     # LiteLLM 主密钥（用于管理接口）
+  #     - LITELLM_MASTER_KEY=sk-litellm-master-key
+  #     # PostgreSQL 数据库连接
+  #     - DATABASE_URL=postgresql://litellm:litellm123456@postgres:5432/litellm
+  #     # Redis 配置（使用项目现有的 Redis）
+  #     - REDIS_HOST=host.docker.internal
+  #     - REDIS_PORT=6379
+  #     - REDIS_PASSWORD=
+  #     # 日志级别
+  #     - LOG_LEVEL=INFO
+  #     # 启用数据库存储
+  #     - STORE_MODEL_IN_DB=true
+  #     - DATABASE_URL=postgresql://litellm:litellm123456@postgres:5432/litellm
+  #   command: >
+  #     --config /app/config.yaml
+  #     --port 4000
+  #     --host 0.0.0.0
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   networks:
+  #     - litellm-network
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  litellm-network:
+    driver: bridge
