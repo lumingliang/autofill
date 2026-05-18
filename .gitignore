@@ -31,3 +31,9 @@ autofill-archive/
 
 # Configuration files
 config.toml
+
+# Trae IDE
+.trae/
+
+# Temp directories
+llmtemp/

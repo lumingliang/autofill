@@ -14,6 +14,31 @@ class FieldGroupRequest(BasePublicRequest):
     field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
 
 
+# ==================== 响应模型 ====================
+
+class StepLLMFillResponseData(BaseModel):
+    """分步LLM填单响应数据"""
+    session_id: str = Field(..., description="会话ID")
+    step: int = Field(..., description="当前步骤序号")
+    is_last: bool = Field(..., description="是否为最后一步")
+    status: str = Field(..., description="处理状态：completed 或 processing")
+    page_name: Optional[str] = Field(default=None, description="页面名称")
+    group_names: List[str] = Field(default_factory=list, description="字段组名称列表")
+    elapsed_time: float = Field(..., description="处理耗时（秒）")
+    result: Optional[Dict[str, Any]] = Field(default=None, description="填单结果")
+    output_templates: Optional[Dict[str, Any]] = Field(default=None, description="输出模板结果")
+    merged_fields: Optional[Dict[str, Any]] = Field(default=None, description="合并后的字段结果（最后一步时返回）")
+    meta: Optional[Dict[str, Any]] = Field(default=None, description="LLM调用元数据")
+    debug: Optional[Dict[str, Any]] = Field(default=None, description="调试信息")
+
+
+class StepLLMFillResponse(BaseModel):
+    """分步LLM填单标准响应"""
+    code: int = Field(default=200, description="响应码")
+    msg: str = Field(default="OK", description="响应消息")
+    data: StepLLMFillResponseData = Field(..., description="响应数据")
+
+
 class LLMFillRequest(BasePublicRequest):
     """LLM填单请求"""
     page_name: str = Field(..., description="页面名称（必填）")

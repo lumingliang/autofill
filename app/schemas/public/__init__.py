@@ -11,6 +11,8 @@ from .field_group import (
     StepLLMFillResultRequest,
     ChatSessionRequest,
     TestFillRequest,
+    StepLLMFillResponse,
+    StepLLMFillResponseData,
 )
 from .schemas import (
     # 基础请求类
@@ -65,6 +67,8 @@ __all__ = [
     "LLMFillRequest",
     "OptimizeFieldInstructionRequest",
     "StepLLMFillRequest",
+    "StepLLMFillResponse",
+    "StepLLMFillResponseData",
     # 填单数据相关
     "RecordFillDataRequest",
     # 下拉选项相关

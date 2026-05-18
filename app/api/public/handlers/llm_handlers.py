@@ -19,6 +19,7 @@ from app.schemas.public import (
     OptimizeFieldInstructionRequest,
     StepLLMFillRequest,
     StepLLMFillResultRequest,
+    StepLLMFillResponse,
     ChatSessionRequest,
     TestFillRequest,
 )
@@ -451,37 +452,55 @@ async def _save_step_result(session_id: str, tenant_id: int, app_name: str, page
     )
 
 
-@router.post("/autofill/llm/fill/step", summary="分步LLM填单")
+@router.post(
+    "/autofill/llm/fill/step",
+    summary="分步LLM填单",
+    response_model=StepLLMFillResponse,
+)
 async def step_llm_fill(
-    request: Request,
+    request_data: StepLLMFillRequest,
     auth_info: dict = Depends(APIKeyAuth.authenticate)
 ):
-    """分步调用 LLM 填单，支持 session 管理和多轮数据存储"""
+    """分步调用 LLM 填单，支持 session 管理和多轮数据存储
+
+    - **session_id**: 会话ID，用于标识同一轮填单流程
+    - **page_name**: 页面名称
+    - **group_fields**: 字段组与字段的映射关系
+    - **query**: 用户输入的查询内容
+    - **method**: LLM调用方法（可选）
+    - **system_prompt**: 系统提示词（可选）
+    - **include_reason**: 是否返回字段填写理由（可选，默认false）
+    - **memory_rounds**: 保留历史消息的轮数（可选，默认0）
+    - **is_last**: 是否为最后一次调用（可选，默认false）
+    - **additional_data**: 附加数据（可选）
+    - **use_additional_data**: 是否使用附加数据（可选，默认false）
+    """
     import time
-    
-    params = await parse_request_params(request, StepLLMFillResultRequest)
-    
+
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
-    session_id = params.get("session_id")
-    is_last = params.get("is_last", False)
-    
+    session_id = request_data.session_id
+    is_last = request_data.is_last
+
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
-    
+
     session_info = await step_llm_fill_service.get_session_info(session_id)
     current_step = session_info["call_count"] + 1
-    
+
     logger.info(f"Step LLM fill: session_id={session_id}, step={current_step}, is_last={is_last}")
-    
+
     step_start_time = time.time()
+
+    # 将 Pydantic 模型转换为字典
+    params = request_data.model_dump()
 
     result_data, config, full_system_prompt, field_specs, unified_function_schema, query = \
         await _prepare_llm_fill_context(tenant_id, app_name, params)
 
-    method = params.get("method")
-    page_name = params.get("page_name")
-    group_fields = params.get("group_fields", {}) or {}
+    method = request_data.method
+    page_name = request_data.page_name
+    group_fields = request_data.group_fields or {}
 
     await step_llm_fill_service.save_step_request(
         session_id=session_id,
@@ -506,19 +525,19 @@ async def step_llm_fill(
             params=params,
             full_system_prompt=full_system_prompt
         )
-        
+
         processed_result = await _process_llm_result(
             llm_result=llm_result,
             field_specs=field_specs,
             result_data=result_data,
             params=params
         )
-        
+
         elapsed_time = time.time() - step_start_time
-        
+
         enriched_result = processed_result.get("result", {})
         output_templates = processed_result.get("output_templates", {})
-        
+
         await _save_step_result(
             session_id=session_id,
             tenant_id=tenant_id,
@@ -531,18 +550,18 @@ async def step_llm_fill(
             is_last=is_last,
             elapsed_time=elapsed_time
         )
-        
+
         response_data = {
             "session_id": session_id,
             "step": current_step,
             "is_last": is_last,
             "status": "completed" if is_last else "processing",
             "page_name": page_name,
-            "group_names": params.get("group_names", []),
+            "group_names": request_data.group_names or [],
             "elapsed_time": elapsed_time,
             **processed_result
         }
-        
+
         if is_last and method != "plain":
             final_result = await step_llm_fill_service.get_step_result(
                 session_id=session_id,
@@ -550,9 +569,9 @@ async def step_llm_fill(
                 app_name=app_name
             )
             response_data["merged_fields"] = final_result.get("merged_fields", {}) if final_result else {}
-        
+
         return Success(data=response_data)
-    
+
     except ValueError as e:
         logger.error(f"Step LLM fill validation error: {e}")
         await step_llm_fill_service.save_step_error(session_id=session_id, tenant_id=tenant_id, app_name=app_name, error_msg=str(e))
