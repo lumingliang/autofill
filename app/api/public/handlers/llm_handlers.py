@@ -28,8 +28,6 @@ from app.services.autofill.llm_handler_service import (
     field_group_schema_service,
 )
 from app.services.autofill.field_optimization_service import field_optimization_service
-from app.services.autofill.field_group_query_service import field_group_query_service
-from app.services.llm.llm_proxy_service import llm_proxy_service
 from app.services.autofill.step_llm_fill_service import step_llm_fill_service
 from app.services.autofill.test_fill_service import test_fill_service
 
@@ -234,118 +232,6 @@ async def get_field_groups_schema(
 
 # ==================== LLM 填单接口 ====================
 
-async def _prepare_llm_fill_context(tenant_id: int, app_name: str, params: dict) -> tuple:
-    """准备 LLM 填单的上下文数据"""
-    from app.services.llm.llm_config_service import llm_config_service
-    
-    group_fields = params.get("group_fields", {}) or {}
-    additional_data = params.get("additional_data", {}) or {}
-    use_additional_data = params.get("use_additional_data", False)
-    include_reason = params.get("include_reason", False)
-    
-    try:
-        result_data = await field_group_query_service.fetch_field_groups(
-            tenant_id=tenant_id,
-            app_name=app_name,
-            page_name=params.get("page_name"),
-            group_fields=group_fields,
-            additional_data=additional_data,
-            use_additional_data=use_additional_data,
-            include_reason=include_reason
-        )
-    except ValueError as e:
-        logger.warning(f"fetch_field_groups validation error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"fetch_field_groups error: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"获取字段配置失败: {str(e)}")
-    
-    unified_function_schema = result_data.get("unified_function_schema")
-    if not unified_function_schema:
-        raise HTTPException(status_code=404, detail="未找到有效的字段配置，请检查字段组是否存在且包含有效字段")
-    
-    query = params.get("query", "")
-    if not query:
-        raise HTTPException(status_code=400, detail="query is required")
-    
-    # 通过 service 层获取默认配置
-    config = await llm_config_service.get_default_config()
-    if not config:
-        raise HTTPException(status_code=500, detail="No LLM configuration found")
-
-    field_specs = result_data.get("all_field_specs", [])
-
-    from app.services.autofill.constants import DEFAULT_PROMPT_TEMPLATE_BASE
-    base_prompt = params.get("system_prompt") or result_data.get("combined_prompt") or DEFAULT_PROMPT_TEMPLATE_BASE
-
-    # 构建字段指令
-    from app.services.autofill.prompt_service import build_fields_instructions
-    if field_specs:
-        fields_instructions = build_fields_instructions(field_specs)
-    else:
-        fields_instructions = ""
-
-    # 拼接 field_instructions 到 system_prompt，生成 full_system_prompt
-    if "{fields_instructions}" in base_prompt:
-        full_system_prompt = base_prompt.replace("{fields_instructions}", fields_instructions)
-    else:
-        if fields_instructions:
-            full_system_prompt = f"{base_prompt}\n\n{fields_instructions}"
-        else:
-            full_system_prompt = base_prompt
-
-    return result_data, config, full_system_prompt, field_specs, unified_function_schema, query
-
-
-async def _execute_llm_fill(query: str, system_prompt: str, unified_function_schema: dict, config, field_specs: list, params: dict, full_system_prompt: str = None) -> dict:
-    """执行 LLM 填单调用"""
-    method = params.get("method")
-    include_reason = params.get("include_reason", False)
-    memory_rounds = params.get("memory_rounds", 0)
-    session_id = params.get("session_id")
-
-    # plain 方法不需要 tools
-    tools = [unified_function_schema] if method != "plain" and unified_function_schema else None
-
-    return await llm_proxy_service.process_request(
-        query=query,
-        tools=tools,
-        system_prompt=system_prompt,
-        tool_choice="auto",
-        config=config,
-        method=method,
-        memory_rounds=memory_rounds,
-        session_id=session_id,
-        full_system_prompt=full_system_prompt
-    )
-
-
-async def _process_llm_result(llm_result: dict, field_specs: list, result_data: dict, params: dict) -> dict:
-    """处理 LLM 结果"""
-    method = params.get("method")
-    
-    if method == "plain":
-        return {"result": llm_result, "method": "plain", "_meta": llm_result.get("_meta", {})}
-    
-    # 从 llm_result['data'] 获取提取的数据（llm_proxy_service.process_request 的返回格式）
-    extracted_data = llm_result.get("data", {}) or {}
-    
-    additional_data = params.get("additional_data", {}) or {}
-    use_additional_data = params.get("use_additional_data", False)
-    if use_additional_data and additional_data:
-        extracted_data = {**extracted_data, **additional_data}
-    
-    enriched_result = _enrich_extracted_data(extracted_data, field_specs)
-    field_groups = result_data.get("field_groups", [])
-    output_templates_result = _process_output_templates(field_groups, enriched_result)
-    
-    return {
-        "result": enriched_result,
-        "output_templates": output_templates_result,
-        "_meta": llm_result.get("_meta", {})
-    }
-
-
 @router.post("/autofill/llm/fill", summary="直接LLM填单")
 async def llm_fill(
     request: Request,
@@ -353,49 +239,46 @@ async def llm_fill(
 ):
     """直接调用 LLM 填单，返回 JSON 结果"""
     params = await parse_request_params(request, LLMFillRequest)
-    
+
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
-    
-    result_data, config, full_system_prompt, field_specs, unified_function_schema, query = \
-        await _prepare_llm_fill_context(tenant_id, app_name, params)
 
     try:
-        llm_result = await _execute_llm_fill(
-            query=query,
-            system_prompt=full_system_prompt,
-            unified_function_schema=unified_function_schema,
-            config=config,
-            field_specs=field_specs,
-            params=params,
-            full_system_prompt=full_system_prompt
+        # 调用 service 层方法（复用核心逻辑）
+        result = await step_llm_fill_service.execute_llm_fill(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            page_name=params.get("page_name"),
+            group_fields=params.get("group_fields", {}),
+            query=params.get("query", ""),
+            method=params.get("method"),
+            system_prompt=params.get("system_prompt"),
+            additional_data=params.get("additional_data"),
+            use_additional_data=params.get("use_additional_data", False),
+            include_reason=params.get("include_reason", False),
+            memory_rounds=params.get("memory_rounds", 0)
         )
-        
-        processed_result = await _process_llm_result(
-            llm_result=llm_result,
-            field_specs=field_specs,
-            result_data=result_data,
-            params=params
-        )
-        
+
         response_data = {
-            "page_name": params.get("page_name"),
+            "page_name": result.get("page_name"),
             "group_names": params.get("group_names", []),
-            **processed_result
+            "result": result.get("result", {}),
+            "output_templates": result.get("output_templates", {}),
+            "_meta": result.get("_meta", {})
         }
-        
-        if processed_result.get("method") == "plain":
-            response_data["_debug"] = {"system_prompt": system_prompt, "query": query}
+
+        if result.get("method") == "plain":
+            response_data["_debug"] = {"system_prompt": result.get("full_system_prompt"), "query": params.get("query", "")}
         else:
             response_data["_debug"] = {
-                "system_prompt": system_prompt,
-                "tools": [unified_function_schema],
+                "system_prompt": result.get("full_system_prompt"),
+                "tools": [result.get("unified_function_schema")],
                 "tool_choice": {"type": "function", "function": {"name": "fill_form"}},
-                "query": query
+                "query": params.get("query", "")
             }
-        
+
         return Success(data=response_data)
-    
+
     except ValueError as e:
         logger.error(f"LLM fill validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -405,52 +288,6 @@ async def llm_fill(
 
 
 # ==================== 分步 LLM 填单接口 ====================
-
-async def _save_step_result(session_id: str, tenant_id: int, app_name: str, page_name: str, params: dict, llm_result: dict, enriched_result: dict, output_templates: dict, is_last: bool, elapsed_time: float = 0.0):
-    """保存步骤结果"""
-    method = params.get("method")
-    group_fields = params.get("group_fields", {}) or {}
-    query = params.get("query", "")
-    
-    llm_meta = llm_result.get("_meta", {})
-    
-    step_result = {
-        "request": {
-            "page_name": page_name,
-            "group_fields": group_fields,
-            "query": query,
-            "method": method
-        },
-        "response": {
-            "fields": list(enriched_result.keys()) if enriched_result else [],
-            "fields_count": len(enriched_result) if enriched_result else 0
-        },
-        "raw_result": enriched_result if method != "plain" else llm_result,
-        "extracted_fields": {k: _extract_field_value(v) for k, v in enriched_result.items()},
-        "timing": {
-            "elapsed_time": elapsed_time,
-            "llm_elapsed_time": llm_meta.get("elapsed_time"),
-            "total_tokens": llm_meta.get("total_tokens"),
-            "prompt_tokens": llm_meta.get("prompt_tokens"),
-            "completion_tokens": llm_meta.get("completion_tokens")
-        }
-    }
-    
-    await step_llm_fill_service.save_step_result(
-        session_id=session_id,
-        tenant_id=tenant_id,
-        app_name=app_name,
-        page_name=page_name,
-        step_result=step_result,
-        is_last=is_last
-    )
-    
-    await step_llm_fill_service.update_session_info(
-        session_id=session_id,
-        step_data={"method": method, "fields_count": len(enriched_result) if enriched_result else 0, "elapsed_time": elapsed_time},
-        is_last=is_last
-    )
-
 
 @router.post(
     "/autofill/llm/fill/step",
@@ -475,8 +312,6 @@ async def step_llm_fill(
     - **additional_data**: 附加数据（可选）
     - **use_additional_data**: 是否使用附加数据（可选，默认false）
     """
-    import time
-
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
     session_id = request_data.session_id
@@ -490,78 +325,37 @@ async def step_llm_fill(
 
     logger.info(f"Step LLM fill: session_id={session_id}, step={current_step}, is_last={is_last}")
 
-    step_start_time = time.time()
-
-    # 将 Pydantic 模型转换为字典
-    params = request_data.model_dump()
-
-    result_data, config, full_system_prompt, field_specs, unified_function_schema, query = \
-        await _prepare_llm_fill_context(tenant_id, app_name, params)
-
-    method = request_data.method
-    page_name = request_data.page_name
-    group_fields = request_data.group_fields or {}
-
-    await step_llm_fill_service.save_step_request(
-        session_id=session_id,
-        tenant_id=tenant_id,
-        app_name=app_name,
-        page_name=page_name,
-        request_data={
-            "page_name": page_name,
-            "group_fields": group_fields,
-            "query": query,
-            "method": method
-        }
-    )
-
     try:
-        llm_result = await _execute_llm_fill(
-            query=query,
-            system_prompt=full_system_prompt,
-            unified_function_schema=unified_function_schema,
-            config=config,
-            field_specs=field_specs,
-            params=params,
-            full_system_prompt=full_system_prompt
-        )
-
-        processed_result = await _process_llm_result(
-            llm_result=llm_result,
-            field_specs=field_specs,
-            result_data=result_data,
-            params=params
-        )
-
-        elapsed_time = time.time() - step_start_time
-
-        enriched_result = processed_result.get("result", {})
-        output_templates = processed_result.get("output_templates", {})
-
-        await _save_step_result(
-            session_id=session_id,
+        # 调用 service 层方法（复用核心逻辑）
+        result = await step_llm_fill_service.execute_llm_fill_step(
             tenant_id=tenant_id,
             app_name=app_name,
-            page_name=page_name,
-            params=params,
-            llm_result=llm_result,
-            enriched_result=enriched_result if method != "plain" else {},
-            output_templates=output_templates if method != "plain" else {},
+            page_name=request_data.page_name,
+            session_id=session_id,
+            group_fields=request_data.group_fields or {},
+            query=request_data.query,
             is_last=is_last,
-            elapsed_time=elapsed_time
+            method=request_data.method,
+            system_prompt=request_data.system_prompt,
+            additional_data=request_data.additional_data,
+            use_additional_data=request_data.use_additional_data,
+            include_reason=request_data.include_reason,
+            memory_rounds=request_data.memory_rounds
         )
 
+        # 组装响应数据
         response_data = {
             "session_id": session_id,
             "step": current_step,
             "is_last": is_last,
             "status": "completed" if is_last else "processing",
-            "page_name": page_name,
-            "elapsed_time": elapsed_time,
-            **processed_result
+            "page_name": request_data.page_name,
+            "elapsed_time": result.get("elapsed_time", 0),
+            "result": result.get("result", {}),
+            "output_templates": result.get("output_templates", {})
         }
 
-        if is_last and method != "plain":
+        if is_last and request_data.method != "plain":
             final_result = await step_llm_fill_service.get_step_result(
                 session_id=session_id,
                 tenant_id=tenant_id,

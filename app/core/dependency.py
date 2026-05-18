@@ -163,9 +163,7 @@ class TenantControl:
                 return False, "超级管理员必须指定租户ID", 0
             return True, "", requested_tenant_id
         else:
-            # 普通用户只能使用当前租户
-            if requested_tenant_id > 0:
-                return False, "只有超级管理员才能指定租户ID", 0
+            # 普通用户：忽略传入的tenant_id，自动使用当前租户
             effective_tenant_id = getattr(user, "current_tenant_id", 0)
             if effective_tenant_id <= 0:
                 return False, "您当前未选择租户，无法执行此操作", 0

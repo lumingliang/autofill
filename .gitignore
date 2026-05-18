@@ -28,6 +28,7 @@ node_modules/
 
 # Archive directory
 autofill-archive/
+docs/
 
 # Configuration files
 config.toml
