@@ -551,16 +551,12 @@ async def step_llm_fill(
             elapsed_time=elapsed_time
         )
 
-        # 从group_fields获取字段组名称列表
-        group_names = list(group_fields.keys()) if group_fields else []
-
         response_data = {
             "session_id": session_id,
             "step": current_step,
             "is_last": is_last,
             "status": "completed" if is_last else "processing",
             "page_name": page_name,
-            "group_names": group_names,
             "elapsed_time": elapsed_time,
             **processed_result
         }

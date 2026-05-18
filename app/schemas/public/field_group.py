@@ -23,7 +23,6 @@ class StepLLMFillResponseData(BaseModel):
     is_last: bool = Field(..., description="是否为最后一步")
     status: str = Field(..., description="处理状态：completed 或 processing")
     page_name: Optional[str] = Field(default=None, description="页面名称")
-    group_names: List[str] = Field(default_factory=list, description="字段组名称列表")
     elapsed_time: float = Field(..., description="处理耗时（秒）")
     result: Optional[Dict[str, Any]] = Field(default=None, description="填单结果")
     output_templates: Optional[Dict[str, Any]] = Field(default=None, description="输出模板结果")
