@@ -20,7 +20,7 @@ class SummaryFeedbackRequest(BaseModel):
     order_id: str = Field(..., description="工单ID（唯一标识）")
     brand: str = Field(..., description="品牌")
     feedback_content: str = Field(..., description="反馈内容（需要总结的文本）")
-    callback: str = Field(..., description="回调信息")
+    callback: str = Field(default="", description="回调信息")
 
 
 def _extract_field_value(field_data: Any) -> str:

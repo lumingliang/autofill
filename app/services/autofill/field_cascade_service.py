@@ -31,8 +31,6 @@ class FieldCascadeService:
 
     async def create_cascade_config(
         self,
-        tenant_id: int,
-        app_name: str,
         parent_field_id: int,
         parent_field_group_id: int,
         field_name_pattern: str = "parent.$.data[*].label + -的二三级",
@@ -49,6 +47,10 @@ class FieldCascadeService:
             raise ValueError("父字段不存在")
         if not parent_group:
             raise ValueError("父字段组不存在")
+
+        # 使用父字段的 tenant_id 和 app_name
+        actual_tenant_id = parent_field.tenant_id
+        actual_app_name = parent_field.app_name
 
         api_method = "GET"
         api_url = ""
@@ -79,8 +81,8 @@ class FieldCascadeService:
                 logger.warning(f"解析 api_schema 失败: {e}")
 
         config = await FieldCascadeConfig.create(
-            tenant_id=tenant_id,
-            app_name=app_name,
+            tenant_id=actual_tenant_id,
+            app_name=actual_app_name,
             parent_field_id=parent_field_id,
             parent_field_name=parent_field.field_name,
             parent_field_group_id=parent_field_group_id,
@@ -170,6 +172,10 @@ class FieldCascadeService:
                     os.unlink(temp_path)
             except Exception as e:
                 logger.warning(f"解析 api_schema 失败: {e}")
+
+        # 不更新 tenant_id 和 app_name
+        kwargs.pop("tenant_id", None)
+        kwargs.pop("app_name", None)
 
         for key, value in kwargs.items():
             if hasattr(config, key):

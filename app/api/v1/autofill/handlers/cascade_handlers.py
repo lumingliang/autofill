@@ -16,13 +16,9 @@ router = APIRouter()
 @router.post("/cascade/config/create", summary="创建级联配置")
 async def create_cascade_config(data: dict, token: str = Header(...)) -> Success:
     user = await AuthControl.is_authed(token)
-    # 超管使用前端传的tenant_id，普通用户使用ctx的tenant_id
-    tenant_id = TenantContext.get_tenant_id(data.get("tenant_id", 0))
 
     try:
         result = await field_cascade_service.create_cascade_config(
-            tenant_id=tenant_id,
-            app_name=data.get("app_name", "autofill"),
             parent_field_id=data.get("parent_field_id"),
             parent_field_group_id=data.get("parent_field_group_id"),
             field_name_pattern=data.get("field_name_pattern", "parent.$.data[*].label + -的二三级"),

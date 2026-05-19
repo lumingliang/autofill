@@ -1369,8 +1369,6 @@ const handleSaveCascadeConfig = async () => {
     const res: any = await apiFunc({
       ...cascadeConfig,
       api_schema: finalSchema,
-      // 传递租户ID，超管使用modalForm中的tenant_id，普通用户使用后端ctx的
-      tenant_id: modalForm.tenant_id,
     })
     if (res.code === 200) {
       message.success('保存成功')
