@@ -83,9 +83,7 @@ async def summary_feedback(
             field_data = enriched_result["feedback_content_summary"]
             summary = _extract_field_value(field_data)
 
-        # 限制20字以内
-        if len(summary) > 20:
-            summary = summary[:20]
+
 
         logger.info(f"Summary feedback result: order_id={request.order_id}, summary={summary}")
 

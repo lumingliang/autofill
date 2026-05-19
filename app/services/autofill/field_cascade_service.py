@@ -107,14 +107,15 @@ class FieldCascadeService:
 
     async def get_cascade_configs(
         self,
-        tenant_id: int,
-        app_name: str,
-        parent_field_id: Optional[int] = None
+        parent_field_id: int
     ) -> List[Dict[str, Any]]:
-        query = Q(tenant_id=tenant_id, app_name=app_name, is_active=True)
+        # 从父字段获取 tenant_id 和 app_name
+        parent_field = await FieldSpec.filter(id=parent_field_id).first()
+        if not parent_field:
+            raise ValueError("父字段不存在")
 
-        if parent_field_id:
-            query &= Q(parent_field_id=parent_field_id)
+        query = Q(tenant_id=parent_field.tenant_id, app_name=parent_field.app_name, is_active=True)
+        query &= Q(parent_field_id=parent_field_id)
 
         configs = await FieldCascadeConfig.filter(query).all()
 
@@ -192,10 +193,9 @@ class FieldCascadeService:
 
     async def delete_cascade_config(
         self,
-        config_id: int,
-        tenant_id: int
+        config_id: int
     ) -> Dict[str, Any]:
-        config = await FieldCascadeConfig.filter(id=config_id, tenant_id=tenant_id).first()
+        config = await FieldCascadeConfig.filter(id=config_id, is_active=True).first()
         if not config:
             raise ValueError("级联配置不存在")
 
@@ -211,10 +211,9 @@ class FieldCascadeService:
 
     async def sync_cascade_fields(
         self,
-        config_id: int,
-        tenant_id: int
+        config_id: int
     ) -> Dict[str, Any]:
-        config = await FieldCascadeConfig.filter(id=config_id, tenant_id=tenant_id).first()
+        config = await FieldCascadeConfig.filter(id=config_id, is_active=True).first()
 
         if not config:
             raise ValueError("级联配置不存在")
@@ -593,15 +592,13 @@ class FieldCascadeService:
 
     async def get_cascade_data(
         self,
-        config_id: int,
-        tenant_id: int
+        config_id: int
     ) -> List[Dict[str, Any]]:
-        config = await FieldCascadeConfig.filter(id=config_id, tenant_id=tenant_id, is_active=True).first()
+        config = await FieldCascadeConfig.filter(id=config_id, is_active=True).first()
         if not config:
             return []
 
         data_records = await FieldCascadeData.filter(
-            tenant_id=tenant_id,
             cascade_config_id=config_id
         ).order_by("parent_value").all()
 
