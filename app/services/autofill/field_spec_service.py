@@ -122,6 +122,9 @@ async def upsert_field_spec(
         options_data['api_schema'] = options['api_schema']
     if 'api_headers' in options:
         options_data['api_headers'] = options['api_headers']
+    # 保留parse_prompt（如果存在）
+    if 'parse_prompt' in options:
+        options_data['parse_prompt'] = options['parse_prompt']
     
     if field_spec:
         # 字段已存在，使用merge模式处理选项

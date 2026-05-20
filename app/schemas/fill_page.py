@@ -134,6 +134,8 @@ class FieldOptions(BaseModel):
     api_headers: List[ApiHeaderItem] = Field(default_factory=list, description="API请求Header配置列表")
     api_params: List[ApiParamItem] = Field(default_factory=list, description="API请求静态参数配置列表（如app_name、class_name、parent_id等）")
     api_schema: str = Field(default="", description="OpenAPI/Swagger Schema配置（YAML格式）")
+    # 模板解析提示词配置
+    parse_prompt: str = Field(default="", description="自定义模板解析提示词（可选，留空使用默认提示词）")
 
 
 class FieldSpecCreate(BaseModel):
@@ -181,6 +183,49 @@ class FieldSpecOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ==================== 模板类型字段 Schemas ====================
+
+class TemplateConfig(BaseModel):
+    """模板类型配置"""
+    curl_command: str = Field(..., description="CURL命令")
+    template_name_path: str = Field(..., description="模板名称字段JSONPath")
+    template_content_path: str = Field(..., description="模板内容字段JSONPath")
+    group_name_pattern: str = Field(
+        default="parent.$.data[*].template_name + 的服务记录",
+        description="字段组名称生成规则"
+    )
+    parse_prompt: str = Field(
+        default="",
+        description="模板解析Prompt"
+    )
+
+
+class SyncTemplateFieldRequest(BaseModel):
+    """同步模板类型字段请求"""
+    field_spec_id: int = Field(..., description="字段ID")
+
+
+class SyncTemplateFieldResponse(BaseModel):
+    """同步模板类型字段响应"""
+    sync_record_id: int = Field(..., description="同步记录ID")
+    status: str = Field(..., description="同步状态")
+    message: str = Field(..., description="提示信息")
+
+
+class FieldSpecSyncStatusResponse(BaseModel):
+    """字段同步状态查询响应"""
+    sync_record_id: int
+    field_spec_id: int
+    status: str
+    total_count: int
+    success_count: int
+    failed_count: int
+    error_msg: str
+    details: Dict
+    created_at: str
+    updated_at: str
 
 
 # ==================== 公开接口请求 Schemas ====================
@@ -259,6 +304,36 @@ class ApplyFieldMappingRequest(BaseModel):
 
 class CurlParseResponse(BaseModel):
     """CURL 解析响应"""
+    openapi_schema: str = Field("", description="生成的 OpenAPI Schema (YAML 格式)")
+    response_preview: Dict = Field(default_factory=dict, description="API 响应数据预览")
+    message: str = Field("", description="处理结果消息")
+
+
+# ==================== 模板类型 CURL 导入 Schemas ====================
+
+class TemplateCurlParseRequest(BaseModel):
+    """模板类型 CURL 解析请求"""
+    curl_command: str = Field(..., description="curl 命令字符串")
+    template_name_path: str = Field("$.data[*].name", description="模板名称字段的 JSONPath")
+    template_content_path: str = Field("$.data[*].template_content", description="模板内容字段的 JSONPath")
+
+
+class TemplateFieldMapping(BaseModel):
+    """模板字段映射配置"""
+    template_name_path: str = Field("$.data[*].name", description="模板名称字段的 JSONPath")
+    template_content_path: str = Field("$.data[*].template_content", description="模板内容字段的 JSONPath")
+    group_name_pattern: str = Field("{template_name} 服务记录", description="字段组名称生成规则，支持 {template_name} 占位符")
+    parse_prompt: str = Field("", description="模板解析Prompt")
+
+
+class TemplateCurlApplyRequest(BaseModel):
+    """模板类型 CURL 应用字段映射请求"""
+    openapi_schema: str = Field(..., description="OpenAPI Schema YAML 字符串")
+    field_mapping: TemplateFieldMapping = Field(..., description="字段映射配置")
+
+
+class TemplateCurlParseResponse(BaseModel):
+    """模板类型 CURL 解析响应"""
     openapi_schema: str = Field("", description="生成的 OpenAPI Schema (YAML 格式)")
     response_preview: Dict = Field(default_factory=dict, description="API 响应数据预览")
     message: str = Field("", description="处理结果消息")

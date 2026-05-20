@@ -88,10 +88,11 @@ class FillDataRecord(BaseModel, TimestampMixin):
 # ==================== 新增模型 ====================
 
 class FieldType(str, Enum):
-    """字段类型枚举 - 文本输入、下拉单选、下拉多选"""
+    """字段类型枚举 - 文本输入、下拉单选、下拉多选、模板类型"""
     TEXT = "text"           # 文本输入
     SELECT_SINGLE = "select_single"   # 下拉单选
     SELECT_MULTI = "select_multi"     # 下拉多选
+    TEMPLATE = "template"   # 模板类型（新增）
 
 
 class FillPage(BaseModel, TimestampMixin):
@@ -240,3 +241,29 @@ class FieldCascadeData(BaseModel, TimestampMixin):
 
     class Meta:
         table = "field_cascade_data"
+
+
+class FieldSpecSyncRecord(BaseModel, TimestampMixin):
+    """字段同步记录表（用于模板类型字段的同步）"""
+    field_spec_id = fields.BigIntField(default=0, description="字段ID", index=True)
+
+    # 同步状态: pending/processing/completed/failed
+    status = fields.CharField(max_length=32, default="pending", description="同步状态", index=True)
+
+    # 同步结果统计
+    total_count = fields.IntField(default=0, description="模板总数")
+    success_count = fields.IntField(default=0, description="成功数")
+    failed_count = fields.IntField(default=0, description="失败数")
+
+    # 错误信息
+    error_msg = fields.TextField(default="", description="错误信息")
+
+    # 详细结果
+    details = fields.JSONField(default=dict, description="同步详情")
+
+    # 关联信息
+    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
+    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
+
+    class Meta:
+        table = "field_spec_sync_record"

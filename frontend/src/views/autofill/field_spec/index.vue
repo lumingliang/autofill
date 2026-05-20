@@ -111,11 +111,87 @@
             <a-radio value="text">文本输入</a-radio>
             <a-radio value="select_single">下拉单选</a-radio>
             <a-radio value="select_multi">下拉多选</a-radio>
+            <a-radio value="template">模板类型</a-radio>
           </a-radio-group>
         </a-form-item>
         <a-form-item label="填写指引" name="fill_instruction">
           <a-textarea v-model:value="form.fill_instruction" placeholder="请输入字段填写指引，用于生成LLM描述" :rows="3" />
         </a-form-item>
+
+        <!-- 模板类型配置 -->
+        <template v-if="form.field_type === 'template'">
+          <a-divider orientation="left">模板配置</a-divider>
+
+          <!-- API配置 -->
+          <a-divider orientation="left">API配置</a-divider>
+
+          <!-- Header配置 -->
+          <a-form-item label="请求Header">
+            <div v-for="(header, index) in form.options.api_headers" :key="index" class="header-item">
+              <a-space>
+                <a-input v-model:value="header.key" placeholder="Header键" style="width: 150px" />
+                <a-input v-model:value="header.value" placeholder="Header值" style="width: 250px" />
+                <a-button type="link" danger @click="removeApiHeader(index)">
+                  <DeleteOutlined />
+                </a-button>
+              </a-space>
+            </div>
+            <a-button type="dashed" block @click="addApiHeader">
+              <PlusOutlined />
+              添加Header
+            </a-button>
+          </a-form-item>
+
+          <!-- Schema配置 -->
+          <a-form-item label="模板API Schema">
+            <a-textarea v-model:value="form.options.api_schema"
+              placeholder="请输入模板API配置（YAML格式）&#10;&#10;支持以下扩展字段：&#10;1. x-api-params: 配置静态请求参数&#10;2. x-template-mapping: 配置模板字段映射（JSONPath语法）&#10;&#10;示例：&#10;paths:&#10;  /api/template/list:&#10;    get:&#10;      x-api-params:&#10;        headers:&#10;          Authorization: Bearer xxx&#10;      x-template-mapping:&#10;        template_name_path: '$.data[*].name'&#10;        template_content_path: '$.data[*].template_content'&#10;        group_name_pattern: '$.name + 服务记录'&#10;&#10;字段映射语法说明：&#10;  $.data[*].name              -> 从data数组中提取name字段作为模板名称&#10;  $.data[*].template_content  -> 从data数组中提取template_content字段作为模板内容&#10;  $.name + 服务记录          -> 字段组名称生成规则，使用JSONPath提取名称并拼接后缀"
+              :rows="20" />
+          </a-form-item>
+
+          <!-- 解析提示词配置 -->
+          <a-form-item label="解析提示词">
+            <a-textarea v-model:value="form.options.parse_prompt"
+              placeholder="请输入自定义的模板解析提示词（可选）&#10;&#10;留空将使用系统默认提示词。&#10;&#10;提示词中需要包含 {template_content} 占位符，系统会将模板内容替换到该位置。&#10;&#10;示例：&#10;你是一个专业的模板解析助手。请分析以下模板内容，提取关键信息字段。&#10;&#10;## 输入模板内容&#10;{template_content}&#10;&#10;## 解析要求&#10;1. 分析模板内容，识别所有需要填写的关键信息点&#10;2. 为每个关键信息提取字段..."
+              :rows="15" />
+            <a-typography-text type="secondary">
+              自定义提示词将优先于默认提示词使用，用于控制LLM如何解析模板内容
+            </a-typography-text>
+          </a-form-item>
+
+          <!-- 导入按钮 -->
+          <a-form-item>
+            <a-space>
+              <a-button type="primary" :loading="syncLoading" @click="handleSyncTemplate">
+                <SyncOutlined />
+                同步模板
+              </a-button>
+              <a-button @click="showTemplateCurlModal">
+                <CodeOutlined />
+                从 curl 导入
+              </a-button>
+              <a-button v-if="form.id" @click="handleViewSyncStatus">
+                <EyeOutlined />
+                查看同步状态
+              </a-button>
+            </a-space>
+            <a-typography-text type="secondary" style="margin-left: 8px">
+              根据Schema配置从API同步模板并生成字段组
+            </a-typography-text>
+          </a-form-item>
+
+          <!-- 同步状态显示 -->
+          <a-form-item v-if="syncStatusInfo.status">
+            <a-alert :message="`同步状态: ${getSyncStatusText(syncStatusInfo.status)}`"
+              :description="syncStatusInfo.message || syncStatusInfo.error_msg"
+              :type="getSyncStatusType(syncStatusInfo.status)" show-icon />
+            <div v-if="syncStatusInfo.details && syncStatusInfo.details.length > 0" style="margin-top: 8px;">
+              <a-typography-text type="secondary">
+                成功: {{ syncStatusInfo.success_count }} / {{ syncStatusInfo.total_count }}
+              </a-typography-text>
+            </div>
+          </a-form-item>
+        </template>
 
         <!-- 下拉单选/多选类型选项配置 -->
         <template v-if="form.field_type === 'select_single' || form.field_type === 'select_multi'">
@@ -466,6 +542,48 @@
         </template>
       </a-form>
     </a-modal>
+
+    <!-- 模板类型 curl 解析弹窗 - 第一步：输入 curl 命令 -->
+    <a-modal v-model:open="templateCurlModalVisible" title="从 curl 命令导入模板 API Schema"
+      :confirm-loading="templateCurlModalLoading" @ok="handleParseTemplateCurlStep1"
+      @cancel="handleCancelTemplateCurlModal" width="700px">
+      <a-form layout="vertical">
+        <a-form-item label="curl 命令" required>
+          <a-textarea v-model:value="templateCurlForm.curl_command"
+            placeholder="请输入 curl 命令，例如：&#10;curl -X GET 'http://localhost:3200/api/v1/autofill/template/list' \&#10;  -H 'Authorization: Bearer your_token' \&#10;  -H 'Content-Type: application/json'"
+            :rows="8" />
+        </a-form-item>
+        <a-form-item label="模板名称字段 JSONPath">
+          <a-input v-model:value="templateCurlForm.template_name_path" placeholder="$.items[*].name" />
+        </a-form-item>
+        <a-form-item label="模板内容字段 JSONPath">
+          <a-input v-model:value="templateCurlForm.template_content_path" placeholder="$.items[*].template_content" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <!-- 模板类型 curl 解析弹窗 - 第二步：配置字段映射 -->
+    <a-modal v-model:open="templateCurlConfigModalVisible" title="配置模板字段映射"
+      :confirm-loading="templateCurlConfigModalLoading" @ok="handleParseTemplateCurlStep2"
+      @cancel="handleCancelTemplateCurlConfigModal" width="800px">
+      <a-form layout="vertical">
+        <a-form-item label="模板名称字段 JSONPath">
+          <a-input v-model:value="templateCurlForm.template_name_path" placeholder="$.data[*].name" />
+        </a-form-item>
+        <a-form-item label="模板内容字段 JSONPath">
+          <a-input v-model:value="templateCurlForm.template_content_path" placeholder="$.data[*].template_content" />
+        </a-form-item>
+        <a-form-item label="字段组名称规则">
+          <a-input v-model:value="templateCurlForm.group_name_pattern" placeholder="$.data[*].name + 的服务记录" />
+          <a-typography-text type="secondary">
+            格式：$.data[*].name + 的服务记录，+ 前为JSONPath表达式，+ 后为固定后缀
+          </a-typography-text>
+        </a-form-item>
+        <a-form-item label="模板解析 Prompt">
+          <a-textarea v-model:value="templateCurlForm.parse_prompt" placeholder="请输入用于解析模板内容的 Prompt" :rows="6" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -478,6 +596,56 @@ import { CodeOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutli
 import { message } from 'ant-design-vue'
 import * as yaml from 'js-yaml'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+
+// 默认模板解析提示词
+const DEFAULT_PARSE_PROMPT = `你是一个专业的模板解析助手。请分析以下模板内容，提取关键信息字段。
+
+## 输入模板内容
+{template_content}
+
+## 解析要求
+1. 分析模板内容，识别所有需要填写的关键信息点
+2. 为每个关键信息提取字段：
+   - field_name: 字段英文名（小写，下划线连接，如：customer_name）
+   - field_label: 字段中文标签（清晰易懂的中文名称）
+   - field_type: 字段类型（默认为 "text"）
+   - fill_instruction: 填写指引（必须包含以下所有约束信息，从模板中提取）
+3. 字段类型说明：
+   - 所有字段默认使用 "text" 类型
+   - 只有在模板中明确说明是选择类型（如是/否、多选等）时才使用 "select_single" 或 "select_multi"
+
+## fill_instruction 填写指引提取规范
+fill_instruction 必须整合模板中该字段的所有约束信息，包括但不限于：
+1. **字段含义**：该字段代表什么业务含义
+2. **填写格式**：如日期格式(YYYY-MM-DD)、手机号格式(11位)、身份证号格式(18位)等
+3. **数据类型**：如字符串、数字、日期、布尔值等
+4. **可选范围**：如是/否选项、特定枚举值（如：高中低、优良好差）
+5. **数值标准**：如最小值、最大值、精度要求、单位（元/千克/公里等）
+6. **必填要求**：是否必须填写
+7. **示例值**：从模板中提取的具体示例
+8. **特殊规则**：如只能输入数字、不能包含特殊字符、长度限制等
+
+## 输出格式（JSON）
+你必须严格按照以下JSON格式返回，不要添加任何其他内容：
+
+{
+    "standard_template": "车主姓名: \${customer_name}\\n联系电话: \${contact_phone}\\n服务类型: \${service_type}",
+    "fields": [
+        {"field_name": "customer_name", "field_label": "车主姓名", "field_type": "text", "fill_instruction": "客户姓名，字符串类型，如：张先生、李女士。必填。"},
+        {"field_name": "contact_phone", "field_label": "联系电话", "field_type": "text", "fill_instruction": "客户联系电话，11位手机号码，数字格式。必填。"},
+        {"field_name": "service_type", "field_label": "服务类型", "field_type": "text", "fill_instruction": "服务类型，如：道路救援、保养预约、维修服务。必填。"}
+    ]
+}
+
+## 重要说明
+1. standard_template 必须是一个字符串，格式为：字段标签: \${field_name}，每个字段占一行，用 \\n 分隔
+2. 示例格式："车主姓名: \${customer_name}\\n联系电话: \${contact_phone}\\n地址: \${address}"
+3. 根据实际提取的字段生成对应的 standard_template，不要照搬示例
+4. 字段名使用英文小写，下划线连接
+5. 字段标签使用中文，清晰易懂
+6. **fill_instruction 必须全面**：整合字段含义、格式、类型、范围、标准、必填要求等所有约束信息
+7. 所有字段默认类型为 "text"，不要猜测字段类型
+8. 只返回JSON，不要包含任何解释说明`
 
 interface Props {
   fieldGroupId?: number
@@ -540,6 +708,63 @@ const modalLoading = ref(false)
 const modalAction = ref<'add' | 'edit'>('add')
 const syncLoading = ref(false)
 
+// 同步状态信息
+const syncStatusInfo = reactive({
+  status: '',
+  message: '',
+  error_msg: '',
+  total_count: 0,
+  success_count: 0,
+  failed_count: 0,
+  details: []
+})
+
+// 获取同步状态文本
+const getSyncStatusText = (status: string) => {
+  const statusMap: Record<string, string> = {
+    'pending': '等待中',
+    'running': '同步中',
+    'success': '同步成功',
+    'failed': '同步失败',
+    'partial': '部分成功'
+  }
+  return statusMap[status] || status
+}
+
+// 获取同步状态类型（用于alert组件）
+const getSyncStatusType = (status: string): 'success' | 'error' | 'warning' | 'info' => {
+  const typeMap: Record<string, 'success' | 'error' | 'warning' | 'info'> = {
+    'pending': 'info',
+    'running': 'info',
+    'success': 'success',
+    'failed': 'error',
+    'partial': 'warning'
+  }
+  return typeMap[status] || 'info'
+}
+
+// 查看同步状态
+const handleViewSyncStatus = async () => {
+  if (!modalForm.id) {
+    message.warning('请先保存字段')
+    return
+  }
+
+  try {
+    const res: any = await api.getFieldSpecSyncStatus({
+      field_spec_id: modalForm.id
+    })
+    if (res.code === 200) {
+      Object.assign(syncStatusInfo, res.data)
+      message.success('同步状态已更新')
+    } else {
+      message.error(res.msg || '获取同步状态失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '获取同步状态失败')
+  }
+}
+
 // curl 解析弹窗数据
 const curlModalVisible = ref(false)
 const curlModalLoading = ref(false)
@@ -593,6 +818,63 @@ const cascadeCurlForm = reactive({
   parsed_schema: '',
 })
 
+// 默认的 LLM 模板解析 Prompt
+const DEFAULT_TEMPLATE_PARSE_PROMPT = '你是一个专业的模板解析助手。请将以下非标准模板内容解析为标准格式，并提取其中的字段信息。\n\n' +
+  '## 输入模板内容\n' +
+  '{template_content}\n\n' +
+  '## 解析要求\n' +
+  '1. 将模板内容转换为标准格式，使用 ${field_name} 作为变量占位符\n' +
+  '2. 提取所有字段，为每个字段输出：\n' +
+  '   - field_name: 字段英文名（小写，下划线连接）\n' +
+  '   - field_label: 字段中文标签\n' +
+  '   - field_type: 字段类型（text/select_single/select_multi）\n' +
+  '3. 识别模板中的关键信息点，如：联系人、联系方式、地址、时间、状态等\n' +
+  '4. 对于有多种选项的字段（如是/否、类型选择等），使用 select_single 类型\n' +
+  '5. 对于可以多选的字段，使用 select_multi 类型\n' +
+  '6. 对于普通文本输入，使用 text 类型\n\n' +
+  '## 输出格式（JSON）\n' +
+  '{\n' +
+  '    "standard_template": "标准化后的模板内容，如：车主${customer_name}，联系电话：${contact_phone}",\n' +
+  '    "fields": [\n' +
+  '        {\n' +
+  '            "field_name": "customer_name",\n' +
+  '            "field_label": "车主姓名",\n' +
+  '            "field_type": "text"\n' +
+  '        },\n' +
+  '        {\n' +
+  '            "field_name": "contact_phone",\n' +
+  '            "field_label": "联系电话",\n' +
+  '            "field_type": "text"\n' +
+  '        },\n' +
+  '        {\n' +
+  '            "field_name": "service_type",\n' +
+  '            "field_label": "服务类型",\n' +
+  '            "field_type": "select_single"\n' +
+  '        }\n' +
+  '    ]\n' +
+  '}\n\n' +
+  '## 注意事项\n' +
+  '1. 请确保提取所有需要填写的字段\n' +
+  '2. 字段名使用英文小写，下划线连接\n' +
+  '3. 字段标签使用中文，清晰易懂\n' +
+  '4. 请直接返回JSON格式，不要包含其他说明文字\n' +
+  '5. 确保JSON格式正确，可以被正常解析'
+
+// 模板类型 curl 解析弹窗数据
+const templateCurlModalVisible = ref(false)
+const templateCurlModalLoading = ref(false)
+const templateCurlConfigModalVisible = ref(false)
+const templateCurlConfigModalLoading = ref(false)
+const templateCurlForm = reactive({
+  curl_command: '',
+  template_name_path: '$.data[*].name',
+  template_content_path: '$.data[*].template_content',
+  group_name_pattern: '$.data[*].name + 的服务记录',
+  parse_prompt: DEFAULT_TEMPLATE_PARSE_PROMPT,
+  // 临时存储解析后的 schema
+  parsed_schema: '',
+})
+
 // 当前字段关联的级联配置
 const fieldCascadeConfigs = ref<any[]>([])
 
@@ -610,6 +892,7 @@ const modalForm = reactive({
     max_selections: 0,  // 0表示无限制
     api_headers: [] as { key: string; value: string }[],
     api_schema: '',
+    parse_prompt: '',
   },
   corrections: [] as any[],
   is_active: true,
@@ -725,11 +1008,12 @@ const parseMarkdownToOptions = () => {
   modalForm.options.items = items
 }
 
-// 选项数据 - 新的字段类型：文本输入、下拉单选、下拉多选
+// 选项数据 - 新的字段类型：文本输入、下拉单选、下拉多选、模板类型
 const fieldTypeOptions = [
   { label: '文本输入', value: 'text' },
   { label: '下拉单选', value: 'select_single' },
   { label: '下拉多选', value: 'select_multi' },
+  { label: '模板类型', value: 'template' },
 ]
 
 // 获取字段类型标签
@@ -744,6 +1028,7 @@ const getFieldTypeColor = (type: string) => {
     case 'text': return 'green'
     case 'select_single': return 'blue'
     case 'select_multi': return 'orange'
+    case 'template': return 'purple'
     default: return 'default'
   }
 }
@@ -913,6 +1198,7 @@ const resetModalForm = () => {
     max_selections: 0,  // 0表示无限制
     api_headers: [],
     api_schema: '',
+    parse_prompt: DEFAULT_PARSE_PROMPT,
   }
   modalForm.corrections = []
   modalForm.is_active = true
@@ -942,6 +1228,7 @@ const handleEdit = (record: any) => {
     max_selections: record.options?.max_selections ?? 0,  // 0表示无限制
     api_headers: record.options?.api_headers || [],
     api_schema: record.options?.api_schema || '',
+    parse_prompt: record.options?.parse_prompt || '',
   }
   modalForm.is_active = record.is_active
   // 将选项数据转换为 Markdown 格式
@@ -1041,6 +1328,35 @@ const handleSyncOptions = async () => {
   }
 }
 
+// 同步模板方法
+const handleSyncTemplate = async () => {
+  // 验证必填字段
+  if (!modalForm.id) {
+    message.warning('请先保存字段，再执行同步')
+    return
+  }
+  if (!modalForm.options.api_schema) {
+    message.warning('请先配置模板API Schema')
+    return
+  }
+
+  syncLoading.value = true
+  try {
+    const res: any = await api.syncFieldSpec({
+      field_spec_id: modalForm.id,
+    })
+    if (res.code === 200) {
+      message.success('同步任务已提交，请稍后查看同步状态')
+    } else {
+      message.error(res.msg || '同步失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '同步失败')
+  } finally {
+    syncLoading.value = false
+  }
+}
+
 // curl 解析相关方法
 const showCurlModal = () => {
   curlForm.curl_command = ''
@@ -1124,6 +1440,88 @@ const handleCancelCurlModal = () => {
 
 const handleCancelCurlConfigModal = () => {
   curlConfigModalVisible.value = false
+}
+
+// 模板类型 curl 解析相关方法
+const showTemplateCurlModal = () => {
+  templateCurlForm.curl_command = ''
+  templateCurlForm.template_name_path = '$.data[*].name'
+  templateCurlForm.template_content_path = '$.data[*].template_content'
+  templateCurlForm.group_name_pattern = '$.data[*].name + 的服务记录'
+  templateCurlForm.parse_prompt = DEFAULT_TEMPLATE_PARSE_PROMPT
+  templateCurlForm.parsed_schema = ''
+  templateCurlModalVisible.value = true
+}
+
+// 第一步：解析模板类型 curl 命令为 YAML
+const handleParseTemplateCurlStep1 = async () => {
+  if (!templateCurlForm.curl_command.trim()) {
+    message.warning('请输入 curl 命令')
+    return
+  }
+
+  templateCurlModalLoading.value = true
+  try {
+    const res: any = await api.parseTemplateCurl({
+      curl_command: templateCurlForm.curl_command,
+      template_name_path: templateCurlForm.template_name_path,
+      template_content_path: templateCurlForm.template_content_path,
+    })
+    if (res.code === 200) {
+      // 临时存储解析后的 schema
+      templateCurlForm.parsed_schema = res.data.openapi_schema
+      message.success('curl 解析成功，请配置字段映射')
+      templateCurlModalVisible.value = false
+      templateCurlConfigModalVisible.value = true
+    } else {
+      message.error(res.msg || '解析失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '解析失败')
+  } finally {
+    templateCurlModalLoading.value = false
+  }
+}
+
+// 第二步：应用模板字段映射配置
+const handleParseTemplateCurlStep2 = async () => {
+  if (!templateCurlForm.parsed_schema) {
+    message.warning('请先解析 curl 命令')
+    return
+  }
+
+  templateCurlConfigModalLoading.value = true
+  try {
+    const res: any = await api.applyTemplateFieldMapping({
+      openapi_schema: templateCurlForm.parsed_schema,
+      field_mapping: {
+        template_name_path: templateCurlForm.template_name_path,
+        template_content_path: templateCurlForm.template_content_path,
+        group_name_pattern: templateCurlForm.group_name_pattern,
+        parse_prompt: templateCurlForm.parse_prompt,
+      },
+    })
+    if (res.code === 200) {
+      // 将生成的 Schema 填入表单
+      modalForm.options.api_schema = res.data.openapi_schema
+      message.success('字段映射配置成功，已生成模板 API Schema')
+      templateCurlConfigModalVisible.value = false
+    } else {
+      message.error(res.msg || '配置失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '配置失败')
+  } finally {
+    templateCurlConfigModalLoading.value = false
+  }
+}
+
+const handleCancelTemplateCurlModal = () => {
+  templateCurlModalVisible.value = false
+}
+
+const handleCancelTemplateCurlConfigModal = () => {
+  templateCurlConfigModalVisible.value = false
 }
 
 const handleSave = async () => {

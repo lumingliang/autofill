@@ -244,6 +244,10 @@ export default {
   syncFieldSpecOptions: (data: any = {}) => request.post('/autofill/field_spec/sync_options', data),
   parseCurlCommand: (data: any = {}) => request.post('/autofill/field_spec/parse_curl', data),
   applyFieldMapping: (data: any = {}) => request.post('/autofill/field_spec/apply_mapping', data),
+  syncFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/sync', data),
+  getFieldSpecSyncStatus: (params: any = {}) => request.get('/autofill/field_spec/sync_status', { params }),
+  parseTemplateCurl: (data: any = {}) => request.post('/autofill/field_spec/template/parse_curl', data),
+  applyTemplateFieldMapping: (data: any = {}) => request.post('/autofill/field_spec/template/apply_mapping', data),
 
   // 测试填单
   testFillChat: (data: any = {}) => request.post('/autofill/test-fill/chat', data),

@@ -350,5 +350,122 @@ def generate_openapi_schema_from_curl(
             }
         }
     }
-    
+
+    return openapi_schema
+
+
+def generate_template_schema_from_curl(
+    curl_command: str,
+    response_data: Any,
+    template_name_path: str = '$.data[*].name',
+    template_content_path: str = '$.data[*].template_content',
+    group_name_pattern: str = '$.data[*].name + 的服务记录',
+    parse_prompt: str = ''
+) -> Dict[str, Any]:
+    """
+    从 curl 命令和响应数据生成模板类型的 OpenAPI 3.0 Schema
+
+    参数:
+    - curl_command: curl 命令字符串
+    - response_data: API 响应数据
+    - template_name_path: 模板名称字段的 JSONPath (默认: $.data[*].name)
+    - template_content_path: 模板内容字段的 JSONPath (默认: $.data[*].template_content)
+    - group_name_pattern: 字段组名称生成规则，格式: $.data[*].name + 的服务记录
+    - parse_prompt: 模板解析Prompt
+
+    返回:
+    完整的 OpenAPI 3.0 Schema 字典，包含模板类型特有的 x-template-mapping 配置
+    """
+    # 解析 curl 命令
+    parsed = parse_curl_command(curl_command)
+
+    # 解析 URL
+    parsed_url = urlparse(parsed['url'])
+    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    path = parsed_url.path
+
+    # 构建请求体 schema
+    request_body = None
+    if parsed['body'] and parsed['method'] in ('POST', 'PUT', 'PATCH'):
+        body_schema = infer_schema_from_response(parsed['body'])
+        request_body = {
+            'content': {
+                'application/json': {
+                    'schema': body_schema
+                }
+            }
+        }
+
+    # 构建响应 schema
+    response_schema = infer_schema_from_response(response_data)
+
+    # 构建 x-api-params
+    x_api_params = {}
+
+    # 提取 headers（排除标准 headers）
+    standard_headers = {'content-type', 'accept', 'user-agent', 'host', 'connection'}
+    custom_headers = {}
+    for key, value in parsed['headers'].items():
+        if key.lower() not in standard_headers:
+            custom_headers[key] = value
+
+    if custom_headers:
+        x_api_params['headers'] = custom_headers
+
+    # 添加 body 中的参数
+    if isinstance(parsed['body'], dict):
+        for key, value in parsed['body'].items():
+            x_api_params[key] = value
+
+    # 添加 query 参数
+    for key, value in parsed['query_params'].items():
+        x_api_params[key] = value
+
+    # 构建 x-template-mapping（模板类型特有的配置）
+    x_template_mapping = {
+        'template_name_path': template_name_path,
+        'template_content_path': template_content_path,
+        'group_name_pattern': group_name_pattern
+    }
+
+    if parse_prompt:
+        x_template_mapping['parse_prompt'] = parse_prompt
+
+    # 构建 operation
+    operation = {
+        'summary': 'Template API generated from curl',
+        'x-api-params': x_api_params,
+        'x-template-mapping': x_template_mapping,
+        'responses': {
+            '200': {
+                'description': '成功响应',
+                'content': {
+                    'application/json': {
+                        'schema': response_schema
+                    }
+                }
+            }
+        }
+    }
+
+    if request_body:
+        operation['requestBody'] = request_body
+
+    # 构建完整的 OpenAPI Schema
+    openapi_schema = {
+        'openapi': '3.0.3',
+        'info': {
+            'title': 'Template API',
+            'version': '1.0.0'
+        },
+        'servers': [
+            {'url': base_url}
+        ],
+        'paths': {
+            path: {
+                parsed['method'].lower(): operation
+            }
+        }
+    }
+
     return openapi_schema

@@ -1,9 +1,12 @@
 """
 字段组服务（统一处理字段组 CRUD 和关联关系）
 """
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi.exceptions import HTTPException
+
+logger = logging.getLogger(__name__)
 
 from app.controllers.autofill import (
     field_group_config_controller,
@@ -100,7 +103,10 @@ class FieldGroupService:
         fields_list = fields or []
         
         for field_item in fields_list:
-            field_name = field_item["field_name"]
+            field_name = field_item.get("field_name")
+            if not field_name:
+                logger.warning(f"[FieldGroupService] 字段项缺少 field_name，跳过: {field_item}")
+                continue
             field_label = field_item.get("field_label") or field_name
             field_type = field_item.get("field_type", "text")
             fill_instruction = field_item.get("fill_instruction") or ""

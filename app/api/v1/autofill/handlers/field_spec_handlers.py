@@ -12,7 +12,7 @@ from typing import List, Dict, Any
 import httpx
 import prance
 import yaml
-from fastapi import APIRouter, File, Header, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Header, Query, UploadFile
 from jsonpath_ng import parse as jsonpath_parse
 from pydantic import BaseModel
 from tortoise.expressions import Q
@@ -21,15 +21,16 @@ from app.controllers.autofill import field_group_config_controller, field_spec_c
 from app.core.dependency import AuthControl, TenantControl
 from app.core.tenant import TenantContext
 from app.models.admin import Tenant
-from app.models.autofill import FieldGroupFieldSpec, FieldGroupConfig, FillPage
+from app.models.autofill import FieldGroupFieldSpec, FieldGroupConfig, FillPage, FieldSpec, FieldType
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.fill_page import (
     FieldSpecCreate, FieldSpecUpdate, FieldSpecSyncOptionsRequest,
-    CurlParseRequest, ApplyFieldMappingRequest
+    CurlParseRequest, ApplyFieldMappingRequest, SyncTemplateFieldRequest,
+    TemplateCurlParseRequest, TemplateCurlApplyRequest, TemplateFieldMapping
 )
 from app.services.autofill.field_spec_service import upsert_field_spec
 from app.services.autofill.field_flatten_service import FieldFlattener
-from app.utils.curl_parser import parse_curl_command, generate_openapi_schema_from_curl
+from app.utils.curl_parser import parse_curl_command, generate_openapi_schema_from_curl, generate_template_schema_from_curl
 
 router = APIRouter()
 
@@ -726,6 +727,205 @@ async def apply_field_mapping_endpoint(request: ApplyFieldMappingRequest, token:
         openapi_yaml = yaml.dump(schema, allow_unicode=True, sort_keys=False)
 
         return Success(data={"openapi_schema": openapi_yaml, "message": "字段映射配置成功"})
+
+    except yaml.YAMLError as e:
+        return Fail(code=400, msg=f"YAML 解析错误: {str(e)}")
+    except Exception as e:
+        return Fail(code=500, msg=f"应用字段映射失败: {str(e)}")
+
+
+@router.post("/field_spec/sync", summary="同步模板类型字段")
+async def sync_template_field(
+    request: SyncTemplateFieldRequest,
+    bg_tasks: BackgroundTasks,
+    token: str = Header(...)
+):
+    """
+    触发模板类型字段的同步
+
+    流程：
+    1. 验证字段存在且类型为template
+    2. 创建同步记录，状态pending
+    3. 添加后台任务
+    4. 返回同步记录ID
+    """
+    current_user = await AuthControl.is_authed(token)
+
+    # 获取字段信息
+    field_spec = await FieldSpec.get(id=request.field_spec_id)
+    if not field_spec:
+        return Fail(code=404, msg="字段不存在")
+
+    # 权限检查
+    if not TenantContext.is_superuser() and field_spec.tenant_id != TenantContext.get_tenant_id():
+        return Fail(code=403, msg="无权操作其他租户的字段")
+
+    # 验证字段类型
+    if field_spec.field_type != FieldType.TEMPLATE:
+        return Fail(code=400, msg="仅支持模板类型字段的同步")
+
+    # 检查是否有api_schema配置（支持新的YAML格式）
+    api_schema = field_spec.options.get("api_schema")
+    if not api_schema:
+        return Fail(code=400, msg="字段缺少api_schema配置")
+
+    # 调用服务层进行同步
+    from app.services.autofill.template_field_service import template_field_service
+
+    try:
+        result = await template_field_service.sync_template_field(
+            field_spec_id=request.field_spec_id,
+            bg_tasks=bg_tasks
+        )
+        return Success(data=result)
+    except ValueError as e:
+        return Fail(code=400, msg=str(e))
+    except Exception as e:
+        return Fail(code=500, msg=f"同步失败: {str(e)}")
+
+
+@router.get("/field_spec/sync_status", summary="查询字段同步状态")
+async def get_sync_status(
+    sync_record_id: int = Query(0, description="同步记录ID"),
+    field_spec_id: int = Query(0, description="字段ID（优先使用）"),
+    token: str = Header(...)
+):
+    """
+    查询模板类型字段的同步状态
+
+    支持两种查询方式：
+    1. 通过 field_spec_id 查询该字段最新的同步记录
+    2. 通过 sync_record_id 查询指定的同步记录
+    """
+    current_user = await AuthControl.is_authed(token)
+
+    # 获取同步记录
+    from app.services.autofill.template_field_service import template_field_service
+    from app.models.autofill import FieldSpecSyncRecord
+
+    try:
+        # 优先使用 field_spec_id 查询最新的同步记录
+        if field_spec_id > 0:
+            record = await FieldSpecSyncRecord.filter(
+                field_spec_id=field_spec_id
+            ).order_by("-created_at").first()
+            if not record:
+                return Success(data={
+                    "status": "none",
+                    "message": "该字段暂无同步记录"
+                })
+            sync_record_id = record.id
+        elif sync_record_id <= 0:
+            return Fail(code=400, msg="请提供 sync_record_id 或 field_spec_id")
+
+        result = await template_field_service.get_sync_status(sync_record_id)
+
+        # 权限检查
+        if not TenantContext.is_superuser():
+            # 获取字段信息以检查租户
+            field_spec = await FieldSpec.get(id=result["field_spec_id"])
+            if field_spec.tenant_id != TenantContext.get_tenant_id():
+                return Fail(code=403, msg="无权查看其他租户的同步记录")
+
+        return Success(data=result)
+    except Exception as e:
+        return Fail(code=500, msg=f"查询失败: {str(e)}")
+
+
+@router.post("/field_spec/template/parse_curl", summary="解析模板类型 CURL 命令生成 Schema")
+async def parse_template_curl_endpoint(request: TemplateCurlParseRequest, token: str = Header(...)):
+    """
+    解析模板类型的 curl 命令生成 OpenAPI Schema
+
+    流程：
+    1. 解析 curl 命令
+    2. 执行请求获取响应数据
+    3. 生成包含 x-template-mapping 的 OpenAPI Schema
+    """
+    await AuthControl.is_authed(token)
+
+    if not request.curl_command or not request.curl_command.strip():
+        return Fail(code=400, msg="curl 命令不能为空")
+
+    try:
+        parsed = parse_curl_command(request.curl_command)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            method = parsed['method'].lower()
+            url = parsed['url']
+            headers = parsed['headers']
+            body = parsed['body']
+
+            if method == 'get':
+                response = await client.get(url, headers=headers)
+            elif method == 'post':
+                response = await client.post(url, headers=headers, json=body) if body and isinstance(body, dict) else await client.post(url, headers=headers)
+            elif method == 'put':
+                response = await client.put(url, headers=headers, json=body) if body and isinstance(body, dict) else await client.put(url, headers=headers)
+            elif method == 'patch':
+                response = await client.patch(url, headers=headers, json=body) if body and isinstance(body, dict) else await client.patch(url, headers=headers)
+            elif method == 'delete':
+                response = await client.delete(url, headers=headers)
+            else:
+                return Fail(code=400, msg=f"不支持的 HTTP 方法: {method}")
+
+            response.raise_for_status()
+            response_data = response.json()
+
+        # 生成模板类型的 OpenAPI Schema
+        openapi_dict = generate_template_schema_from_curl(
+            request.curl_command,
+            response_data,
+            template_name_path=request.template_name_path,
+            template_content_path=request.template_content_path
+        )
+        openapi_yaml = yaml.dump(openapi_dict, allow_unicode=True, sort_keys=False)
+
+        return Success(data={"openapi_schema": openapi_yaml, "response_preview": response_data, "message": "curl 解析成功，已生成模板类型 Schema"})
+
+    except ValueError as e:
+        return Fail(code=400, msg=f"curl 命令解析错误: {str(e)}")
+    except httpx.HTTPError as e:
+        return Fail(code=400, msg=f"执行 curl 请求失败: {str(e)}")
+    except json.JSONDecodeError as e:
+        return Fail(code=400, msg=f"响应数据不是有效的 JSON: {str(e)}")
+    except Exception as e:
+        return Fail(code=500, msg=f"解析失败: {str(e)}")
+
+
+@router.post("/field_spec/template/apply_mapping", summary="应用模板类型字段映射到 Schema")
+async def apply_template_field_mapping_endpoint(request: TemplateCurlApplyRequest, token: str = Header(...)):
+    """
+    将模板类型的字段映射配置应用到已解析的 OpenAPI Schema
+    """
+    await AuthControl.is_authed(token)
+
+    if not request.openapi_schema or not request.openapi_schema.strip():
+        return Fail(code=400, msg="OpenAPI Schema 不能为空")
+
+    try:
+        # 解析现有的 schema
+        schema = yaml.safe_load(request.openapi_schema)
+
+        # 更新 x-template-mapping 配置
+        if 'paths' in schema:
+            for path, methods in schema['paths'].items():
+                for method, operation in methods.items():
+                    if isinstance(operation, dict):
+                        if 'x-template-mapping' not in operation:
+                            operation['x-template-mapping'] = {}
+
+                        operation['x-template-mapping']['template_name_path'] = request.field_mapping.template_name_path
+                        operation['x-template-mapping']['template_content_path'] = request.field_mapping.template_content_path
+                        operation['x-template-mapping']['group_name_pattern'] = request.field_mapping.group_name_pattern
+
+                        if request.field_mapping.parse_prompt:
+                            operation['x-template-mapping']['parse_prompt'] = request.field_mapping.parse_prompt
+
+        # 重新生成 YAML
+        openapi_yaml = yaml.dump(schema, allow_unicode=True, sort_keys=False)
+
+        return Success(data={"openapi_schema": openapi_yaml, "message": "模板字段映射配置成功"})
 
     except yaml.YAMLError as e:
         return Fail(code=400, msg=f"YAML 解析错误: {str(e)}")
