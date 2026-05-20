@@ -171,9 +171,9 @@
                 </a-form-item>
               </a-col>
               <a-col :span="12">
-                <a-form-item label="选项编码字段">
+                <a-form-item label="选项编码字段" required>
                   <a-select v-model:value="importForm.fieldMapping.level1_id" :options="csvFieldOptions"
-                    placeholder="选择选项编码字段（不填则自动生成）" style="width: 100%" allow-clear />
+                    placeholder="选择选项编码字段" style="width: 100%" />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -710,8 +710,8 @@ const handleImport = async () => {
 
   // 验证字段映射 - 一级必填，二级三级可选
   const fm = importForm.fieldMapping
-  if (!fm.level1_name) {
-    message.error('请选择一级选项的显示标签字段')
+  if (!fm.level1_name || !fm.level1_id) {
+    message.error('请选择一级选项的显示标签字段和选项编码字段')
     return
   }
   // 如果选择了二级名称字段，则二级编码字段也必须选择
@@ -761,7 +761,7 @@ const handleImport = async () => {
 }
 
 const downloadTemplate = () => {
-  const csvContent = '一级事件类型,一级事件类型ID(可选),一级事件类型填写说明,二级事件类型,二级事件类型ID(可选),二级事件类型填写说明,三级事件类型,三级事件类型ID(可选),三级事件类型填写说明\n道路救援,,请选择道路救援类型,拖车服务,,车辆无法移动时使用,标准拖车,,普通道路拖车服务'
+  const csvContent = '一级事件类型,一级事件类型ID,一级事件类型填写说明,二级事件类型,二级事件类型ID,二级事件类型填写说明,三级事件类型,三级事件类型ID,三级事件类型填写说明\n道路救援,EVT001,请选择道路救援类型,拖车服务,EVT001001,车辆无法移动时使用,标准拖车,EVT001001001,普通道路拖车服务'
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
   link.href = URL.createObjectURL(blob)
