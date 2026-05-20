@@ -415,7 +415,7 @@ async def import_hierarchical_dropdown_from_csv(
     app_name: str = Query(..., description="应用名称"),
     class_name: str = Query("事件类型", description="分类名称"),
     level1_name_field: str = Query(..., description="一级名称字段"),
-    level1_id_field: str = Query(..., description="一级ID字段"),
+    level1_id_field: str = Query("", description="一级ID字段"),
     level1_desc_field: str = Query("", description="一级说明字段"),
     level2_name_field: str = Query("", description="二级名称字段"),
     level2_id_field: str = Query("", description="二级ID字段"),
@@ -428,6 +428,7 @@ async def import_hierarchical_dropdown_from_csv(
 ):
     """
     三级下拉选项CSV导入，支持自定义字段映射
+    支持不填编码字段时自动生成，使用标签进行层级关联
     """
     current_user = await AuthControl.is_authed(token)
 
@@ -458,34 +459,29 @@ async def import_hierarchical_dropdown_from_csv(
 
         if not csv_reader.fieldnames:
             return Fail(code=400, msg="CSV文件格式错误：无法读取表头")
-        required_level1_fields = ['一级事件类型', '一级事件类型ID']
-        required_level2_fields = ['二级事件类型', '二级事件类型ID']
-        required_level3_fields = ['三级事件类型', '三级事件类型ID']
 
-        fieldnames = csv_reader.fieldnames
-        has_level1 = all(f in fieldnames for f in required_level1_fields)
         rows = list(csv_reader)
         created_count = 0
         updated_count = 0
         errors = []
 
-        # 用于存储各级选项的ID映射
-        level1_map = {}  # {option_value: id}
-        level2_map = {}  # {option_value: id}
-        level3_map = {}  # {option_value: id}
+        # 用于存储各级选项的映射，现在用summary作为key进行查找
+        level1_map = {}  # {summary: (id, option_value)}
+        level2_map = {}  # {level1_summary + ':' + level2_summary: (id, option_value)}
+        level3_map = {}  # {level1_summary + ':' + level2_summary + ':' + level3_summary: (id, option_value)}
 
         # 第一步：创建/更新所有一级事件类型
         for idx, row in enumerate(rows, start=2):
             try:
                 level1_name = row.get(level1_name_field, '').strip()
-                level1_id = row.get(level1_id_field, '').strip()
+                level1_id_val = row.get(level1_id_field, '').strip() if level1_id_field else ''
                 level1_desc = row.get(level1_desc_field, '').strip() if level1_desc_field else ''
 
-                if not level1_name or not level1_id:
+                if not level1_name:
                     continue
 
-                # 使用ID作为option_value，名称作为summary
-                option_value = level1_id
+                # 如果有提供ID，使用ID；否则自动生成
+                option_value = level1_id_val if level1_id_val else f"auto_level1_{level1_name.replace(' ', '_')}"
                 summary = level1_name
                 description = level1_desc
 
@@ -493,15 +489,15 @@ async def import_hierarchical_dropdown_from_csv(
                     tenant_id=target_tenant_id,
                     app_name=app_name,
                     class_name=class_name,
-                    option_value=option_value
+                    summary=summary
                 ).first()
 
                 if existing:
-                    existing.summary = summary
+                    existing.option_value = option_value
                     existing.description = description
                     existing.parent_id = 0
                     await existing.save()
-                    level1_map[option_value] = existing.id
+                    level1_map[summary] = (existing.id, option_value)
                     updated_count += 1
                 else:
                     option = await dropdown_option_controller.model.create(
@@ -513,44 +509,48 @@ async def import_hierarchical_dropdown_from_csv(
                         description=description,
                         parent_id=0
                     )
-                    level1_map[option_value] = option.id
+                    level1_map[summary] = (option.id, option_value)
                     created_count += 1
 
             except Exception as e:
                 errors.append(f"第{idx}行(一级): {str(e)}")
 
         # 第二步：创建/更新所有二级事件类型（如果配置了二级字段映射）
-        if level2_name_field and level2_id_field:
+        if level2_name_field:
             for idx, row in enumerate(rows, start=2):
                 try:
-                    level1_id = row.get(level1_id_field, '').strip()
+                    level1_name = row.get(level1_name_field, '').strip()
                     level2_name = row.get(level2_name_field, '').strip()
-                    level2_id = row.get(level2_id_field, '').strip()
+                    level2_id_val = row.get(level2_id_field, '').strip() if level2_id_field else ''
                     level2_desc = row.get(level2_desc_field, '').strip() if level2_desc_field else ''
 
-                    if not level2_name or not level2_id or not level1_id:
+                    if not level1_name or not level2_name:
                         continue
 
-                    option_value = level2_id
+                    # 查找父级ID（用父级的summary查找）
+                    if level1_name not in level1_map:
+                        continue
+                    parent_id, parent_value = level1_map[level1_name]
+
+                    option_value = level2_id_val if level2_id_val else f"auto_level2_{level1_name.replace(' ', '_')}_{level2_name.replace(' ', '_')}"
                     summary = level2_name
                     description = level2_desc
 
-                    # 查找父级ID
-                    parent_id = level1_map.get(level1_id, 0)
-
+                    # 使用父ID和summary作为查找条件
                     existing = await dropdown_option_controller.model.filter(
                         tenant_id=target_tenant_id,
                         app_name=app_name,
                         class_name=class_name,
-                        option_value=option_value
+                        parent_id=parent_id,
+                        summary=summary
                     ).first()
 
                     if existing:
-                        existing.summary = summary
+                        existing.option_value = option_value
                         existing.description = description
                         existing.parent_id = parent_id
                         await existing.save()
-                        level2_map[option_value] = existing.id
+                        level2_map[f"{level1_name}:{level2_name}"] = (existing.id, option_value)
                         updated_count += 1
                     else:
                         option = await dropdown_option_controller.model.create(
@@ -562,44 +562,49 @@ async def import_hierarchical_dropdown_from_csv(
                             description=description,
                             parent_id=parent_id
                         )
-                        level2_map[option_value] = option.id
+                        level2_map[f"{level1_name}:{level2_name}"] = (option.id, option_value)
                         created_count += 1
 
                 except Exception as e:
                     errors.append(f"第{idx}行(二级): {str(e)}")
 
         # 第三步：创建/更新所有三级事件类型（如果配置了三级字段映射且配置了二级字段映射）
-        if level3_name_field and level3_id_field and level2_name_field and level2_id_field:
+        if level3_name_field and level2_name_field:
           for idx, row in enumerate(rows, start=2):
               try:
-                  level2_id = row.get(level2_id_field, '').strip()
+                  level1_name = row.get(level1_name_field, '').strip()
+                  level2_name = row.get(level2_name_field, '').strip()
                   level3_name = row.get(level3_name_field, '').strip()
-                  level3_id = row.get(level3_id_field, '').strip()
+                  level3_id_val = row.get(level3_id_field, '').strip() if level3_id_field else ''
                   level3_desc = row.get(level3_desc_field, '').strip() if level3_desc_field else ''
 
-                  if not level3_name or not level3_id or not level2_id:
+                  if not level1_name or not level2_name or not level3_name:
                       continue
 
-                  option_value = level3_id
+                  # 查找父级ID（用父级的组合key查找）
+                  parent_key = f"{level1_name}:{level2_name}"
+                  if parent_key not in level2_map:
+                      continue
+                  parent_id, parent_value = level2_map[parent_key]
+
+                  option_value = level3_id_val if level3_id_val else f"auto_level3_{level1_name.replace(' ', '_')}_{level2_name.replace(' ', '_')}_{level3_name.replace(' ', '_')}"
                   summary = level3_name
                   description = level3_desc
-
-                  # 查找父级ID
-                  parent_id = level2_map.get(level2_id, 0)
 
                   existing = await dropdown_option_controller.model.filter(
                       tenant_id=target_tenant_id,
                       app_name=app_name,
                       class_name=class_name,
-                      option_value=option_value
+                      parent_id=parent_id,
+                      summary=summary
                   ).first()
 
                   if existing:
-                      existing.summary = summary
+                      existing.option_value = option_value
                       existing.description = description
                       existing.parent_id = parent_id
                       await existing.save()
-                      level3_map[option_value] = existing.id
+                      level3_map[f"{level1_name}:{level2_name}:{level3_name}"] = (existing.id, option_value)
                       updated_count += 1
                   else:
                       option = await dropdown_option_controller.model.create(
@@ -611,7 +616,7 @@ async def import_hierarchical_dropdown_from_csv(
                           description=description,
                           parent_id=parent_id
                       )
-                      level3_map[option_value] = option.id
+                      level3_map[f"{level1_name}:{level2_name}:{level3_name}"] = (option.id, option_value)
                       created_count += 1
 
               except Exception as e:
