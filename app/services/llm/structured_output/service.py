@@ -35,7 +35,7 @@ class StructuredOutputService:
         self.model_name = config.name
         self.api_key = self.litellm_params.get("api_key", "")
         self.api_base = self.litellm_params.get("api_base", None)
-        self.timeout = self.litellm_params.get("timeout", 60)
+        self.timeout = self.litellm_params.get("timeout", 300)
 
         # 获取结构化输出配置
         self.structured_config = settings.STRUCTURED_OUTPUT_CONFIG

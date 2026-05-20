@@ -922,6 +922,17 @@ async def apply_template_field_mapping_endpoint(request: TemplateCurlApplyReques
                         if request.field_mapping.parse_prompt:
                             operation['x-template-mapping']['parse_prompt'] = request.field_mapping.parse_prompt
 
+                        # 添加模板选择器配置
+                        selector = request.field_mapping.template_selector
+                        if selector.enabled:
+                            operation['x-template-mapping']['template_selector'] = {
+                                'enabled': selector.enabled,
+                                'field_name': selector.field_name,
+                                'field_label': selector.field_label,
+                                'label_path': selector.label_path,
+                                'value_path': selector.value_path
+                            }
+
         # 重新生成 YAML
         openapi_yaml = yaml.dump(schema, allow_unicode=True, sort_keys=False)
 

@@ -136,6 +136,12 @@ class FieldOptions(BaseModel):
     api_schema: str = Field(default="", description="OpenAPI/Swagger Schema配置（YAML格式）")
     # 模板解析提示词配置
     parse_prompt: str = Field(default="", description="自定义模板解析提示词（可选，留空使用默认提示词）")
+    # 模板选择器配置
+    enable_template_selector: bool = Field(default=False, description="是否启用模板选择器")
+    template_selector_field_name: str = Field(default="template_selector", description="模板选择器字段名")
+    template_selector_field_label: str = Field(default="模板选择", description="模板选择器字段标签")
+    template_selector_label_path: str = Field(default="$.name", description="选项标签的JSONPath")
+    template_selector_value_path: str = Field(default="$.id", description="选项值的JSONPath")
 
 
 class FieldSpecCreate(BaseModel):
@@ -318,12 +324,22 @@ class TemplateCurlParseRequest(BaseModel):
     template_content_path: str = Field("$.data[*].template_content", description="模板内容字段的 JSONPath")
 
 
+class TemplateSelectorConfig(BaseModel):
+    """模板选择器配置"""
+    enabled: bool = Field(False, description="是否启用模板选择器")
+    field_name: str = Field("template_selector", description="模板选择器字段名")
+    field_label: str = Field("模板选择", description="模板选择器字段标签")
+    label_path: str = Field("$.name", description="选项标签的 JSONPath")
+    value_path: str = Field("$.id", description="选项值的 JSONPath")
+
+
 class TemplateFieldMapping(BaseModel):
     """模板字段映射配置"""
     template_name_path: str = Field("$.data[*].name", description="模板名称字段的 JSONPath")
     template_content_path: str = Field("$.data[*].template_content", description="模板内容字段的 JSONPath")
     group_name_pattern: str = Field("{template_name} 服务记录", description="字段组名称生成规则，支持 {template_name} 占位符")
     parse_prompt: str = Field("", description="模板解析Prompt")
+    template_selector: TemplateSelectorConfig = Field(default_factory=TemplateSelectorConfig, description="模板选择器配置")
 
 
 class TemplateCurlApplyRequest(BaseModel):

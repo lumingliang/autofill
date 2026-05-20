@@ -159,6 +159,49 @@
             </a-typography-text>
           </a-form-item>
 
+          <!-- 模板选择器配置 -->
+          <a-divider orientation="left">模板选择器配置</a-divider>
+          <a-form-item>
+            <a-switch v-model:checked="form.options.enable_template_selector" />
+            <span style="margin-left: 8px;">启用模板选择器字段</span>
+            <a-typography-text type="secondary" style="margin-left: 16px;">
+              同步时自动生成一个下拉字段，用于选择适用的模板
+            </a-typography-text>
+          </a-form-item>
+
+          <template v-if="form.options.enable_template_selector">
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="选择器字段名">
+                  <a-input v-model:value="form.options.template_selector_field_name" placeholder="template_selector" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="选择器字段标签">
+                  <a-input v-model:value="form.options.template_selector_field_label" placeholder="模板选择" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="选项标签路径">
+                  <a-input v-model:value="form.options.template_selector_label_path" placeholder="$.name" />
+                  <a-typography-text type="secondary">
+                    JSONPath路径，用于从模板数据中提取选项显示标签
+                  </a-typography-text>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="选项值路径">
+                  <a-input v-model:value="form.options.template_selector_value_path" placeholder="$.id" />
+                  <a-typography-text type="secondary">
+                    JSONPath路径，用于从模板数据中提取选项值
+                  </a-typography-text>
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </template>
+
           <!-- 导入按钮 -->
           <a-form-item>
             <a-space>
@@ -598,54 +641,50 @@ import * as yaml from 'js-yaml'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
 // 默认模板解析提示词
-const DEFAULT_PARSE_PROMPT = `你是一个专业的模板解析助手。请分析以下模板内容，提取关键信息字段。
+const DEFAULT_PARSE_PROMPT = `# 任务：车企售后服务记录模板标准化 + 字段元数据批量提取
 
-## 输入模板内容
-{template_content}
+## 输出要求
+1. 仅输出标准JSON格式，无任何额外文字、解释、标题、分隔线
+2. 严格遵守以下JSON结构，不得新增或缺失字段
+3. 布尔值使用小写true/false，不得使用字符串"true"/"false"
+4. 所有字符串使用双引号包裹，转义内部双引号
 
-## 解析要求
-1. 分析模板内容，识别所有需要填写的关键信息点
-2. 为每个关键信息提取字段：
-   - field_name: 字段英文名（小写，下划线连接，如：customer_name）
-   - field_label: 字段中文标签（清晰易懂的中文名称）
-   - field_type: 字段类型（默认为 "text"）
-   - fill_instruction: 填写指引（必须包含以下所有约束信息，从模板中提取）
-3. 字段类型说明：
-   - 所有字段默认使用 "text" 类型
-   - 只有在模板中明确说明是选择类型（如是/否、多选等）时才使用 "select_single" 或 "select_multi"
+## 第一部分：模板标准化规则
+1. 保留原文所有固定业务话术、行文逻辑、句式顺序
+2. 将所有可变填写内容替换为标准占位符：\${field_name}
+3. 删除所有人工操作提示、括号内冗余备注、内部指引性文字
+4. 保留固定枚举选项的描述，仅将填空位置替换为占位符
 
-## fill_instruction 填写指引提取规范
-fill_instruction 必须整合模板中该字段的所有约束信息，包括但不限于：
-1. **字段含义**：该字段代表什么业务含义
-2. **填写格式**：如日期格式(YYYY-MM-DD)、手机号格式(11位)、身份证号格式(18位)等
-3. **数据类型**：如字符串、数字、日期、布尔值等
-4. **可选范围**：如是/否选项、特定枚举值（如：高中低、优良好差）
-5. **数值标准**：如最小值、最大值、精度要求、单位（元/千克/公里等）
-6. **必填要求**：是否必须填写
-7. **示例值**：从模板中提取的具体示例
-8. **特殊规则**：如只能输入数字、不能包含特殊字符、长度限制等
+## 第二部分：字段提取规则
+从原始模板中提取每个可变字段，包含以下属性：
+- field_name：字段英文标识（小写下划线，用于占位符和JSON输出）
+- field_label：字段中文展示名称
+- fill_instruction：整合模板内所有约束信息，包括：字段含义、填写格式、数据类型、可选范围、数值标准、必填要求
+- is_required：是否必填，从原文"必填"标注判断，布尔值
 
-## 输出格式（JSON）
-你必须严格按照以下JSON格式返回，不要添加任何其他内容：
+## 第三部分：模板填写规则提取
+分析模板内容，提取该模板的适用场景和填写规则，包括：
+- 该模板适用于什么类型的服务记录场景
+- 使用该模板需要满足什么条件
+- 模板的主要填写内容和关键信息点
+- 模板的使用注意事项
 
+## 输出JSON结构
 {
-    "standard_template": "车主姓名: \${customer_name}\\n联系电话: \${contact_phone}\\n服务类型: \${service_type}",
-    "fields": [
-        {"field_name": "customer_name", "field_label": "车主姓名", "field_type": "text", "fill_instruction": "客户姓名，字符串类型，如：张先生、李女士。必填。"},
-        {"field_name": "contact_phone", "field_label": "联系电话", "field_type": "text", "fill_instruction": "客户联系电话，11位手机号码，数字格式。必填。"},
-        {"field_name": "service_type", "field_label": "服务类型", "field_type": "text", "fill_instruction": "服务类型，如：道路救援、保养预约、维修服务。必填。"}
-    ]
+  "standardized_template": "标准化后的完整模板，使用\${field_name}占位符",
+  "template_rules": "该模板的填写规则和使用指引，包括适用场景、填写要求、注意事项等",
+  "fields": [
+    {
+      "field_name": "customer_name",
+      "field_label": "客户姓名",
+      "fill_instruction": "填写车主姓名及称呼，文本类型",
+      "is_required": true
+    }
+  ]
 }
 
-## 重要说明
-1. standard_template 必须是一个字符串，格式为：字段标签: \${field_name}，每个字段占一行，用 \\n 分隔
-2. 示例格式："车主姓名: \${customer_name}\\n联系电话: \${contact_phone}\\n地址: \${address}"
-3. 根据实际提取的字段生成对应的 standard_template，不要照搬示例
-4. 字段名使用英文小写，下划线连接
-5. 字段标签使用中文，清晰易懂
-6. **fill_instruction 必须全面**：整合字段含义、格式、类型、范围、标准、必填要求等所有约束信息
-7. 所有字段默认类型为 "text"，不要猜测字段类型
-8. 只返回JSON，不要包含任何解释说明`
+## 输入模板内容
+{template_content}`
 
 interface Props {
   fieldGroupId?: number
@@ -819,46 +858,64 @@ const cascadeCurlForm = reactive({
 })
 
 // 默认的 LLM 模板解析 Prompt
-const DEFAULT_TEMPLATE_PARSE_PROMPT = '你是一个专业的模板解析助手。请将以下非标准模板内容解析为标准格式，并提取其中的字段信息。\n\n' +
+const DEFAULT_TEMPLATE_PARSE_PROMPT = '你是一个专业的模板解析助手。请分析以下模板内容，提取关键信息字段。\n\n' +
   '## 输入模板内容\n' +
   '{template_content}\n\n' +
   '## 解析要求\n' +
-  '1. 将模板内容转换为标准格式，使用 ${field_name} 作为变量占位符\n' +
+  '1. 分析模板内容，识别所有需要填写的关键信息点\n' +
   '2. 提取所有字段，为每个字段输出：\n' +
   '   - field_name: 字段英文名（小写，下划线连接）\n' +
-  '   - field_label: 字段中文标签\n' +
-  '   - field_type: 字段类型（text/select_single/select_multi）\n' +
+  '   - field_label: 字段中文标签（清晰易懂的中文名称）\n' +
+  '   - fill_instruction: 填写指引（必须包含以下所有约束信息，从模板中提取）\n' +
   '3. 识别模板中的关键信息点，如：联系人、联系方式、地址、时间、状态等\n' +
-  '4. 对于有多种选项的字段（如是/否、类型选择等），使用 select_single 类型\n' +
-  '5. 对于可以多选的字段，使用 select_multi 类型\n' +
-  '6. 对于普通文本输入，使用 text 类型\n\n' +
+  '4. 分析模板的适用场景和填写规则，生成 template_rules\n\n' +
+  '## fill_instruction 填写指引提取规范\n' +
+  'fill_instruction 必须整合模板中该字段的所有约束信息，包括但不限于：\n' +
+  '1. **字段含义**：该字段代表什么业务含义\n' +
+  '2. **填写格式**：如日期格式(YYYY-MM-DD)、手机号格式(11位)、身份证号格式(18位)等\n' +
+  '3. **数据类型**：如字符串、数字、日期、布尔值等\n' +
+  '4. **可选范围**：如是/否选项、特定枚举值（如：高中低、优良好差）\n' +
+  '5. **数值标准**：如最小值、最大值、精度要求、单位（元/千克/公里等）\n' +
+  '6. **必填要求**：是否必须填写\n' +
+  '7. **示例值**：从模板中提取的具体示例\n' +
+  '8. **特殊规则**：如只能输入数字、不能包含特殊字符、长度限制等\n\n' +
+  '## template_rules 模板填写规则提取规范\n' +
+  'template_rules 必须包含该模板的完整使用指引，包括：\n' +
+  '1. **适用场景**：该模板适用于什么类型的服务记录场景\n' +
+  '2. **使用条件**：使用该模板需要满足什么条件\n' +
+  '3. **主要填写内容**：模板的主要填写内容和关键信息点\n' +
+  '4. **使用注意事项**：模板的使用注意事项和特殊要求\n\n' +
   '## 输出格式（JSON）\n' +
   '{\n' +
-  '    "standard_template": "标准化后的模板内容，如：车主${customer_name}，联系电话：${contact_phone}",\n' +
+  '    "standard_template": "车主姓名: ${customer_name}\\n联系电话: ${contact_phone}\\n服务类型: ${service_type}",\n' +
+  '    "template_rules": "该模板适用于xxx场景，需要填写客户基本信息、服务类型等。使用时需注意xxx。",\n' +
   '    "fields": [\n' +
   '        {\n' +
   '            "field_name": "customer_name",\n' +
   '            "field_label": "车主姓名",\n' +
-  '            "field_type": "text"\n' +
+  '            "fill_instruction": "客户姓名，字符串类型，如：张先生、李女士。必填。"\n' +
   '        },\n' +
   '        {\n' +
   '            "field_name": "contact_phone",\n' +
   '            "field_label": "联系电话",\n' +
-  '            "field_type": "text"\n' +
+  '            "fill_instruction": "客户联系电话，11位手机号码，数字格式。必填。"\n' +
   '        },\n' +
   '        {\n' +
   '            "field_name": "service_type",\n' +
   '            "field_label": "服务类型",\n' +
-  '            "field_type": "select_single"\n' +
+  '            "fill_instruction": "服务类型，如：道路救援、保养预约、维修服务。必填。"\n' +
   '        }\n' +
   '    ]\n' +
   '}\n\n' +
-  '## 注意事项\n' +
-  '1. 请确保提取所有需要填写的字段\n' +
-  '2. 字段名使用英文小写，下划线连接\n' +
-  '3. 字段标签使用中文，清晰易懂\n' +
-  '4. 请直接返回JSON格式，不要包含其他说明文字\n' +
-  '5. 确保JSON格式正确，可以被正常解析'
+  '## 重要说明\n' +
+  '1. standard_template 必须是一个字符串，格式为：字段标签: ${field_name}，每个字段占一行，用 \\n 分隔\n' +
+  '2. 示例格式："车主姓名: ${customer_name}\\n联系电话: ${contact_phone}\\n地址: ${address}"\n' +
+  '3. 根据实际提取的字段生成对应的 standard_template，不要照搬示例\n' +
+  '4. 字段名使用英文小写，下划线连接\n' +
+  '5. 字段标签使用中文，清晰易懂\n' +
+  '6. **fill_instruction 必须全面**：整合字段含义、格式、类型、范围、标准、必填要求等所有约束信息\n' +
+  '7. **template_rules 必须详细**：包含适用场景、使用条件、主要填写内容、使用注意事项\n' +
+  '8. 只返回JSON，不要包含任何解释说明'
 
 // 模板类型 curl 解析弹窗数据
 const templateCurlModalVisible = ref(false)
@@ -893,6 +950,12 @@ const modalForm = reactive({
     api_headers: [] as { key: string; value: string }[],
     api_schema: '',
     parse_prompt: '',
+    // 模板选择器配置
+    enable_template_selector: false,
+    template_selector_field_name: 'template_selector',
+    template_selector_field_label: '模板选择',
+    template_selector_label_path: '$.name',
+    template_selector_value_path: '$.id',
   },
   corrections: [] as any[],
   is_active: true,
@@ -1199,6 +1262,12 @@ const resetModalForm = () => {
     api_headers: [],
     api_schema: '',
     parse_prompt: DEFAULT_PARSE_PROMPT,
+    // 模板选择器配置
+    enable_template_selector: false,
+    template_selector_field_name: 'template_selector',
+    template_selector_field_label: '模板选择',
+    template_selector_label_path: '$.name',
+    template_selector_value_path: '$.id',
   }
   modalForm.corrections = []
   modalForm.is_active = true
@@ -1229,6 +1298,12 @@ const handleEdit = (record: any) => {
     api_headers: record.options?.api_headers || [],
     api_schema: record.options?.api_schema || '',
     parse_prompt: record.options?.parse_prompt || '',
+    // 模板选择器配置
+    enable_template_selector: record.options?.enable_template_selector ?? false,
+    template_selector_field_name: record.options?.template_selector_field_name || 'template_selector',
+    template_selector_field_label: record.options?.template_selector_field_label || '模板选择',
+    template_selector_label_path: record.options?.template_selector_label_path || '$.name',
+    template_selector_value_path: record.options?.template_selector_value_path || '$.id',
   }
   modalForm.is_active = record.is_active
   // 将选项数据转换为 Markdown 格式
@@ -1499,6 +1574,13 @@ const handleParseTemplateCurlStep2 = async () => {
         template_content_path: templateCurlForm.template_content_path,
         group_name_pattern: templateCurlForm.group_name_pattern,
         parse_prompt: templateCurlForm.parse_prompt,
+        template_selector: {
+          enabled: modalForm.options.enable_template_selector,
+          field_name: modalForm.options.template_selector_field_name,
+          field_label: modalForm.options.template_selector_field_label,
+          label_path: modalForm.options.template_selector_label_path,
+          value_path: modalForm.options.template_selector_value_path,
+        },
       },
     })
     if (res.code === 200) {

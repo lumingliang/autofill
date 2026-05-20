@@ -12,7 +12,7 @@ model_list:
   litellm_params:
     model: openai/LLM-Research/c4ai-command-r-plus-08-2024
     api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
-    timeout: 60
+    timeout: 300
     api_base: https://api-inference.modelscope.cn/v1/
 - model_name: Qwen/QwQ-32B
   litellm_params:
@@ -29,7 +29,7 @@ model_list:
   litellm_params:
     model: openai/deepseek-ai/DeepSeek-R1-0528
     api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
-    timeout: 60
+    timeout: 300
     api_base: https://api-inference.modelscope.cn/v1/
   model_info:
     mode: chat

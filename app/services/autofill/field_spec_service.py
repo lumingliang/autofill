@@ -125,6 +125,17 @@ async def upsert_field_spec(
     # 保留parse_prompt（如果存在）
     if 'parse_prompt' in options:
         options_data['parse_prompt'] = options['parse_prompt']
+    # 保留模板选择器配置（如果存在）
+    if 'enable_template_selector' in options:
+        options_data['enable_template_selector'] = options['enable_template_selector']
+    if 'template_selector_field_name' in options:
+        options_data['template_selector_field_name'] = options['template_selector_field_name']
+    if 'template_selector_field_label' in options:
+        options_data['template_selector_field_label'] = options['template_selector_field_label']
+    if 'template_selector_label_path' in options:
+        options_data['template_selector_label_path'] = options['template_selector_label_path']
+    if 'template_selector_value_path' in options:
+        options_data['template_selector_value_path'] = options['template_selector_value_path']
     
     if field_spec:
         # 字段已存在，使用merge模式处理选项

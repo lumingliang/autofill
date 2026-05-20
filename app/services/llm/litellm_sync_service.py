@@ -18,7 +18,7 @@ class LiteLLMSyncService:
         self.litellm_config = settings.LITELLM_CONFIG
         self.base_url = self.litellm_config.get("base_url", "http://localhost:4000").rstrip("/")
         self.master_key = self.litellm_config.get("master_key", "")
-        self.timeout = self.litellm_config.get("timeout", 60)
+        self.timeout = self.litellm_config.get("timeout", 300)
 
     def _get_headers(self) -> Dict[str, str]:
         """获取请求头"""
@@ -53,7 +53,7 @@ class LiteLLMSyncService:
         # 构建 litellm_params
         params = {
             "model": model_name,
-            "timeout": litellm_params.get("timeout", 60)
+            "timeout": litellm_params.get("timeout", 300)
         }
 
         # 添加 API key（如果不是脱敏的）

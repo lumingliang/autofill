@@ -21,7 +21,7 @@ from app.services.llm.structured_output.utils import parse_text_function_call
 class StructuredOutputMethods:
     """结构化输出方法集合"""
 
-    def __init__(self, model_name: str, api_key: str, base_url: str, timeout: int = 60):
+    def __init__(self, model_name: str, api_key: str, base_url: str, timeout: int = 300):
         self.model_name = model_name
         self.api_key = api_key
         self.base_url = base_url

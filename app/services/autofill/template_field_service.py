@@ -3,6 +3,7 @@
 处理模板类型字段的同步和解析
 """
 import json
+import os
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -21,57 +22,52 @@ from app.models.autofill import (
     FieldType,
     FillPage
 )
-from app.utils.curl_parser import parse_curl_command
 
 
-DEFAULT_TEMPLATE_PARSE_PROMPT = """你是一个专业的模板解析助手。请分析以下模板内容，提取关键信息字段。
+DEFAULT_TEMPLATE_PARSE_PROMPT = """# 任务：车企售后服务记录模板标准化 + 字段元数据批量提取
+
+## 输出要求
+1. 仅输出标准JSON格式，无任何额外文字、解释、标题、分隔线
+2. 严格遵守以下JSON结构，不得新增或缺失字段
+3. 布尔值使用小写true/false，不得使用字符串"true"/"false"
+4. 所有字符串使用双引号包裹，转义内部双引号
+
+## 第一部分：模板标准化规则
+1. 保留原文所有固定业务话术、行文逻辑、句式顺序
+2. 将所有可变填写内容替换为标准占位符：${field_name}
+3. 删除所有人工操作提示、括号内冗余备注、内部指引性文字
+4. 保留固定枚举选项的描述，仅将填空位置替换为占位符
+
+## 第二部分：字段提取规则
+从原始模板中提取每个可变字段，包含以下属性：
+- field_name：字段英文标识（小写下划线，用于占位符和JSON输出）
+- field_label：字段中文展示名称
+- fill_instruction：整合模板内所有约束信息，包括：字段含义、填写格式、数据类型、可选范围、数值标准、必填要求
+- is_required：是否必填，从原文"必填"标注判断，布尔值
+
+## 第三部分：模板填写规则提取
+分析模板内容，提取该模板的适用场景和填写规则，包括：
+- 该模板适用于什么类型的服务记录场景
+- 使用该模板需要满足什么条件
+- 模板的主要填写内容和关键信息点
+- 模板的使用注意事项
+
+## 输出JSON结构
+{
+  "standardized_template": "标准化后的完整模板，使用${field_name}占位符",
+  "template_rules": "该模板的填写规则和使用指引，包括适用场景、填写要求、注意事项等",
+  "fields": [
+    {
+      "field_name": "customer_name",
+      "field_label": "客户姓名",
+      "fill_instruction": "填写车主姓名及称呼，文本类型",
+      "is_required": true
+    }
+  ]
+}
 
 ## 输入模板内容
 {template_content}
-
-## 解析要求
-1. 分析模板内容，识别所有需要填写的关键信息点
-2. 为每个关键信息提取字段：
-   - field_name: 字段英文名（小写，下划线连接，如：customer_name）
-   - field_label: 字段中文标签（清晰易懂的中文名称）
-   - field_type: 字段类型（默认为 "text"）
-   - fill_instruction: 填写指引（必须包含以下所有约束信息，从模板中提取）
-3. 字段类型说明：
-   - 所有字段默认使用 "text" 类型
-   - 只有在模板中明确说明是选择类型（如是/否、多选等）时才使用 "select_single" 或 "select_multi"
-
-## fill_instruction 填写指引提取规范
-fill_instruction 必须整合模板中该字段的所有约束信息，包括但不限于：
-1. **字段含义**：该字段代表什么业务含义
-2. **填写格式**：如日期格式(YYYY-MM-DD)、手机号格式(11位)、身份证号格式(18位)等
-3. **数据类型**：如字符串、数字、日期、布尔值等
-4. **可选范围**：如是/否选项、特定枚举值（如：高中低、优良好差）
-5. **数值标准**：如最小值、最大值、精度要求、单位（元/千克/公里等）
-6. **必填要求**：是否必须填写
-7. **示例值**：从模板中提取的具体示例
-8. **特殊规则**：如只能输入数字、不能包含特殊字符、长度限制等
-
-## 输出格式（JSON）
-你必须严格按照以下JSON格式返回，不要添加任何其他内容：
-
-{
-    "standard_template": "车主姓名: ${customer_name}\\n联系电话: ${contact_phone}\\n服务类型: ${service_type}",
-    "fields": [
-        {"field_name": "customer_name", "field_label": "车主姓名", "field_type": "text", "fill_instruction": "客户姓名，字符串类型，如：张先生、李女士。必填。"},
-        {"field_name": "contact_phone", "field_label": "联系电话", "field_type": "text", "fill_instruction": "客户联系电话，11位手机号码，数字格式。必填。"},
-        {"field_name": "service_type", "field_label": "服务类型", "field_type": "text", "fill_instruction": "服务类型，如：道路救援、保养预约、维修服务。必填。"}
-    ]
-}
-
-## 重要说明
-1. standard_template 必须是一个字符串，格式为：字段标签: ${field_name}，每个字段占一行，用 \\n 分隔
-2. 示例格式："车主姓名: ${customer_name}\\n联系电话: ${contact_phone}\\n地址: ${address}"
-3. 根据实际提取的字段生成对应的 standard_template，不要照搬示例
-4. 字段名使用英文小写，下划线连接
-5. 字段标签使用中文，清晰易懂
-6. **fill_instruction 必须全面**：整合字段含义、格式、类型、范围、标准、必填要求等所有约束信息
-7. 所有字段默认类型为 "text"，不要猜测字段类型
-8. 只返回JSON，不要包含任何解释说明
 """
 
 
@@ -150,7 +146,7 @@ class TemplateFieldService:
                 raise ValueError("无法从api_schema解析模板配置")
 
             # 3. 获取模板列表
-            templates = await self._fetch_templates(template_config)
+            templates = await self._fetch_templates_from_schema(api_schema_yaml)
 
             if not templates:
                 logger.warning(f"[TemplateFieldService] 未获取到模板列表")
@@ -166,6 +162,8 @@ class TemplateFieldService:
 
             # 4. 遍历处理每个模板
             results = []
+            template_rules_map = {}  # 存储模板ID到填写规则的映射
+
             for template in templates:
                 try:
                     result = await self._process_single_template(
@@ -174,14 +172,28 @@ class TemplateFieldService:
                         field_spec
                     )
                     results.append(result)
+                    # 收集模板填写规则
+                    if result.get("success") and result.get("template_id"):
+                        template_rules_map[result["template_id"]] = result.get("template_rules", "")
                 except Exception as e:
+                    import traceback
                     logger.error(f"[TemplateFieldService] 处理模板失败: {e}")
+                    logger.error(f"[TemplateFieldService] 堆栈跟踪: {traceback.format_exc()}")
                     results.append({
                         "success": False,
-                        "error": str(e)
+                        "error": str(e),
+                        "traceback": traceback.format_exc()
                     })
 
-            # 5. 更新状态为completed
+            # 5. 创建模板选择下拉字段（如果配置了）
+            await self._create_template_selector_field(
+                field_spec,
+                template_config,
+                templates,
+                template_rules_map
+            )
+
+            # 6. 更新状态为completed
             success_count = len([r for r in results if r.get("success")])
             await self._update_sync_status(
                 sync_record_id,
@@ -196,7 +208,7 @@ class TemplateFieldService:
 
         except Exception as e:
             logger.error(f"[TemplateFieldService] 同步失败: {e}")
-            # 6. 更新状态为failed
+            # 7. 更新状态为failed
             await self._update_sync_status(
                 sync_record_id,
                 "failed",
@@ -211,39 +223,36 @@ class TemplateFieldService:
     ) -> Dict[str, Any]:
         """处理单个模板"""
         # 4.1 提取模板名称和内容
-        # 使用字段名直接从模板字典中提取
-        template_name_field = template_config.get("template_name_field", "name")
-        template_content_field = template_config.get("template_content_field", "template_content")
+        template_name_path = template_config.get("template_name_path", "$.name")
+        template_content_path = template_config.get("template_content_path", "$.template_content")
+        template_id_path = template_config.get("template_id_path", "$.id")
 
-        template_name = template.get(template_name_field)
-        template_content = template.get(template_content_field)
+        template_name = self._extract_by_jsonpath(template, template_name_path)
+        template_content = self._extract_by_jsonpath(template, template_content_path)
+        template_id = self._extract_by_jsonpath(template, template_id_path)
 
         if not template_name:
-            logger.error(f"[TemplateFieldService] 无法提取模板名称，字段: {template_name_field}, 可用字段: {list(template.keys())}")
-            raise ValueError(f"无法提取模板名称，字段 '{template_name_field}' 不存在")
+            logger.error(f"[TemplateFieldService] 无法提取模板名称，路径: {template_name_path}, 可用字段: {list(template.keys())}")
+            raise ValueError(f"无法提取模板名称，路径 '{template_name_path}' 无效")
         if not template_content:
-            logger.error(f"[TemplateFieldService] 无法提取模板内容，字段: {template_content_field}, 可用字段: {list(template.keys())}")
-            raise ValueError(f"无法提取模板内容，字段 '{template_content_field}' 不存在")
+            logger.error(f"[TemplateFieldService] 无法提取模板内容，路径: {template_content_path}, 可用字段: {list(template.keys())}")
+            raise ValueError(f"无法提取模板内容，路径 '{template_content_path}' 无效")
 
         logger.info(f"[TemplateFieldService] 处理模板: {template_name}")
 
-        # 4.2 使用LLM解析
-        # 直接将原始模板内容传给大模型，让大模型自己解析
-        # 不再使用 parse_prompt.format() 方式
-        # 优先使用字段的自定义提示词，其次使用模板配置中的提示词，最后使用默认提示词
+        # 4.2 使用LLM解析 - 使用json_parser方法
         parse_prompt = field_spec.options.get("parse_prompt") or template_config.get("parse_prompt") or DEFAULT_TEMPLATE_PARSE_PROMPT
 
-        parsed = await self._parse_template_with_llm(template_content, parse_prompt)
+        parsed = await self._parse_template_with_llm(template_content, parse_prompt, template_name)
 
         # 4.3 生成字段组名称
         group_name_pattern = template_config.get(
             "group_name_pattern",
-            "{template_name} 服务记录"
+            "$.name + 服务记录"
         )
-        group_name = await self._generate_group_name(
+        group_name = self._generate_group_name(
             group_name_pattern,
-            {"template_name": template_name},
-            template  # 传递完整模板数据以支持 $.parent 语法
+            template
         )
 
         # 4.4 获取页面信息
@@ -258,106 +267,215 @@ class TemplateFieldService:
         page = await FillPage.get(id=field_group.page_id)
 
         # 4.5 创建字段组和字段
-        # 延迟导入避免循环依赖
         from app.services.autofill.field_group_service import FieldGroupService
         field_group_service = FieldGroupService()
 
-        # 转换字段格式，提取 fill_instruction
+        # 转换字段格式，所有字段类型默认为text
         fields_for_group = []
-        for field in parsed["fields"]:
+        logger.info(f"[TemplateFieldService] 开始处理字段，共 {len(parsed.get('fields', []))} 个")
+        for field in parsed.get("fields", []):
+            # 支持 field_name/name 和 field_label/label 两种字段名格式
+            field_name = field.get("field_name") or field.get("name")
+            field_label = field.get("field_label") or field.get("label")
+            logger.info(f"[TemplateFieldService] 处理字段: field_name={field_name}, field_label={field_label}, field={field}")
+
+            if not field_name or not field_label:
+                logger.warning(f"[TemplateFieldService] 跳过无效字段: {field}")
+                continue
+
             field_data = {
-                "field_name": field["field_name"],
-                "field_label": field["field_label"],
-                "field_type": field["field_type"],
-                "fill_instruction": field.get("fill_instruction", f"请填写{field['field_label']}"),
-                "options": field.get("options", {})
+                "field_name": field_name,
+                "field_label": field_label,
+                "field_type": "text",  # 强制默认为text
+                "fill_instruction": field.get("fill_instruction", f"请填写{field_label}"),
+                "options": {}
             }
             fields_for_group.append(field_data)
+
+        # 构建output_templates，包含标准化模板和原始模板
+        output_templates = {
+            "default": {
+                "template": parsed["standardized_template"],
+                "description": "标准化后的模板"
+            },
+            "original": {
+                "template": template_content,
+                "description": "原始模板内容"
+            }
+        }
 
         await field_group_service.upsert_field_group(
             tenant_id=field_spec.tenant_id,
             app_name=field_spec.app_name,
             page_name=page.page_name,
             group_name=group_name,
-            output_templates={"default": {"template": parsed["standard_template"]}},
+            output_templates=output_templates,
             fields=fields_for_group
         )
 
         return {
             "success": True,
             "template_name": template_name,
+            "template_id": template_id,
             "group_name": group_name,
-            "fields_count": len(parsed.get("fields", []))
+            "fields_count": len(parsed.get("fields", [])),
+            "template_rules": parsed.get("template_rules", "")
         }
 
-    async def _fetch_templates(
+    async def _create_template_selector_field(
         self,
-        template_config: Dict
+        field_spec: FieldSpec,
+        template_config: Dict,
+        templates: List[Dict],
+        template_rules_map: Dict[str, str] = None
+    ) -> None:
+        """
+        创建模板选择下拉字段
+
+        根据配置生成一个下拉选择字段，用于选择模板
+        """
+        # 检查是否配置了模板选择器字段
+        selector_config = template_config.get("template_selector", {})
+        if not selector_config.get("enabled", False):
+            return
+
+        selector_field_name = selector_config.get("field_name", "template_selector")
+        selector_field_label = selector_config.get("field_label", "模板选择")
+        label_path = selector_config.get("label_path", "$.name")
+        value_path = selector_config.get("value_path", "$.id")
+
+        # 构建选项列表
+        items = []
+        for template in templates:
+            label = self._extract_by_jsonpath(template, label_path)
+            value = self._extract_by_jsonpath(template, value_path)
+            if label and value:
+                # 获取该模板的填写规则
+                fill_instruction = ""
+                if template_rules_map and value in template_rules_map:
+                    fill_instruction = template_rules_map[value]
+                
+                items.append({
+                    "label": str(label),
+                    "value": str(value),
+                    "is_deleted": False,
+                    "fill_instruction": fill_instruction
+                })
+
+        if not items:
+            logger.warning("[TemplateFieldService] 没有可用的模板选项")
+            return
+
+        # 获取字段组信息
+        relations = await FieldGroupFieldSpec.filter(
+            field_spec_id=field_spec.id
+        ).all()
+
+        if not relations:
+            logger.warning("[TemplateFieldService] 字段未关联字段组，无法创建模板选择器")
+            return
+
+        # 创建下拉选择字段
+        from app.services.autofill.field_spec_service import upsert_field_spec
+
+        await upsert_field_spec(
+            tenant_id=field_spec.tenant_id,
+            app_name=field_spec.app_name,
+            field_name=selector_field_name,
+            field_label=selector_field_label,
+            field_type=FieldType.SELECT_SINGLE,
+            field_group_ids=[relations[0].field_group_id],
+            fill_instruction="请选择适用的模板",
+            options={"items": items}
+        )
+
+        logger.info(f"[TemplateFieldService] 创建模板选择器字段成功: {selector_field_name}, 选项数: {len(items)}")
+
+    async def _fetch_templates_from_schema(
+        self,
+        api_schema_yaml: str
     ) -> List[Dict]:
         """
-        根据curl配置获取外部模板列表
+        根据OpenAPI Schema配置获取外部模板列表
+        复用FieldCascadeService中的API调用逻辑
         """
-        curl_command = template_config.get("curl_command", "")
-        if not curl_command:
-            raise ValueError("缺少curl_command配置")
+        try:
+            # 使用 yaml.safe_load 直接解析，不进行 OpenAPI 规范验证
+            spec = yaml.safe_load(api_schema_yaml)
+            if not spec or not isinstance(spec, dict):
+                raise ValueError("无效的 YAML 格式")
 
-        # 解析curl命令
-        curl_config = parse_curl_command(curl_command)
+            servers = spec.get('servers', [])
+            base_url = servers[0].get('url', '') if servers else ''
 
-        method = curl_config.get("method", "GET")
-        url = curl_config.get("url", "")
-        headers = curl_config.get("headers", {})
-        body = curl_config.get("body")
+            paths = spec.get('paths', {})
+            if not paths:
+                raise ValueError("Schema中未找到paths配置")
 
-        if not url:
-            raise ValueError("无法从curl命令中提取URL")
+            path, methods = next(iter(paths.items()))
+            method = 'get' if 'get' in methods else 'post'
+            operation = methods.get(method, {})
 
-        logger.info(f"[TemplateFieldService] 请求模板列表: {method} {url}")
+            full_url = f"{base_url.rstrip('/')}{path}"
 
-        # 发起HTTP请求
-        async with httpx.AsyncClient() as client:
-            if method == "GET":
-                response = await client.get(url, headers=headers)
-            elif method == "POST":
-                response = await client.post(url, headers=headers, json=body)
-            else:
-                raise ValueError(f"不支持的HTTP方法: {method}")
+            # 获取x-api-params配置
+            x_api_params = operation.get('x-api-params', {})
+            headers = x_api_params.get('headers', {}).copy()
+            params = {k: v for k, v in x_api_params.items() if k != 'headers'}
 
-            response.raise_for_status()
-            data = response.json()
+            logger.info(f"[TemplateFieldService] 请求模板列表: {method.upper()} {full_url}")
 
-        # 使用template_list_path提取模板列表
-        template_list_path = template_config.get("template_list_path", "$.data[*]")
-        templates = self._extract_by_jsonpath(data, template_list_path)
+            # 发起HTTP请求
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if method == 'get':
+                    response = await client.get(full_url, headers=headers, params=params)
+                else:
+                    headers.setdefault('Content-Type', 'application/json')
+                    response = await client.post(full_url, headers=headers, json=params)
 
-        if templates is None:
-            # 回退到默认逻辑
-            if isinstance(data, list):
-                templates = data
-            elif isinstance(data, dict) and "data" in data:
-                templates = data["data"]
-            else:
-                templates = [data]
+                response.raise_for_status()
+                data = response.json()
 
-        # 确保返回的是列表
-        if not isinstance(templates, list):
-            templates = [templates]
+            # 从x-template-mapping中获取模板列表路径
+            template_mapping = operation.get('x-template-mapping', {})
+            template_list_path = template_mapping.get('template_list_path', '$.data[*]')
 
-        logger.info(f"[TemplateFieldService] 提取到 {len(templates)} 个模板")
-        return templates
+            templates = self._extract_by_jsonpath(data, template_list_path)
+
+            if templates is None:
+                # 回退到默认逻辑
+                if isinstance(data, list):
+                    templates = data
+                elif isinstance(data, dict) and "data" in data:
+                    templates = data["data"]
+                else:
+                    templates = [data]
+
+            # 确保返回的是列表
+            if not isinstance(templates, list):
+                templates = [templates]
+
+            logger.info(f"[TemplateFieldService] 提取到 {len(templates)} 个模板")
+            return templates
+
+        except Exception as e:
+            logger.error(f"[TemplateFieldService] 获取模板列表失败: {e}")
+            raise ValueError(f"获取模板列表失败: {str(e)}")
 
     async def _parse_template_with_llm(
         self,
         template_content: str,
-        parse_prompt: str
+        parse_prompt: str,
+        template_name: str = ""
     ) -> Dict[str, Any]:
         """
-        使用LLM解析模板内容
+        使用LLM解析模板内容 - 使用json_parser方法
 
         返回: {
-            "standard_template": "标准化后的模板",
+            "standardized_template": "标准化后的模板",
+            "template_rule": "模板应用规则",
             "fields": [
-                {"field_name": "contact_phone", "field_label": "联系电话", "field_type": "text"},
+                {"field_name": "contact_phone", "field_label": "联系电话", "is_required": true},
                 ...
             ]
         }
@@ -370,18 +488,18 @@ class TemplateFieldService:
         if not config:
             raise ValueError("未找到默认LLM配置，请先配置LLM模型")
 
-        # 2. 构建完整prompt - 将原始模板内容附加到prompt后面
-        # 不再使用 format() 方式，避免模板内容中的特殊字符被误解析
-        full_prompt = f"{parse_prompt}\n\n## 输入模板内容\n{template_content}"
+        # 2. 构建完整prompt
+        # 使用 replace 而不是 format，避免提示词中的 {field_name} 等占位符被误解析
+        full_prompt = parse_prompt.replace("{template_content}", template_content)
 
         logger.info(f"[TemplateFieldService] 调用LLM解析模板，模型: {config.name}")
 
-        # 3. 调用LLM服务
+        # 3. 调用LLM服务 - 使用json_parser方法
         result = await llm_proxy_service.process_request(
             query=full_prompt,
-            tools=[],  # plain模式不需要tools
+            tools=[],  # json_parser方法不需要tools
             system_prompt="你是一个专业的模板解析助手，擅长从非标准模板中提取结构化信息。",
-            method="plain",  # 使用plain模式直接返回文本
+            method="json_parser",  # 使用json_parser方法直接返回JSON
             config=config
         )
 
@@ -392,142 +510,42 @@ class TemplateFieldService:
 
         # 4. 解析JSON响应
         try:
-            content = result.get("data", "")
+            parsed = result.get("data", {})
 
-            # 处理LLM返回的数据结构
-            # 情况1: content是字符串，直接解析JSON
-            # 情况2: content是字典，包含raw_response和content键（LLM代理返回的结构）
-            if isinstance(content, dict):
-                # 检查是否是LLM代理返回的结构
-                if "content" in content:
-                    # 真正的内容在content键中
-                    content = content["content"]
-                elif "raw_response" in content:
-                    # 尝试从raw_response获取
-                    content = content["raw_response"]
-
-            if isinstance(content, dict):
-                # 如果content已经是字典，直接使用
-                parsed = content
-            else:
-                # 清理可能的markdown代码块
-                content_str = str(content).strip()
-                if content_str.startswith("```json"):
-                    content_str = content_str[7:]
-                if content_str.startswith("```"):
-                    content_str = content_str[3:]
-                if content_str.endswith("```"):
-                    content_str = content_str[:-3]
-                content_str = content_str.strip()
-
-                # 处理LLM返回的转义JSON字符串
-                # 情况1: 内容被包裹在单引号中，如: '{"key": "value"}'
-                # 情况2: 内容使用双花括号，如: '{{"key": "value"}}'
-                # 情况3: 内容包含转义字符，如: '{\\n  "key": "value"\\n}'
-
-                # 首先尝试直接解析
-                try:
-                    parsed = json.loads(content_str)
-                except json.JSONDecodeError:
-                    # 处理各种转义情况
-                    processed_str = content_str
-
-                    # 去除外层单引号（如果存在）
-                    if (processed_str.startswith("'") and processed_str.endswith("'")) or \
-                       (processed_str.startswith('"') and processed_str.endswith('"')):
-                        processed_str = processed_str[1:-1]
-
-                    # 处理双花括号（Jinja2风格转义）
-                    if processed_str.startswith("{{") and processed_str.endswith("}}"):
-                        processed_str = processed_str[1:-1].strip()
-
-                    # 处理Python字符串转义
-                    # 将 \\n 转换为实际的换行符，\\" 转换为 "
-                    try:
-                        processed_str = processed_str.encode('utf-8').decode('unicode_escape')
-                    except UnicodeDecodeError:
-                        pass  # 如果解码失败，保持原样
-
-                    try:
-                        parsed = json.loads(processed_str)
-                    except json.JSONDecodeError as e2:
-                        logger.error(f"[TemplateFieldService] JSON解析失败，原始内容: {content_str[:200]}...")
-                        logger.error(f"[TemplateFieldService] 处理后内容: {processed_str[:200]}...")
-                        raise e2
+            if isinstance(parsed, str):
+                # 如果返回的是字符串，尝试解析JSON
+                parsed = json.loads(parsed)
 
             # 5. 验证返回格式
-            if "standard_template" not in parsed or "fields" not in parsed:
+            if "standardized_template" not in parsed or "fields" not in parsed:
                 logger.error(f"[TemplateFieldService] LLM返回格式不正确: {parsed}")
-                logger.error(f"[TemplateFieldService] parsed类型: {type(parsed)}, keys: {parsed.keys() if isinstance(parsed, dict) else 'N/A'}")
-                raise ValueError("LLM返回格式不正确，缺少standard_template或fields")
+                raise ValueError("LLM返回格式不正确，缺少standardized_template或fields")
 
             # 6. 验证字段格式并转换
             fields = []
             for field in parsed.get("fields", []):
-                # 支持 name/label/type/fill_instruction 和 field_name/field_label/field_type/fill_instruction 两种格式
                 field_name = field.get("field_name") or field.get("name")
                 field_label = field.get("field_label") or field.get("label")
-                field_type = field.get("field_type") or field.get("type")
-                fill_instruction = field.get("fill_instruction") or field.get("field_guide") or field.get("guide") or field.get("description")
+                is_required = field.get("is_required", False)
+                fill_instruction = field.get("fill_instruction", "")
 
                 if not field_name or not field_label:
                     logger.warning(f"[TemplateFieldService] 字段缺少名称或标签: {field}")
                     continue
 
-                # 构建字段数据，确保有填写指引
+                # 构建字段数据，所有字段类型默认为text
                 field_data = {
                     "field_name": field_name,
                     "field_label": field_label,
-                    "field_type": field_type or "text",
+                    "is_required": is_required,
                     "fill_instruction": fill_instruction or f"请填写{field_label}"
                 }
                 fields.append(field_data)
 
             logger.info(f"[TemplateFieldService] LLM解析成功，提取 {len(fields)} 个字段")
 
-            # 检查并修复 standard_template 格式
-            standard_template = parsed.get("standard_template", "")
-            # 将 \\n 替换为实际的换行符
-            standard_template = standard_template.replace("\\n", "\n")
-            
-            # 检查格式是否正确：每行应该是 "字段标签: ${field_name}" 格式
-            # 正确的格式：每行包含冒号分隔的标签和变量引用
-            lines = standard_template.split('\n')
-            is_correct_format = True
-            
-            # 检查是否包含默认模板标记
-            if "${field_name}" in standard_template or "${value}" in standard_template:
-                is_correct_format = False
-                logger.warning(f"[TemplateFieldService] standard_template包含默认模板标记")
-            else:
-                # 检查每行格式是否符合 "标签: ${变量名}"
-                field_pattern = re.compile(r'^[^:]+:\s*\$\{[^}]+\}$')
-                valid_lines = 0
-                for line in lines:
-                    line = line.strip()
-                    if line and field_pattern.match(line):
-                        valid_lines += 1
-                
-                # 如果有效行数少于字段数的一半，认为格式不正确
-                if valid_lines < len(fields) / 2:
-                    is_correct_format = False
-                    logger.warning(f"[TemplateFieldService] standard_template格式检查失败: 有效行{valid_lines}, 字段数{len(fields)}")
-            
-            if not is_correct_format:
-                # LLM没有返回正确的格式，使用字段列表自动生成
-                logger.warning(f"[TemplateFieldService] LLM返回的standard_template格式不正确，自动生成正确格式")
-                template_lines = []
-                for field in fields:
-                    field_label = field.get("field_label", field.get("field_name", ""))
-                    field_name = field.get("field_name", "")
-                    template_lines.append(f"{field_label}: ${{{field_name}}}")
-                standard_template = "\n".join(template_lines)
-                logger.info(f"[TemplateFieldService] 自动生成的standard_template:\n{standard_template}")
-            else:
-                logger.info(f"[TemplateFieldService] LLM返回的standard_template格式正确，共{len(lines)}行")
-
             return {
-                "standard_template": standard_template,
+                "standardized_template": parsed.get("standardized_template", ""),
                 "fields": fields
             }
 
@@ -538,11 +556,10 @@ class TemplateFieldService:
             logger.error(f"[TemplateFieldService] 解析LLM响应失败: {e}")
             raise ValueError(f"解析LLM响应失败: {e}")
 
-    async def _generate_group_name(
+    def _generate_group_name(
         self,
         pattern: str,
-        template_data: Dict,
-        parent_template: Dict = None
+        template_data: Dict
     ) -> str:
         """
         根据规则生成字段组名称
@@ -551,11 +568,6 @@ class TemplateFieldService:
         - $.data[*].name: JSONPath表达式，从API响应数据中提取模板名称
         - +: 分隔符
         - 的服务记录: 固定后缀
-
-        参数:
-        - pattern: 命名规则模板，使用 JSONPath 格式
-        - template_data: 包含 template_name 的字典（备用）
-        - parent_template: 完整的模板数据，用于 JSONPath 提取
         """
         try:
             # 解析pattern，分离jsonpath部分和固定文本部分
@@ -567,27 +579,24 @@ class TemplateFieldService:
                 jsonpath_part = pattern.strip()
                 suffix = ""
 
-            # 确定数据源 - 使用完整的模板数据进行 JSONPath 提取
-            data_to_search = parent_template if parent_template else template_data
-
             # 使用jsonpath提取值
             jsonpath_expr = jsonpath_parse(jsonpath_part)
-            matches = jsonpath_expr.find(data_to_search)
+            matches = jsonpath_expr.find(template_data)
 
             if matches:
                 template_name = matches[0].value
                 return f"{template_name}{suffix}".strip()
 
-            # 如果JSONPath提取失败，使用默认的 template_name
-            if "template_name" in template_data:
-                return f"{template_data['template_name']}{suffix}".strip()
+            # 如果JSONPath提取失败，尝试直接使用name字段
+            if "name" in template_data:
+                return f"{template_data['name']}{suffix}".strip()
 
             return f"未命名{suffix}".strip()
         except Exception as e:
             logger.warning(f"[TemplateFieldService] 生成字段组名称失败: {e}")
             # 尝试使用默认模板名
-            if "template_name" in template_data:
-                return f"{template_data['template_name']} 服务记录"
+            if "name" in template_data:
+                return f"{template_data['name']} 服务记录"
             return "未命名字段组"
 
     def _extract_by_jsonpath(
@@ -600,6 +609,9 @@ class TemplateFieldService:
         如果JSONPath包含 [*] 通配符，返回所有匹配项的列表
         否则返回第一个匹配项的值
         """
+        if not jsonpath or not data:
+            return None
+
         try:
             jsonpath_expr = jsonpath_parse(jsonpath)
             matches = jsonpath_expr.find(data)
@@ -622,11 +634,13 @@ class TemplateFieldService:
         从YAML格式的api_schema中解析模板配置
 
         返回: {
-            "curl_command": "...",
             "template_name_path": "...",
             "template_content_path": "...",
+            "template_id_path": "...",
             "group_name_pattern": "...",
-            "parse_prompt": "..."
+            "parse_prompt": "...",
+            "template_list_path": "...",
+            "template_selector": {...}
         }
         """
         try:
@@ -644,67 +658,17 @@ class TemplateFieldService:
                     # 获取 x-template-mapping 配置
                     template_mapping = operation.get('x-template-mapping', {})
 
-                    # 获取 x-api-params 配置
-                    api_params = operation.get('x-api-params', {})
-
-                    # 构建curl命令
-                    servers = schema.get('servers', [{}])
-                    base_url = servers[0].get('url', '') if servers else ''
-
-                    # 如果没有配置servers，使用默认的localhost地址
-                    if not base_url:
-                        base_url = 'http://localhost:3200'
-
-                    # 确保base_url和path正确拼接
-                    if base_url.endswith('/') and path.startswith('/'):
-                        full_url = f"{base_url[:-1]}{path}"
-                    elif not base_url.endswith('/') and not path.startswith('/'):
-                        full_url = f"{base_url}/{path}"
-                    else:
-                        full_url = f"{base_url}{path}"
-
-                    # 构建curl命令
-                    curl_parts = [f"curl -X {method.upper()} '{full_url}'"]
-
-                    # 添加headers
-                    headers = api_params.get('headers', {})
-                    for key, value in headers.items():
-                        curl_parts.append(f"  -H '{key}: {value}'")
-
-                    # 添加body（如果有）
-                    if 'requestBody' in operation:
-                        body_content = operation['requestBody'].get('content', {})
-                        if 'application/json' in body_content:
-                            body_schema = body_content['application/json'].get('schema', {})
-                            if 'example' in body_schema:
-                                body_json = json.dumps(body_schema['example'], ensure_ascii=False)
-                                curl_parts.append(f"  -H 'Content-Type: application/json'")
-                                curl_parts.append(f"  -d '{body_json}'")
-
-                    curl_command = ' \\\n'.join(curl_parts)
-
-                    # 解析模板列表的JSONPath和单个模板的字段名
-                    # 例如: $.data[*].name -> 列表路径: $.data[*], 字段名: name
-                    template_name_path = template_mapping.get('template_name_path', '$.data[*].name')
-                    template_content_path = template_mapping.get('template_content_path', '$.data[*].template_content')
-
-                    # 提取字段名（最后一个点后的部分）
-                    template_name_field = template_name_path.split('.')[-1].replace('[*]', '')
-                    template_content_field = template_content_path.split('.')[-1].replace('[*]', '')
-
-                    # 获取 group_name_pattern，使用 JSONPath 格式
-                    group_name_pattern = template_mapping.get('group_name_pattern', '$.name + 服务记录')
-                    # 兼容旧格式：如果包含 {template_name}，转换为 JSONPath 格式
-                    if '{template_name}' in group_name_pattern:
-                        group_name_pattern = '$.name + 服务记录'
+                    # 获取模板选择器配置
+                    template_selector = template_mapping.get('template_selector', {})
 
                     return {
-                        "curl_command": curl_command,
-                        "template_list_path": template_name_path.rsplit('.', 1)[0] if '.' in template_name_path else '$',
-                        "template_name_field": template_name_field,
-                        "template_content_field": template_content_field,
-                        "group_name_pattern": group_name_pattern,
-                        "parse_prompt": template_mapping.get('parse_prompt', DEFAULT_TEMPLATE_PARSE_PROMPT)
+                        "template_list_path": template_mapping.get('template_list_path', '$.data[*]'),
+                        "template_name_path": template_mapping.get('template_name_path', '$.name'),
+                        "template_content_path": template_mapping.get('template_content_path', '$.template_content'),
+                        "template_id_path": template_mapping.get('template_id_path', '$.id'),
+                        "group_name_pattern": template_mapping.get('group_name_pattern', '$.name + 服务记录'),
+                        "parse_prompt": template_mapping.get('parse_prompt', DEFAULT_TEMPLATE_PARSE_PROMPT),
+                        "template_selector": template_selector
                     }
 
             return None

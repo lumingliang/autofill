@@ -160,7 +160,7 @@ class Settings(BaseSettings):
                     instance.LITELLM_CONFIG = {
                         "base_url": litellm_config.get("base_url", "http://localhost:4000"),
                         "master_key": litellm_config.get("master_key", ""),
-                        "timeout": litellm_config.get("timeout", 60)
+                        "timeout": litellm_config.get("timeout", 300)
                     }
                 
                 # 加载结构化输出配置
