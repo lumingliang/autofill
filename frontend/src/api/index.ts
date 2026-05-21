@@ -208,16 +208,6 @@ export default {
     headers: { 'Authorization': `Bearer ${apiKey}` }
   }),
 
-  // autofill - 页面管理
-  getPageList: (params: any = {}) => request.get('/autofill/page/list', { params }),
-  getPageById: (params: any = {}) => request.get('/autofill/page/get', { params }),
-  getPageDetail: (params: any = {}) => request.get('/autofill/page/detail', { params }),
-  exportPageMd: (params: any = {}) => request.get('/autofill/page/export_md', { params }),
-  createPage: (data: any = {}) => request.post('/autofill/page/create', data),
-  updatePage: (data: any = {}) => request.post('/autofill/page/update', data),
-  deletePage: (params: any = {}) => request.delete('/autofill/page/delete', { params }),
-  getPageSelect: (params: any = {}) => request.get('/autofill/page/select', { params }),
-
   // autofill - 字段组管理
   getFieldGroupList: (params: any = {}) => request.get('/autofill/field_group/list', { params }),
   getFieldGroupById: (params: any = {}) => request.get('/autofill/field_group/get', { params }),
@@ -234,13 +224,12 @@ export default {
   getFieldSpecList: (params: any = {}) => request.get('/autofill/field_spec/list', { params }),
   getFieldSpecById: (params: any = {}) => request.get('/autofill/field_spec/get', { params }),
   getFieldSpecsByGroup: (params: any = {}) => request.get('/autofill/field_spec/by_group', { params }),
+  batchAddFieldsToGroup: (data: any = {}) => request.post('/autofill/field_group/batch_add_fields', data),
+  batchRemoveFieldsFromGroup: (data: any = {}) => request.post('/autofill/field_group/batch_remove_fields', data),
   createFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/create', data),
   updateFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/update', data),
   deleteFieldSpec: (params: any = {}) => request.delete('/autofill/field_spec/delete', { params }),
-  exportFieldSpecs: (data: any = {}) => request.post('/autofill/field_spec/export', data),
-  importFieldSpecs: (data: any = {}) => request.post('/autofill/field_spec/import', data, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
+  batchDeleteFieldSpecs: (data: any = {}) => request.post('/autofill/field_spec/batch_delete', data),
   syncFieldSpecOptions: (data: any = {}) => request.post('/autofill/field_spec/sync_options', data),
   parseCurlCommand: (data: any = {}) => request.post('/autofill/field_spec/parse_curl', data),
   applyFieldMapping: (data: any = {}) => request.post('/autofill/field_spec/apply_mapping', data),

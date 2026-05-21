@@ -14,9 +14,9 @@
           </a-form-item>
         </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="字段组" class="filter-item">
-            <a-select v-model:value="queryParams.field_group_id" placeholder="请选择字段组" allow-clear
-              :options="fieldGroupOptions" :disabled="!!props.fieldGroupId" @change="handleSearch" />
+          <a-form-item label="应用名称" class="filter-item">
+            <a-select v-model:value="queryParams.app_name" placeholder="请选择应用" allow-clear :options="appOptions"
+              @change="handleSearch" />
           </a-form-item>
         </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
@@ -46,16 +46,19 @@
             <PlusOutlined />
             新建字段
           </a-button>
-          <a-button @click="handleExport">
-            <ExportOutlined />
-            导出选中
-          </a-button>
-          <a-upload :custom-request="handleImport" :show-upload-list="false" accept=".csv">
-            <a-button>
-              <ImportOutlined />
-              导入
+          <a-popconfirm
+            title="确定批量删除选中的字段吗？"
+            description="此操作不可恢复，请谨慎操作！"
+            ok-text="确定"
+            cancel-text="取消"
+            ok-type="danger"
+            @confirm="handleBatchDelete"
+          >
+            <a-button v-permission="'delete/api/v1/autofill/field_spec/batch_delete'" danger :disabled="selectedRowKeys.length === 0">
+              <DeleteOutlined />
+              批量删除
             </a-button>
-          </a-upload>
+          </a-popconfirm>
           <a-typography-text v-if="selectedRowKeys.length > 0" type="secondary">
             已选择 {{ selectedRowKeys.length }} 项
           </a-typography-text>
@@ -96,9 +99,8 @@
           <a-select v-model:value="form.tenant_id" placeholder="请选择租户" :options="tenantOptions"
             @change="(val: number) => handleModalTenantChange(val, form)" />
         </a-form-item>
-        <a-form-item label="关联字段组" name="field_group_ids">
-          <a-select v-model:value="form.field_group_ids" placeholder="请选择关联字段组（可多选）" mode="multiple"
-            :options="fieldGroupOptions" />
+        <a-form-item label="应用名称" name="app_name" required>
+          <a-select v-model:value="form.app_name" placeholder="请选择应用" :options="appOptions" />
         </a-form-item>
         <a-form-item label="字段名" name="field_name">
           <a-input v-model:value="form.field_name" placeholder="请输入字段名（最多50个字符）" :disabled="modalAction === 'edit'" />
@@ -710,12 +712,15 @@ const queryParams = reactive({
   field_name: '',
   field_label: '',
   field_type: undefined as string | undefined,
-  field_group_id: props.fieldGroupId,
+  app_name: undefined as string | undefined,
   tenant_id: undefined as number | undefined,
 })
 
 // 租户选项
 const tenantOptions = ref<{ label: string; value: number }[]>([])
+
+// 应用选项
+const appOptions = ref<{ label: string; value: string }[]>([])
 
 // 表格数据
 const loading = ref(false)
@@ -830,7 +835,6 @@ const cascadeModalLoading = ref(false)
 const cascadeConfig = reactive({
   id: undefined as number | undefined,
   parent_field_id: undefined as number | undefined,
-  parent_field_group_id: undefined as number | undefined,
   field_name_pattern: 'parent.$.data[*].label + -的二三级',
   field_label_pattern: 'parent.$.data[*].label + -的二三级',
   dynamic_params: [] as { key: string; value: string }[],
@@ -938,7 +942,7 @@ const fieldCascadeConfigs = ref<any[]>([])
 const modalForm = reactive({
   id: undefined as number | undefined,
   tenant_id: undefined as number | undefined,
-  field_group_ids: [] as number[],
+  app_name: undefined as string | undefined,
   field_name: '',
   field_label: '',
   field_type: 'text',
@@ -1113,8 +1117,8 @@ const filterItemCount = computed(() => userStore.isSuperUser ? 5 : 4)
 
 const modalRules = computed(() => {
   const rules: any = {
-    field_group_ids: [
-      { required: true, message: '请至少选择一个关联字段组', trigger: 'change', type: 'array' },
+    app_name: [
+      { required: true, message: '请选择应用名称', trigger: 'change' },
     ],
     field_name: [
       { required: true, message: '请输入字段名', trigger: 'blur' },
@@ -1141,8 +1145,6 @@ const modalRules = computed(() => {
 const fetchData = async () => {
   loading.value = true
   try {
-    // 优先使用props中的fieldGroupId
-    const fieldGroupId = props.fieldGroupId || queryParams.field_group_id
     const params: any = {
       page: pagination.current,
       page_size: pagination.pageSize,
@@ -1150,8 +1152,8 @@ const fetchData = async () => {
       field_label: queryParams.field_label,
       field_type: queryParams.field_type,
     }
-    if (fieldGroupId) {
-      params.field_group_id = fieldGroupId
+    if (queryParams.app_name) {
+      params.app_name = queryParams.app_name
     }
     // 超管可以按租户筛选
     if (userStore.isSuperUser && queryParams.tenant_id) {
@@ -1176,9 +1178,7 @@ const handleReset = () => {
   queryParams.field_name = ''
   queryParams.field_label = ''
   queryParams.field_type = undefined
-  if (!props.fieldGroupId) {
-    queryParams.field_group_id = undefined
-  }
+  queryParams.app_name = undefined
   if (userStore.isSuperUser) {
     queryParams.tenant_id = undefined
   }
@@ -1223,22 +1223,42 @@ const fetchTenantOptions = async () => {
   }
 }
 
+// 加载应用列表
+const fetchAppOptions = async (tenantId?: number) => {
+  try {
+    const params: any = {}
+    // 如果指定了租户（大于0），只加载该租户的应用
+    if (tenantId && tenantId > 0) {
+      params.tenant_id = tenantId
+    }
+    const res: any = await api.getAppSelect(params)
+    if (res.code === 200) {
+      appOptions.value = (res.data || []).map((app: any) => ({
+        label: app.label,
+        value: app.value,
+      }))
+    }
+  } catch (error) {
+    console.error('获取应用列表失败:', error)
+  }
+}
+
 // 租户变更处理（筛选区域）
 const handleTenantChange = (tenantId: number) => {
-  // 重置字段组选择
-  queryParams.field_group_id = undefined
-  // 重新加载该租户的字段组
-  fetchFieldGroups(tenantId)
+  // 清空应用选择
+  queryParams.app_name = undefined
+  // 重新加载该租户的应用列表
+  fetchAppOptions(tenantId)
   // 刷新数据
   handleSearch()
 }
 
 // 弹窗中租户变更处理
 const handleModalTenantChange = (tenantId: number, form: any) => {
-  // 重置字段组选择
-  form.field_group_ids = []
-  // 重新加载该租户的字段组
-  fetchFieldGroups(tenantId)
+  // 清空应用选择
+  form.app_name = undefined
+  // 重新加载该租户的应用列表
+  fetchAppOptions(tenantId)
 }
 
 const handleTableChange = (pag: any) => {
@@ -1249,7 +1269,7 @@ const handleTableChange = (pag: any) => {
 
 const resetModalForm = () => {
   modalForm.id = undefined
-  modalForm.field_group_ids = props.fieldGroupId ? [props.fieldGroupId] : []
+  modalForm.app_name = undefined
   modalForm.field_name = ''
   modalForm.field_label = ''
   modalForm.field_type = 'text'
@@ -1285,7 +1305,7 @@ const handleEdit = (record: any) => {
   modalAction.value = 'edit'
   modalTitle.value = '编辑字段'
   modalForm.id = record.id
-  modalForm.field_group_ids = record.field_group_ids || []
+  modalForm.app_name = record.app_name
   modalForm.field_name = record.field_name
   modalForm.field_label = record.field_label
   modalForm.field_type = record.field_type
@@ -1367,10 +1387,6 @@ const handleSyncOptions = async () => {
     message.warning('请先填写字段标签')
     return
   }
-  if (!modalForm.field_group_ids || modalForm.field_group_ids.length === 0) {
-    message.warning('请至少选择一个关联字段组')
-    return
-  }
 
   syncLoading.value = true
   try {
@@ -1379,7 +1395,6 @@ const handleSyncOptions = async () => {
       field_name: modalForm.field_name,
       field_label: modalForm.field_label,
       field_type: modalForm.field_type,
-      field_group_ids: modalForm.field_group_ids,
       fill_instruction: modalForm.fill_instruction || '',
       options: modalForm.options,
     })
@@ -1651,60 +1666,27 @@ const handleDelete = async (record: any) => {
   }
 }
 
-// 导出选中字段
-const handleExport = async () => {
+// 批量删除字段
+const handleBatchDelete = async () => {
   if (selectedRowKeys.value.length === 0) {
-    message.warning('请先选择要导出的字段')
+    message.warning('请先选择要删除的字段')
     return
   }
 
   try {
-    const res: any = await api.exportFieldSpecs({
+    const res: any = await api.batchDeleteFieldSpecs({
       ids: selectedRowKeys.value
     })
 
     if (res.code === 200) {
-      // 下载基础字段CSV
-      const baseBlob = new Blob([res.data.base_csv], { type: 'text/csv;charset=utf-8;' })
-      const baseLink = document.createElement('a')
-      baseLink.href = URL.createObjectURL(baseBlob)
-      baseLink.download = `field_specs_base_${new Date().getTime()}.csv`
-      baseLink.click()
-
-      // 下载选项详情CSV
-      const optionsBlob = new Blob([res.data.options_csv], { type: 'text/csv;charset=utf-8;' })
-      const optionsLink = document.createElement('a')
-      optionsLink.href = URL.createObjectURL(optionsBlob)
-      optionsLink.download = `field_specs_options_${new Date().getTime()}.csv`
-      optionsLink.click()
-
-      message.success('导出成功')
-    } else {
-      message.error(res.msg || '导出失败')
-    }
-  } catch (error: any) {
-    message.error(error.message || '导出失败')
-  }
-}
-
-// 导入字段
-const handleImport = async (info: any) => {
-  const file = info.file
-  if (!file) return
-
-  try {
-    const res: any = await api.importFieldSpecs({
-      base_file: file
-    })
-
-    if (res.code === 200) {
-      message.success(`导入成功：${res.data.success_count} 个字段`)
+      message.success(`批量删除成功：${res.data.deleted_count} 个字段`)
+      selectedRowKeys.value = []
       fetchData()
     } else {
-      message.error(res.msg || '导入失败')
+      message.error(res.msg || '批量删除失败')
     }
   } catch (error: any) {
-    message.error(error.message || '导入失败')
+    message.error(error.message || '批量删除失败')
   }
 }
 
@@ -1774,14 +1756,12 @@ const showAddCascadeModal = () => {
   }
   resetCascadeConfig()
   cascadeConfig.parent_field_id = modalForm.id
-  cascadeConfig.parent_field_group_id = modalForm.field_group_ids?.[0]
   cascadeModalVisible.value = true
 }
 
 const editCascadeConfig = (item: any) => {
   cascadeConfig.id = item.id
   cascadeConfig.parent_field_id = item.parent_field_id
-  cascadeConfig.parent_field_group_id = item.parent_field_group_id
   cascadeConfig.field_name_pattern = item.field_name_pattern || 'parent.$.data[*].label + -的二三级'
   cascadeConfig.field_label_pattern = item.field_label_pattern || 'parent.$.data[*].label + -的二三级'
   cascadeConfig.dynamic_params = item.dynamic_params || []
@@ -1793,7 +1773,6 @@ const editCascadeConfig = (item: any) => {
 const resetCascadeConfig = () => {
   cascadeConfig.id = undefined
   cascadeConfig.parent_field_id = undefined
-  cascadeConfig.parent_field_group_id = undefined
   cascadeConfig.field_name_pattern = 'parent.$.data[*].label + -的二三级'
   cascadeConfig.field_label_pattern = 'parent.$.data[*].label + -的二三级'
   cascadeConfig.dynamic_params = []
@@ -2000,8 +1979,7 @@ const deleteCascadeConfig = async (item: any) => {
 }
 
 watch(() => props.fieldGroupId, (newVal) => {
-  queryParams.field_group_id = newVal
-  modalForm.field_group_ids = newVal ? [newVal] : []
+  // 字段组ID变更时的处理
   // 使用 nextTick 确保查询参数更新后再获取数据
   nextTick(() => {
     fetchData()
@@ -2010,7 +1988,7 @@ watch(() => props.fieldGroupId, (newVal) => {
 
 onMounted(() => {
   fetchTenantOptions()
-  fetchFieldGroups()
+  fetchAppOptions(queryParams.tenant_id)
   fetchData()
 })
 </script>
