@@ -45,8 +45,8 @@ class StructuredOutputService:
 
         # 初始化方法执行器
         litellm_config = settings.LITELLM_CONFIG
-        base_url = litellm_config.get("base_url", "http://localhost:4000")
-        master_key = litellm_config.get("master_key", "")
+        base_url = litellm_config.get("base_url")
+        master_key = litellm_config.get("master_key")
 
         self.methods = StructuredOutputMethods(
             model_name=self.model_name,
@@ -96,71 +96,30 @@ class StructuredOutputService:
         """
         start_time = time.time()
 
-        # 如果指定了方法，直接使用
-        if method:
-            try:
-                result = await self._try_method(
-                    method=method,
-                    query=query,
-                    tools=tools,
-                    system_prompt=system_prompt,
-                    session_id=session_id,
-                    memory_rounds=memory_rounds,
-                    tool_choice=tool_choice,
-                    field_specs=field_specs,
-                    include_reason=include_reason,
-                    full_system_prompt=full_system_prompt
-                )
-                if result.success:
-                    result.latency_ms = int((time.time() - start_time) * 1000)
-                return result
-            except Exception as e:
-                return StructuredOutputResult(
-                    success=False,
-                    error=f"{type(e).__name__}: {e}",
-                    method=method
-                )
-
-        # 确定方法优先级
-        methods_to_try = self._get_supported_methods()
-        methods_to_try = methods_to_try[:self.max_attempt_methods]
-
-        last_error = None
-        result = None
-
-        for method_name in methods_to_try:
-            try:
-                result = await self._try_method(
-                    method=method_name,
-                    query=query,
-                    tools=tools,
-                    system_prompt=system_prompt,
-                    session_id=session_id,
-                    memory_rounds=memory_rounds,
-                    tool_choice=tool_choice
-                )
-
-                if result.success:
-                    result.latency_ms = int((time.time() - start_time) * 1000)
-                    break
-                else:
-                    last_error = result.error
-                    await self._record_method_failure(method_name, result.error)
-
-            except Exception as e:
-                last_error = f"{type(e).__name__}: {e}"
-                logger.error(f"Method {method_name} failed: {type(e).__name__}: {e}")
-                await self._record_method_failure(method_name, f"{type(e).__name__}: {e}")
-
-        if result and result.success:
+        # 使用指定的方法
+        try:
+            result = await self._try_method(
+                method=method,
+                query=query,
+                tools=tools,
+                system_prompt=system_prompt,
+                session_id=session_id,
+                memory_rounds=memory_rounds,
+                tool_choice=tool_choice,
+                field_specs=field_specs,
+                include_reason=include_reason,
+                full_system_prompt=full_system_prompt
+            )
+            if result.success:
+                result.latency_ms = int((time.time() - start_time) * 1000)
             return result
-
-        # 所有方法都失败
-        return StructuredOutputResult(
-            success=False,
-            error=f"所有方法都失败，最后错误: {last_error}",
-            method="none"
-        )
+        except Exception as e:
+            logger.error(f"Method {method} failed: {type(e).__name__}: {e}")
+            return StructuredOutputResult(
+                success=False,
+                error=f"{type(e).__name__}: {e}",
+                method=method
+            )
 
     async def _try_method(
         self,

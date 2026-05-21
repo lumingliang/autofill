@@ -30,6 +30,7 @@ class TestFillRequest(BaseModel):
     system_prompt_group: Optional[str] = None
     chat_record: str
     tenant_id: Optional[int] = None  # 超级用户可传递租户ID
+    method: Optional[str] = None  # 结构化输出方法
 
 
 @router.post("/test-fill/chat", summary="聊天会话")
@@ -75,7 +76,8 @@ async def test_fill(
         app_name=request.app_name,
         group_names=request.group_names,
         field_names=request.field_names,
-        chat_record=request.chat_record
+        chat_record=request.chat_record,
+        method=request.method
     )
 
     return Success(data=result)

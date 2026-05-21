@@ -143,6 +143,89 @@ async def get_field_group_select(
     return Success(data=data)
 
 
+@router.get("/field_group/detail_by_name", summary="字段组详情（通过名称）")
+async def get_field_group_detail_by_name(
+    app_name: str = Query(..., description="应用名称"),
+    group_name: str = Query(..., description="字段组名称"),
+    token: str = Header(..., description="token验证"),
+):
+    """通过应用名称和字段组名称获取字段组详情"""
+    current_user = await AuthControl.is_authed(token)
+
+    q = Q(app_name=app_name, group_name=group_name)
+    tenant_query = build_tenant_query(current_user, 0)
+    if tenant_query["tenant_id"] > 0:
+        q &= Q(tenant_id=tenant_query["tenant_id"])
+
+    group = await field_group_config_controller.model.filter(q).first()
+    if not group:
+        return Fail(code=404, msg="字段组不存在")
+
+    fields = await field_spec_controller.get_by_field_group(group.id)
+
+    # 转换 fields 为 db_fields 格式
+    db_fields = [
+        {
+            "field_name": f.field_name,
+            "field_label": f.field_label,
+            "field_type": f.field_type.value if hasattr(f.field_type, 'value') else f.field_type,
+            "fill_instruction": f.fill_instruction,
+            "options": f.options,
+            "corrections": f.corrections,
+        }
+        for f in fields
+    ]
+    function_schema = FCSchemaBuilder.build_fc_tools(
+        db_fields,
+        function_name="extract_form_data",
+        description=group.description or "从对话中提取表单数据"
+    )
+
+    # 构建字段指引并生成组装后的Prompt
+    from app.services.autofill.prompt_service import build_fields_instructions
+    from app.services.autofill.constants import DEFAULT_PROMPT_TEMPLATE_BASE
+    fields_instructions = build_fields_instructions(fields)
+    template_base = group.prompt_template_base or DEFAULT_PROMPT_TEMPLATE_BASE
+
+    # 替换 {fields_instructions} 占位符
+    if "{fields_instructions}" in template_base:
+        assembled_prompt = template_base.replace("{fields_instructions}", fields_instructions)
+    else:
+        # 如果没有占位符，默认追加字段指引
+        assembled_prompt = f"""{template_base}
+
+请根据以下字段指引从对话中提取信息：
+
+{fields_instructions}
+
+请严格按照字段要求提取信息。"""
+
+    result = {
+        "basic_info": {
+            "id": group.id,
+            "group_name": group.group_name,
+            "group_code": group.group_code,
+            "app_name": group.app_name,
+            "description": group.description,
+            "is_active": group.is_active,
+            "created_at": str(group.created_at) if group.created_at else None,
+            "updated_at": str(group.updated_at) if group.updated_at else None,
+        },
+        "field_specs": [await obj.to_dict() for obj in fields],
+        "prompt_info": {
+            "template_base": group.prompt_template_base,
+            "assembled_prompt": assembled_prompt,
+        },
+        "function_calling": {
+            "schema": function_schema,
+            "json_schema": json.dumps(function_schema, ensure_ascii=False, indent=2),
+        },
+        "output_templates": group.output_templates or {},
+    }
+
+    return Success(data=result)
+
+
 @router.get("/field_group/detail", summary="字段组详情（包含渲染后的Prompt和FC参数）")
 async def get_field_group_detail(
     id: int = Query(..., description="字段组ID"),

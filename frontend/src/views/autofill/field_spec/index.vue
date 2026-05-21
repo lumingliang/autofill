@@ -355,11 +355,11 @@
               使用 Markdown 格式编辑选项，格式示例：<br>
               <code>## 选项标签</code> - 选项标题（人工识别）<br>
               <code>- 选项值:</code> 选项值（ID等）<br>
-              <code>- 填写说明:</code> 填写说明内容<br>
-              <code>- 批注:</code> 人工标注内容（可多个）
+              <code>- 填写说明:</code> 填写说明内容（支持多行，续行缩进即可）<br>
+              <code>- 批注:</code> 人工标注内容（可多个，也支持多行）
             </a-typography-text>
             <a-textarea v-model:value="optionsMarkdown" :rows="20"
-              placeholder="## 智能网联&#10;- 选项值: 1001&#10;- 填写说明: 选择云控相关问题&#10;- 批注: 这是批注内容1&#10;- 批注: 这是批注内容2&#10;&#10;## 产品咨询&#10;- 选项值: 1002&#10;- 填写说明: 选择产品咨询类问题"
+              placeholder="## 智能网联&#10;- 选项值: 1001&#10;- 填写说明: 选择云控相关问题&#10;  第二行补充说明&#10;  第三行补充说明&#10;- 批注: 这是批注内容1&#10;- 批注: 这是批注内容2&#10;&#10;## 产品咨询&#10;- 选项值: 1002&#10;- 填写说明: 选择产品咨询类问题&#10;  可以有多行说明内容"
               @blur="parseMarkdownToOptions" />
           </a-form-item>
         </template>
@@ -968,7 +968,7 @@ const modalForm = reactive({
 // Markdown 格式的选项列表
 const optionsMarkdown = ref('')
 
-// 将选项数据转换为 Markdown 格式
+// 将选项数据转换为 Markdown 格式（支持多行填写说明）
 const convertOptionsToMarkdown = (items: any[]): string => {
   if (!items || items.length === 0) return ''
 
@@ -983,16 +983,43 @@ const convertOptionsToMarkdown = (items: any[]): string => {
       lines.push(`- 选项值: ${item.value}`)
     }
 
-    // 填写说明
+    // 填写说明（支持多行，使用缩进表示续行）
     if (item.fill_instruction) {
-      lines.push(`- 填写说明: ${item.fill_instruction}`)
+      const instructionLines = item.fill_instruction.split('\n')
+      if (instructionLines.length === 1) {
+        // 单行直接输出
+        lines.push(`- 填写说明: ${item.fill_instruction}`)
+      } else {
+        // 多行使用缩进格式
+        lines.push(`- 填写说明: ${instructionLines[0]}`)
+        for (let i = 1; i < instructionLines.length; i++) {
+          // 非空行添加缩进，空行保持空
+          if (instructionLines[i].trim()) {
+            lines.push(`  ${instructionLines[i]}`)
+          } else {
+            lines.push('')
+          }
+        }
+      }
     }
 
-    // 人工标注（可能有多个）
+    // 人工标注（可能有多个，每个批注也支持多行）
     if (item.corrections && item.corrections.length > 0) {
       item.corrections.forEach((corr: any) => {
         if (corr.text) {
-          lines.push(`- 批注: ${corr.text}`)
+          const corrLines = corr.text.split('\n')
+          if (corrLines.length === 1) {
+            lines.push(`- 批注: ${corr.text}`)
+          } else {
+            lines.push(`- 批注: ${corrLines[0]}`)
+            for (let i = 1; i < corrLines.length; i++) {
+              if (corrLines[i].trim()) {
+                lines.push(`  ${corrLines[i]}`)
+              } else {
+                lines.push('')
+              }
+            }
+          }
         }
       })
     }
@@ -1006,7 +1033,7 @@ const convertOptionsToMarkdown = (items: any[]): string => {
   }).join('\n')
 }
 
-// 将 Markdown 格式解析为选项数据
+// 将 Markdown 格式解析为选项数据（支持多行填写说明和批注）
 const parseMarkdownToOptions = () => {
   const markdown = optionsMarkdown.value.trim()
   if (!markdown) {
@@ -1017,18 +1044,40 @@ const parseMarkdownToOptions = () => {
   const items: any[] = []
   const lines = markdown.split('\n')
   let currentItem: any = null
+  let currentField: string | null = null // 当前正在解析的字段：'fill_instruction' | 'correction'
+  let currentCorrectionIndex: number = -1
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const trimmedLine = line.trim()
-    if (!trimmedLine) continue
+
+    // 空行处理：如果是续行模式，保留换行
+    if (!trimmedLine) {
+      if (currentField === 'fill_instruction' && currentItem) {
+        currentItem.fill_instruction += '\n'
+      } else if (currentField === 'correction' && currentItem && currentCorrectionIndex >= 0) {
+        currentItem.corrections[currentCorrectionIndex].text += '\n'
+      }
+      continue
+    }
 
     // 匹配二级标题 ## 选项标签
     const headerMatch = trimmedLine.match(/^##\s*(.+)$/)
     if (headerMatch) {
       // 保存上一个选项
       if (currentItem) {
+        // 清理末尾的换行符
+        if (currentItem.fill_instruction) {
+          currentItem.fill_instruction = currentItem.fill_instruction.trimEnd()
+        }
+        currentItem.corrections.forEach((corr: any) => {
+          if (corr.text) corr.text = corr.text.trimEnd()
+        })
         items.push(currentItem)
       }
+      // 重置状态
+      currentField = null
+      currentCorrectionIndex = -1
       // 创建新选项
       currentItem = {
         label: headerMatch[1].trim(),
@@ -1043,9 +1092,27 @@ const parseMarkdownToOptions = () => {
     // 如果没有当前选项，跳过
     if (!currentItem) continue
 
+    // 检查是否是新的字段行（以 - 开头）
+    const isNewField = line.match(/^-\s*/)
+
+    // 如果不是新字段行，且处于续行模式，则追加内容
+    if (!isNewField && currentField) {
+      // 检查是否是缩进续行（以空格开头）
+      const isIndented = line.match(/^\s+/)
+      const content = isIndented ? line.trimStart() : trimmedLine
+
+      if (currentField === 'fill_instruction') {
+        currentItem.fill_instruction += '\n' + content
+      } else if (currentField === 'correction' && currentCorrectionIndex >= 0) {
+        currentItem.corrections[currentCorrectionIndex].text += '\n' + content
+      }
+      continue
+    }
+
     // 匹配 - 选项值: xxx
     const valueMatch = trimmedLine.match(/^-\s*选项值[:：]\s*(.*)$/i)
     if (valueMatch) {
+      currentField = null
       currentItem.value = valueMatch[1].trim()
       continue
     }
@@ -1053,6 +1120,7 @@ const parseMarkdownToOptions = () => {
     // 匹配 - 填写说明: xxx
     const instructionMatch = trimmedLine.match(/^-\s*填写说明[:：]\s*(.*)$/i)
     if (instructionMatch) {
+      currentField = 'fill_instruction'
       currentItem.fill_instruction = instructionMatch[1].trim()
       continue
     }
@@ -1060,6 +1128,8 @@ const parseMarkdownToOptions = () => {
     // 匹配 - 批注: xxx
     const correctionMatch = trimmedLine.match(/^-\s*批注[:：]\s*(.*)$/i)
     if (correctionMatch) {
+      currentField = 'correction'
+      currentCorrectionIndex = currentItem.corrections.length
       currentItem.corrections.push({
         text: correctionMatch[1].trim(),
       })
@@ -1069,6 +1139,13 @@ const parseMarkdownToOptions = () => {
 
   // 保存最后一个选项
   if (currentItem) {
+    // 清理末尾的换行符
+    if (currentItem.fill_instruction) {
+      currentItem.fill_instruction = currentItem.fill_instruction.trimEnd()
+    }
+    currentItem.corrections.forEach((corr: any) => {
+      if (corr.text) corr.text = corr.text.trimEnd()
+    })
     items.push(currentItem)
   }
 

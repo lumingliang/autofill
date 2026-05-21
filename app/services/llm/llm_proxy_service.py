@@ -39,6 +39,10 @@ class LLMProxyService:
         Returns:
             Dict 包含处理结果
         """
+        # 标准化方法名（支持 jsonparser 和 json_parser 两种写法）
+        if method == "jsonparser":
+            method = "json_parser"
+
         # plain 和 json_parser 方法不需要 tools
         if method not in ["plain", "json_parser"] and not tools:
             raise ValueError("tools 参数不能为空（plain 和 json_parser 方法除外）")

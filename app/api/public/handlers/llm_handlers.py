@@ -52,6 +52,58 @@ def _extract_field_value(field_data: Any) -> Any:
     return str(field_data)
 
 
+def _simplify_field_structure(fields: Dict[str, Any]) -> Dict[str, Any]:
+    """简化字段结构，将嵌套的 value 对象扁平化
+    
+    原始结构: {"field_name": {"type": "select_single", "value": {"value": "EVT001", "label": "道路救援"}, "label": "一级事件类型"}}
+    简化后: {"field_name": {"type": "select_single", "value": "EVT001", "label": "道路救援"}}
+    
+    多选类型返回数组结构:
+    {"field_name": {"type": "select_multi", "value": ["val1", "val2"], "labels": ["标签1", "标签2"]}}
+    """
+    if not fields:
+        return {}
+    
+    simplified = {}
+    for field_name, field_data in fields.items():
+        if not isinstance(field_data, dict):
+            simplified[field_name] = field_data
+            continue
+            
+        field_type = field_data.get("type", "")
+        value = field_data.get("value")
+        label = field_data.get("label", field_name)
+        
+        # 处理 select_single 类型：提取 value 和 label
+        if field_type == "select_single" and isinstance(value, dict):
+            simplified[field_name] = {
+                "type": field_type,
+                "value": value.get("value", ""),
+                "label": value.get("label", "")
+            }
+        # 处理 select_multi 类型：返回数组结构
+        elif field_type == "select_multi" and isinstance(value, list):
+            values = []
+            labels = []
+            for v in value:
+                if isinstance(v, dict):
+                    values.append(v.get("value", v))
+                    labels.append(v.get("label", v.get("value", v)))
+                else:
+                    values.append(v)
+                    labels.append(str(v))
+            simplified[field_name] = {
+                "type": field_type,
+                "value": values,
+                "labels": labels
+            }
+        # 其他类型保持原样
+        else:
+            simplified[field_name] = field_data
+            
+    return simplified
+
+
 def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) -> Dict[str, Any]:
     """将 LLM 提取的数据 enriched 为包含完整选项信息的结构"""
     if not extracted_data or not field_specs:
@@ -259,10 +311,13 @@ async def llm_fill(
             memory_rounds=params.get("memory_rounds", 0)
         )
 
+        # 简化字段结构，移除嵌套的 value 对象
+        simplified_fields = _simplify_field_structure(result.get("result", {}))
+        
         response_data = {
             "app_name": app_name,
             "group_names": params.get("group_names", []),
-            "result": result.get("result", {}),
+            "fields": simplified_fields,
             "output_templates": result.get("output_templates", {}),
             "_meta": result.get("_meta", {})
         }
@@ -346,6 +401,9 @@ async def step_llm_fill(
         )
 
         # 组装响应数据
+        # 简化字段结构，移除嵌套的 value 对象
+        simplified_fields = _simplify_field_structure(result.get("result", {}))
+        
         response_data = {
             "session_id": session_id,
             "step": current_step,
@@ -353,17 +411,9 @@ async def step_llm_fill(
             "status": "completed" if is_last else "processing",
             "app_name": app_name,
             "elapsed_time": result.get("elapsed_time", 0),
-            "result": result.get("result", {}),
-            "output_templates": result.get("output_templates", {})
+            "output_templates": result.get("output_templates", {}),
+            "fields": simplified_fields
         }
-
-        if is_last and request_data.method != "plain":
-            final_result = await step_llm_fill_service.get_step_result(
-                session_id=session_id,
-                tenant_id=tenant_id,
-                app_name=app_name
-            )
-            response_data["merged_fields"] = final_result.get("merged_fields", {}) if final_result else {}
 
         return Success(data=response_data)
 
@@ -400,6 +450,12 @@ async def get_step_llm_fill_result(
 
     if not result:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    # 简化字段结构
+    if result.get("merged_fields"):
+        result["fields"] = _simplify_field_structure(result["merged_fields"])
+        # 移除冗余的 merged_fields
+        del result["merged_fields"]
 
     return Success(data=result)
 

@@ -105,8 +105,9 @@
                                 </a-col>
                                 <a-col :span="isSuperUser ? 8 : 12">
                                     <a-form-item label="指定System Prompt字段组">
-                                        <a-select v-model:value="queryParams.system_prompt_group" placeholder="可选：指定使用哪个字段组的system_prompt"
-                                            :options="groupOptions" style="width: 100%" allow-clear />
+                                        <a-select v-model:value="queryParams.system_prompt_group"
+                                            placeholder="可选：指定使用哪个字段组的system_prompt" :options="groupOptions"
+                                            style="width: 100%" allow-clear />
                                     </a-form-item>
                                 </a-col>
                             </a-row>
@@ -132,6 +133,16 @@
                                 </a-col>
                             </a-row>
 
+                            <!-- 第四行：方法选择 -->
+                            <a-row :gutter="16">
+                                <a-col :span="24">
+                                    <a-form-item label="方法">
+                                        <a-select v-model:value="fillForm.method" placeholder="请选择方法（不选则使用默认）"
+                                            :options="methodOptions" style="width: 100%" allow-clear />
+                                    </a-form-item>
+                                </a-col>
+                            </a-row>
+
                             <a-form-item label="聊天记录" required>
                                 <a-textarea v-model:value="fillForm.chat_record" :rows="12" placeholder="请输入客服与用户的对话记录，格式：
 客服：您好，欢迎咨询...
@@ -153,13 +164,14 @@
                             <a-card title="填单结果" size="small">
                                 <a-descriptions :column="2" bordered size="small">
                                     <a-descriptions-item label="Session ID">{{ fillResult.data?.session_id
-                                    }}</a-descriptions-item>
-                                    <a-descriptions-item label="应用">{{ fillResult.data?.app_name }}</a-descriptions-item>
+                                        }}</a-descriptions-item>
+                                    <a-descriptions-item label="应用">{{ fillResult.data?.app_name
+                                        }}</a-descriptions-item>
                                     <a-descriptions-item label="状态">
                                         <a-tag color="green">{{ fillResult.data?.status }}</a-tag>
                                     </a-descriptions-item>
                                     <a-descriptions-item label="用时">{{ fillResult.data?.elapsed_time?.toFixed(2)
-                                    }}s</a-descriptions-item>
+                                        }}s</a-descriptions-item>
                                 </a-descriptions>
 
                                 <a-divider />
@@ -335,6 +347,7 @@ const tenantOptions = ref<{ label: string; value: number }[]>([])
 const fillForm = reactive({
     group_names: [] as string[],
     field_names: [] as string[],
+    method: undefined as string | undefined,
     chat_record: ''
 })
 
@@ -342,6 +355,18 @@ const appOptions = ref<{ label: string; value: string }[]>([])
 const groupOptions = ref<{ label: string; value: string }[]>([])
 const fieldOptions = ref<{ label: string; value: string }[]>([])
 const allFieldSpecs = ref<any[]>([])
+
+// 方法选项
+const methodOptions = ref<{ label: string; value: string }[]>([
+    { label: 'with_structured_output', value: 'with_structured_output' },
+    { label: 'bind_tools_non_stream', value: 'bind_tools_non_stream' },
+    { label: 'bind_tools_stream', value: 'bind_tools_stream' },
+    { label: 'custom_fc_non_stream', value: 'custom_fc_non_stream' },
+    { label: 'custom_fc_stream', value: 'custom_fc_stream' },
+    { label: 'pydantic_parser', value: 'pydantic_parser' },
+    { label: 'json_parser', value: 'json_parser' },
+    { label: 'plain', value: 'plain' }
+])
 
 const filling = ref(false)
 const fillResult = ref<any>(null)
@@ -354,15 +379,28 @@ const resultColumns = [
 ]
 
 const resultTableData = computed(() => {
-    const result = fillResult.value?.data?.result
-    if (!result) return []
+    // 适配新的返回结构：使用 fields 替代 result
+    const fields = fillResult.value?.data?.fields
+    if (!fields) return []
 
-    return Object.entries(result).map(([key, value]: [string, any]) => ({
-        field_name: key,
-        field_label: value?.label || value?.field_label || key,
-        field_type: value?.type || value?.field_type || 'text',
-        value: value?.value !== undefined ? value.value : (typeof value === 'object' ? JSON.stringify(value) : value)
-    }))
+    return Object.entries(fields).map(([key, value]: [string, any]) => {
+        // 多选类型：value 和 labels 都是数组
+        if (value?.type === 'select_multi' && Array.isArray(value?.labels)) {
+            return {
+                field_name: key,
+                field_label: value?.label || key,
+                field_type: value?.type || 'text',
+                value: value.labels.join(', ')  // 表格中用逗号分隔显示
+            }
+        }
+        // 单选或其他类型
+        return {
+            field_name: key,
+            field_label: value?.label || key,
+            field_type: value?.type || 'text',
+            value: value?.value !== undefined ? value.value : (typeof value === 'object' ? JSON.stringify(value) : value)
+        }
+    })
 })
 
 // 加载租户列表（超级管理员和租户管理员都需要）
@@ -383,7 +421,7 @@ const handleTenantChange = async (tenantId: number) => {
     queryParams.system_prompt_group = undefined
     fillForm.group_names = []
     fillForm.field_names = []
-    appOptions.value = []
+    fillForm.method = undefined
     groupOptions.value = []
     fieldOptions.value = []
     allFieldSpecs.value = []
@@ -415,6 +453,7 @@ const handleAppChange = async (appName: string) => {
     queryParams.system_prompt_group = undefined
     fillForm.group_names = []
     fillForm.field_names = []
+    fillForm.method = undefined
     groupOptions.value = []
     fieldOptions.value = []
     allFieldSpecs.value = []
@@ -444,6 +483,7 @@ const handleAppChange = async (appName: string) => {
 // 字段组变化时加载字段
 const handleGroupChange = async (groupNames: string[]) => {
     fillForm.field_names = []
+    fillForm.method = undefined
     fieldOptions.value = []
     allFieldSpecs.value = []
 
@@ -493,8 +533,8 @@ const handleTestFill = async () => {
             group_names: fillForm.group_names,
             field_names: fillForm.field_names.length > 0 ? fillForm.field_names : undefined,
             system_prompt_group: queryParams.system_prompt_group,
-            query: fillForm.chat_record,
-            session_id: chatSessionId.value || undefined
+            chat_record: fillForm.chat_record,
+            method: fillForm.method
         }
 
         // 超级用户传递tenant_id

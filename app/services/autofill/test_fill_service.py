@@ -114,7 +114,8 @@ class TestFillService:
         app_name: str,
         group_names: List[str],
         field_names: List[str],
-        chat_record: str
+        chat_record: str,
+        method: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         测试填单功能
@@ -172,7 +173,7 @@ class TestFillService:
             "group_names": group_names,
             "system_prompt_group": group_names[0] if group_names else None,
             "query": chat_record,
-            "method": None,
+            "method": method,
             "system_prompt": None,
             "include_reason": False,
             "memory_rounds": 0,

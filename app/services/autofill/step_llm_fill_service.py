@@ -490,7 +490,8 @@ class StepLLMFillService:
         additional_data: Dict[str, Any] = None,
         use_additional_data: bool = False,
         include_reason: bool = False,
-        system_prompt: str = None
+        system_prompt: str = None,
+        method: str = None
     ) -> Dict[str, Any]:
         """
         准备 LLM 填单的上下文数据
@@ -506,6 +507,7 @@ class StepLLMFillService:
             use_additional_data: 是否使用附加数据
             include_reason: 是否包含理由
             system_prompt: 自定义系统提示词
+            method: LLM调用方法
 
         Returns:
             包含 result_data, config, full_system_prompt, field_specs,
@@ -569,9 +571,10 @@ class StepLLMFillService:
             else:
                 base_prompt = DEFAULT_PROMPT_TEMPLATE_BASE
 
-        # 构建字段指令
+        # 构建字段指令（plain模式下使用简化格式）
         if field_specs:
-            fields_instructions = build_fields_instructions(field_specs)
+            is_plain = method == "plain"
+            fields_instructions = build_fields_instructions(field_specs, is_plain=is_plain)
         else:
             fields_instructions = ""
 
@@ -647,7 +650,8 @@ class StepLLMFillService:
             additional_data=additional_data,
             use_additional_data=use_additional_data,
             include_reason=include_reason,
-            system_prompt=system_prompt
+            system_prompt=system_prompt,
+            method=method
         )
 
         # 2. 保存请求
@@ -679,6 +683,9 @@ class StepLLMFillService:
             session_id=session_id,
             full_system_prompt=context["full_system_prompt"]
         )
+
+        # 调试日志
+        logger.info(f"LLM result: success={llm_result.get('success')}, method={llm_result.get('method')}, error={llm_result.get('error')}, data={llm_result.get('data')}")
 
         # 4. 处理结果
         enriched_result = {}
@@ -763,7 +770,7 @@ class StepLLMFillService:
             "is_last": is_last,
             "status": "completed" if is_last else "processing",
             "app_name": app_name,
-            "merged_fields": enriched_result if is_last else {}
+            "merged_fields": enriched_result
         }
 
     async def execute_llm_fill(

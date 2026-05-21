@@ -23,21 +23,32 @@ class SummaryFeedbackRequest(BaseModel):
     callback: str = Field(default="", description="回调信息")
 
 
-def _extract_field_value(field_data: Any) -> str:
-    """从字段数据中提取值"""
-    if field_data is None:
+def _extract_summary_from_result(result: dict) -> str:
+    """从 plain 模式结果中提取总结内容
+    
+    plain 模式返回结构: {"feedback_content_summary": {"type": "text", "value": "总结内容", "label": "..."}}
+    或者直接返回文本在 value 中
+    """
+    if not result:
         return ""
+    
+    # 获取 feedback_content_summary 字段
+    field_data = result.get("feedback_content_summary")
+    if not field_data:
+        return ""
+    
+    # 如果是字符串，直接返回
     if isinstance(field_data, str):
         return field_data
+    
+    # 如果是字典，提取 value
     if isinstance(field_data, dict):
-        if "value" in field_data:
-            value = field_data["value"]
-            if isinstance(value, dict):
-                return str(value.get("value", ""))
-            if isinstance(value, list):
-                return ", ".join([str(v.get("value", v) if isinstance(v, dict) else v) for v in value])
-            return str(value)
-        return str(field_data)
+        value = field_data.get("value", "")
+        # 处理嵌套结构（兼容旧格式）
+        if isinstance(value, dict):
+            return str(value.get("value", ""))
+        return str(value)
+    
     return str(field_data)
 
 
@@ -64,24 +75,23 @@ async def summary_feedback(
     logger.info(f"Summary feedback: order_id={request.order_id}, session_id={session_id}, brand={request.brand}")
 
     try:
-        # 2. 调用 service 层执行 LLM 填单
+        # 2. 调用 service 层执行 LLM 填单（使用 plain 模式，直接返回文本总结）
         result = await step_llm_fill_service.execute_llm_fill_step(
             tenant_id=tenant_id,
             app_name=app_name,
             session_id=session_id,
             group_names=["default"],
             field_names=["feedback_content_summary"],
+            system_prompt_group=None,
             query=request.feedback_content,
-            is_last=True
+            is_last=True,
+            method="plain",
+            system_prompt="你是一个专业的客服反馈总结助手。请对用户的反馈内容进行简洁的总结，提取关键问题和需求。总结应该简明扼要，不超过100字。"
         )
 
         # 3. 解析结果，提取 feedback_content_summary
-        summary = ""
-        enriched_result = result.get("result", {})
-
-        if "feedback_content_summary" in enriched_result:
-            field_data = enriched_result["feedback_content_summary"]
-            summary = _extract_field_value(field_data)
+        # plain 模式返回结构: {"result": {"feedback_content_summary": {"type": "text", "value": "总结内容", "label": "..."}}}
+        summary = _extract_summary_from_result(result.get("result", {}))
 
 
 
