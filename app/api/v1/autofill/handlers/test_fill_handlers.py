@@ -23,11 +23,11 @@ class ChatSessionRequest(BaseModel):
 
 
 class TestFillRequest(BaseModel):
-    """测试填单请求"""
-    app_id: int
-    page_id: int
-    group_id: int
-    field_ids: List[int]
+    """测试填单请求 - 新格式：直接使用名称而非ID"""
+    app_name: str
+    group_names: List[str]
+    field_names: List[str] = []
+    system_prompt_group: Optional[str] = None
     chat_record: str
     tenant_id: Optional[int] = None  # 超级用户可传递租户ID
 
@@ -62,8 +62,8 @@ async def test_fill(
 ):
     """
     测试填单功能
-    根据应用ID、页面ID、字段组ID、字段ID列表和聊天记录进行填单
-    后端将ID解析为名称，调用 step_llm_fill_handler 接口
+    根据应用名称、字段组名称列表、字段名称列表和聊天记录进行填单
+    直接调用 step_llm_fill_service 进行处理
     """
     current_user = await AuthControl.is_authed(token)
 
@@ -72,10 +72,9 @@ async def test_fill(
 
     result = await test_fill_service.test_fill(
         tenant_id=tenant_id or 1,
-        app_id=request.app_id,
-        page_id=request.page_id,
-        group_id=request.group_id,
-        field_ids=request.field_ids,
+        app_name=request.app_name,
+        group_names=request.group_names,
+        field_names=request.field_names,
         chat_record=request.chat_record
     )
 

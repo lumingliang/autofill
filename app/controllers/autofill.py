@@ -8,15 +8,14 @@ from app.core.crud import CRUDBase
 
 logger = logging.getLogger(__name__)
 from app.models.autofill import (AppManagement, DropdownOption, FieldGroupConfig,
-                                 FieldGroupFieldSpec, FieldSpec, FillDataRecord, FillPage,
-                                 generate_field_group_code, generate_page_code, SummaryTemplate)
+                                 FieldGroupFieldSpec, FieldSpec, FillDataRecord,
+                                 generate_field_group_code, SummaryTemplate)
 from app.schemas.autofill import (AppCreate, AppUpdate, DropdownOptionCreate,
                                   DropdownOptionUpdate, FillDataRecordCreate,
                                   FillDataRecordUpdate, SummaryTemplateCreate,
                                   SummaryTemplateUpdate)
 from app.schemas.fill_page import (FieldGroupConfigCreate, FieldGroupConfigUpdate,
-                                   FieldSpecCreate, FieldSpecUpdate, FillPageCreate,
-                                   FillPageUpdate, FieldOptions)
+                                   FieldSpecCreate, FieldSpecUpdate, FieldOptions)
 from app.services.autofill.field_spec_service import upsert_field_spec
 
 
@@ -252,57 +251,26 @@ class FillDataRecordController(CRUDBase[FillDataRecord, FillDataRecordCreate, Fi
         return record
 
 
-# ==================== 新增控制器 ====================
-
-class FillPageController(CRUDBase[FillPage, FillPageCreate, FillPageUpdate]):
-    """填单页面控制器"""
-    def __init__(self):
-        super().__init__(model=FillPage)
-
-    async def create_page(self, obj_in: FillPageCreate) -> FillPage:
-        """创建页面，检查同一应用下页面编码唯一性"""
-        # 如果 page_code 为空，则自动生成
-        if not obj_in.page_code:
-            obj_in.page_code = generate_page_code()
-
-        existing = await self.model.filter(
-            app_id=obj_in.app_id,
-            page_code=obj_in.page_code
-        ).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="该应用下已存在同编码页面")
-        return await self.create(obj_in)
-
-    async def update_page(self, id: int, obj_in: FillPageUpdate) -> FillPage:
-        """更新页面，检查编码唯一性"""
-        page = await self.get(id=id)
-        if obj_in.page_code and obj_in.page_code != page.page_code:
-            existing = await self.model.filter(
-                app_id=page.app_id,
-                page_code=obj_in.page_code
-            ).exclude(id=id).first()
-            if existing:
-                raise HTTPException(status_code=400, detail="该应用下已存在同编码页面")
-        return await self.update(id=id, obj_in=obj_in)
-
+# ==================== 字段组配置控制器（删除页面关联） ====================
 
 class FieldGroupConfigController(CRUDBase[FieldGroupConfig, FieldGroupConfigCreate, FieldGroupConfigUpdate]):
-    """字段组配置控制器"""
+    """字段组配置控制器 - 直接关联应用，不再关联页面"""
     def __init__(self):
         super().__init__(model=FieldGroupConfig)
 
     async def create_field_group(self, obj_in: FieldGroupConfigCreate) -> FieldGroupConfig:
-        """创建字段组，检查同一页面下字段组名称唯一性，自动生成编码"""
+        """创建字段组，检查同一应用下字段组名称唯一性，自动生成编码"""
         # 如果 group_code 为空，则自动生成
         if not obj_in.group_code:
             obj_in.group_code = generate_field_group_code()
 
         existing = await self.model.filter(
-            page_id=obj_in.page_id,
+            tenant_id=obj_in.tenant_id,
+            app_name=obj_in.app_name,
             group_name=obj_in.group_name
         ).first()
         if existing:
-            raise HTTPException(status_code=400, detail="该页面下已存在同名字段组")
+            raise HTTPException(status_code=400, detail="该应用下已存在同名字段组")
         return await self.create(obj_in)
 
     async def update_field_group(self, id: int, obj_in: FieldGroupConfigUpdate) -> FieldGroupConfig:
@@ -312,11 +280,12 @@ class FieldGroupConfigController(CRUDBase[FieldGroupConfig, FieldGroupConfigCrea
         # 检查名称唯一性
         if obj_in.group_name and obj_in.group_name != field_group.group_name:
             existing = await self.model.filter(
-                page_id=field_group.page_id,
+                tenant_id=field_group.tenant_id,
+                app_name=field_group.app_name,
                 group_name=obj_in.group_name
             ).exclude(id=id).first()
             if existing:
-                raise HTTPException(status_code=400, detail="该页面下已存在同名字段组")
+                raise HTTPException(status_code=400, detail="该应用下已存在同名字段组")
 
         # 如果更新了关键配置，增加版本号
         update_data = obj_in.model_dump(exclude_unset=True)
@@ -361,7 +330,6 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
             field_name=obj_in.field_name,
             field_label=obj_in.field_label,
             field_type=obj_in.field_type.value if hasattr(obj_in.field_type, 'value') else str(obj_in.field_type),
-            field_group_ids=obj_in.field_group_ids or [],
             fill_instruction=obj_in.fill_instruction or "",
             options=options if options else None
         )
@@ -402,7 +370,6 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
             field_name=field_spec.field_name,
             field_label=obj_in.field_label or field_spec.field_label,
             field_type=obj_in.field_type.value if hasattr(obj_in.field_type, 'value') else str(obj_in.field_type or field_spec.field_type),
-            field_group_ids=obj_in.field_group_ids or [],
             fill_instruction=obj_in.fill_instruction or field_spec.fill_instruction or "",
             options=options
         )
@@ -451,6 +418,5 @@ app_management_controller = AppManagementController()
 summary_template_controller = SummaryTemplateController()
 dropdown_option_controller = DropdownOptionController()
 fill_data_record_controller = FillDataRecordController()
-fill_page_controller = FillPageController()
 field_group_config_controller = FieldGroupConfigController()
 field_spec_controller = FieldSpecController()

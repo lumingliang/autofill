@@ -9,7 +9,6 @@ from .autofill import (
     dropdown_router,
     field_group_router,
     field_spec_router,
-    page_router,
     record_router,
     template_router,
     test_fill_router,
@@ -43,8 +42,7 @@ v1_router.include_router(template_router, prefix="/autofill", dependencies=[Depe
 v1_router.include_router(dropdown_router, prefix="/autofill", dependencies=[DependPermission], tags=["下拉选项管理"])
 v1_router.include_router(record_router, prefix="/autofill", dependencies=[DependPermission], tags=["填单记录管理"])
 
-# 智能填单模块 - 页面、字段组、字段管理
-v1_router.include_router(page_router, prefix="/autofill", dependencies=[DependPermission], tags=["页面管理"])
+# 智能填单模块 - 字段组、字段管理（页面管理已删除）
 v1_router.include_router(field_group_router, prefix="/autofill", dependencies=[DependPermission], tags=["字段组管理"])
 v1_router.include_router(field_spec_router, prefix="/autofill", dependencies=[DependPermission], tags=["字段管理"])
 

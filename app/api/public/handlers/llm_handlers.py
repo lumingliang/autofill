@@ -105,41 +105,42 @@ def _enrich_extracted_data(extracted_data: Dict[str, Any], field_specs: List) ->
     return enriched
 
 
-def _process_output_templates(field_groups: List[Dict], enriched_result: Dict[str, Any]) -> Dict[str, Any]:
-    """处理字段组的输出模板"""
-    output_templates_result = {}
+def _process_output_templates(field_groups: List[Dict], enriched_result: Dict[str, Any]) -> Dict[str, str]:
+    """处理字段组的输出模板
     
+    返回格式: {"group_name": "变量替换后的字符串"}
+    只处理每个字段组的 default 模板
+    """
+    output_templates_result = {}
+
     for fg in field_groups:
         group_name = fg.get("group_name", "")
         output_templates = fg.get("output_templates", {})
-        
+
         if not output_templates or not isinstance(output_templates, dict):
             continue
-        
-        for template_name, template_config in output_templates.items():
-            if not template_config or not isinstance(template_config, dict):
-                continue
-            
-            template_content = template_config.get("template", "")
-            if not template_content or not isinstance(template_content, str):
-                continue
-            
-            processed_template = template_content
-            for field_name, field_data in enriched_result.items():
-                placeholder1 = f"${{{field_name}}}"
-                if placeholder1 in processed_template:
-                    processed_template = processed_template.replace(placeholder1, str(_extract_display_value(field_data) or ""))
-                
-                placeholder2 = f"{{{{{field_name}}}}}"
-                if placeholder2 in processed_template:
-                    processed_template = processed_template.replace(placeholder2, str(_extract_display_value(field_data) or ""))
-            
-            result_key = f"{group_name}_{template_name}"
-            output_templates_result[result_key] = {
-                "template": processed_template,
-                "description": template_config.get("description", "")
-            }
-    
+
+        # 只处理 default 模板
+        template_config = output_templates.get("default")
+        if not template_config or not isinstance(template_config, dict):
+            continue
+
+        template_content = template_config.get("template", "")
+        if not template_content or not isinstance(template_content, str):
+            continue
+
+        processed_template = template_content
+        for field_name, field_data in enriched_result.items():
+            placeholder1 = f"${{{field_name}}}"
+            if placeholder1 in processed_template:
+                processed_template = processed_template.replace(placeholder1, str(_extract_display_value(field_data) or ""))
+
+            placeholder2 = f"{{{{{field_name}}}}}"
+            if placeholder2 in processed_template:
+                processed_template = processed_template.replace(placeholder2, str(_extract_display_value(field_data) or ""))
+
+        output_templates_result[group_name] = processed_template
+
     return output_templates_result
 
 
@@ -147,9 +148,9 @@ def _extract_display_value(field_data: Any) -> Any:
     """从 enriched 字段数据中提取显示值"""
     if not isinstance(field_data, dict):
         return field_data
-    
+
     field_type = field_data.get("type", "")
-    
+
     if field_type == "select_single":
         value_obj = field_data.get("value", {})
         if isinstance(value_obj, dict):
@@ -176,16 +177,15 @@ async def get_ai_fill_data(
 ):
     """三方应用调用: 接收请求 -> 存储数据 -> 转发Dify -> 返回响应"""
     params = await parse_request_params(request, AIFillDataRequest)
-    
+
     result = await llm_fill_data_service.get_fill_data(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
         session_id=params["session_id"],
         data=params["data"],
-        page_name=params.get("page_name", ""),
         response_mode=params.get("response_mode", "sync")
     )
-    
+
     return Success(data=result)
 
 
@@ -196,16 +196,16 @@ async def get_ai_fill_data_result(
 ):
     """查询 AI 填单异步处理结果"""
     params = await parse_request_params(request, AIFillDataResultRequest)
-    
+
     result = await llm_fill_data_service.get_fill_result(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
         session_id=params["session_id"]
     )
-    
+
     if not result:
         raise HTTPException(status_code=404, detail="Record not found")
-    
+
     return Success(data=result)
 
 
@@ -218,15 +218,14 @@ async def get_field_groups_schema(
 ):
     """查询多个字段组的完整 Schema 信息"""
     params = await parse_request_params(request, FieldGroupsSchemaRequest)
-    
+
     result = await field_group_schema_service.get_field_groups_schema(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
-        page_name=params.get("page_name"),
         field_names=params.get("field_names"),
         group_names=params.get("group_names")
     )
-    
+
     return Success(data=result)
 
 
@@ -248,8 +247,9 @@ async def llm_fill(
         result = await step_llm_fill_service.execute_llm_fill(
             tenant_id=tenant_id,
             app_name=app_name,
-            page_name=params.get("page_name"),
-            group_fields=params.get("group_fields", {}),
+            field_names=params.get("field_names", []),
+            group_names=params.get("group_names", []),
+            system_prompt_group=params.get("system_prompt_group"),
             query=params.get("query", ""),
             method=params.get("method"),
             system_prompt=params.get("system_prompt"),
@@ -260,7 +260,7 @@ async def llm_fill(
         )
 
         response_data = {
-            "page_name": result.get("page_name"),
+            "app_name": app_name,
             "group_names": params.get("group_names", []),
             "result": result.get("result", {}),
             "output_templates": result.get("output_templates", {}),
@@ -301,8 +301,9 @@ async def step_llm_fill(
     """分步调用 LLM 填单，支持 session 管理和多轮数据存储
 
     - **session_id**: 会话ID，用于标识同一轮填单流程
-    - **page_name**: 页面名称
-    - **group_fields**: 字段组与字段的映射关系
+    - **field_names**: 字段名称列表（可选，不传则返回所有字段）
+    - **group_names**: 字段组名称列表（可选，不传则查询所有）
+    - **system_prompt_group**: 用于获取system_prompt的字段组名（可选，不传则使用第一个group_name）
     - **query**: 用户输入的查询内容
     - **method**: LLM调用方法（可选）
     - **system_prompt**: 系统提示词（可选）
@@ -330,9 +331,10 @@ async def step_llm_fill(
         result = await step_llm_fill_service.execute_llm_fill_step(
             tenant_id=tenant_id,
             app_name=app_name,
-            page_name=request_data.page_name,
             session_id=session_id,
-            group_fields=request_data.group_fields or {},
+            field_names=request_data.field_names or [],
+            group_names=request_data.group_names or [],
+            system_prompt_group=request_data.system_prompt_group,
             query=request_data.query,
             is_last=is_last,
             method=request_data.method,
@@ -349,7 +351,7 @@ async def step_llm_fill(
             "step": current_step,
             "is_last": is_last,
             "status": "completed" if is_last else "processing",
-            "page_name": request_data.page_name,
+            "app_name": app_name,
             "elapsed_time": result.get("elapsed_time", 0),
             "result": result.get("result", {}),
             "output_templates": result.get("output_templates", {})
@@ -382,23 +384,23 @@ async def get_step_llm_fill_result(
 ):
     """获取分步填单的完整结果"""
     params = await parse_request_params(request, StepLLMFillResultRequest)
-    
+
     tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
     session_id = params.get("session_id")
-    
+
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
-    
+
     result = await step_llm_fill_service.get_step_result(
         session_id=session_id,
         tenant_id=tenant_id,
         app_name=app_name
     )
-    
+
     if not result:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
-    
+
     return Success(data=result)
 
 
@@ -411,17 +413,16 @@ async def optimize_field_instructions(
 ):
     """使用 LLM 优化字段填写指引"""
     params = await parse_request_params(request, OptimizeFieldInstructionRequest)
-    
+
     result = await field_optimization_service.optimize_field_instructions(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
-        page_name=params.get("page_name"),
         group_name=params.get("group_name"),
         field_name=params.get("field_name"),
         batch_size=params.get("batch_size", 10),
         model=params.get("model")
     )
-    
+
     return Success(data=result)
 
 
@@ -434,7 +435,7 @@ async def chat_session(
 ):
     """聊天会话接口，支持多轮对话"""
     params = await parse_request_params(request, ChatSessionRequest)
-    
+
     result = await test_fill_service.chat_session(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
@@ -443,7 +444,7 @@ async def chat_session(
         message=params.get("message", ""),
         clear_history=params.get("clear_history", False)
     )
-    
+
     return Success(data=result)
 
 
@@ -454,13 +455,13 @@ async def test_fill(
 ):
     """测试填单功能"""
     params = await parse_request_params(request, TestFillRequest)
-    
+
     result = await test_fill_service.test_fill(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
-        page_id=params.get("page_id"),
-        group_fields=params.get("group_fields", {}),
+        field_names=params.get("field_names", []),
+        group_names=params.get("group_names", []),
         chat_record=params.get("chat_record", "")
     )
-    
+
     return Success(data=result)

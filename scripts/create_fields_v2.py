@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-智能字段创建脚本 - 基于YAML配置
-从CSV文件读取数据，根据配置灵活创建主字段和次字段（级联字段）
+字段创建脚本 V2 - 适配新架构（无页面管理，直接关联应用）
 
 特性：
 - 从YAML配置文件读取所有配置
@@ -11,24 +10,24 @@
 - 可配置的字段映射
 
 使用方法:
-    python create_smart_fields.py [config.yaml]
+    python create_fields_v2.py [config.yaml]
 
 示例:
     # 使用默认配置文件 create_fields_config.yaml
-    python create_smart_fields.py
+    python create_fields_v2.py
     
     # 指定配置文件
-    python create_smart_fields.py my_config.yaml
+    python create_fields_v2.py my_config.yaml
 """
 
 import argparse
 import csv
 import json
-import re
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 
 import requests
 import yaml
@@ -36,16 +35,11 @@ import yaml
 
 # 默认配置文件名
 DEFAULT_CONFIG_FILE = "create_fields_config.yaml"
-
-# 获取脚本所在目录
 SCRIPT_DIR = Path(__file__).parent.resolve()
 
 
 def get_default_config_path() -> str:
-    """获取默认配置文件的完整路径
-    
-    优先在脚本所在目录查找，如果不存在则使用相对路径
-    """
+    """获取默认配置文件的完整路径"""
     script_config = SCRIPT_DIR / DEFAULT_CONFIG_FILE
     if script_config.exists():
         return str(script_config)
@@ -88,7 +82,6 @@ class ConfigLoader:
         with open(path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
-        # 设置默认值
         return ConfigLoader._set_defaults(config)
     
     @staticmethod
@@ -99,8 +92,8 @@ class ConfigLoader:
                 "base_url": "http://localhost:9999",
                 "api_key": ""
             },
-            "page": {
-                "page_name": "话务工作台",
+            "app": {
+                "app_name": "autofill",
                 "field_group_name": "default"
             },
             "csv": {
@@ -187,7 +180,7 @@ class CSVDataLoader:
 
 
 class DataOrganizer:
-    """数据组织器 - 将CSV数据组织成层级结构"""
+    """数据组织器"""
     
     def __init__(self, id_generator: IDGenerator, csv_loader: CSVDataLoader, skip_empty: bool = True):
         self.id_generator = id_generator
@@ -213,10 +206,8 @@ class DataOrganizer:
             level3_id = self.csv_loader.get_value(row, "level3", "id")
             level3_instruction = self.csv_loader.get_value(row, "level3", "instruction")
             
-            # 跳过空值
-            if self.skip_empty:
-                if not level1_name:
-                    continue
+            if self.skip_empty and not level1_name:
+                continue
             
             # 初始化一级
             if level1_name not in hierarchy:
@@ -273,36 +264,10 @@ class FieldBuilder:
         """构建组合ID"""
         return "_".join(ids)
     
-    def build_combined_instruction(self, instructions: List[str]) -> str:
-        """构建组合说明（每级一行）"""
-        # 过滤空值
-        valid_instructions = [inst for inst in instructions if inst]
-        if not valid_instructions:
-            return ""
-        return "\n".join(valid_instructions)
-    
-    def get_instruction_from_template(self, template: str, path: List[str], ids: List[str]) -> str:
-        """从模板生成说明"""
-        result = template
-        for i, level_name in enumerate(["level1", "level2", "level3"]):
-            if i < len(path):
-                result = result.replace(f"{{{level_name}}}", path[i])
-            else:
-                result = result.replace(f"{{{level_name}}}", "")
-        return result
-    
     def build_main_field_options(self, combine_levels: str, 
                                   instruction_fields: str = "") -> List[Dict]:
-        """
-        构建主字段选项
-        
-        Args:
-            combine_levels: 组合级别，如 "level1", "level1-level2"
-            instruction_fields: 说明来源字段，如 "level1", "level1-level2"
-                               如果为空，则使用 combine_levels 的值
-        """
+        """构建主字段选项"""
         levels = self.parse_combine_levels(combine_levels)
-        # 如果没有指定 instruction_fields，默认使用 combine_levels
         inst_levels = self.parse_combine_levels(instruction_fields) if instruction_fields else levels
         options = []
         seen = set()
@@ -311,7 +276,6 @@ class FieldBuilder:
                      current_instructions: List[str], node: Dict, depth: int):
             """递归遍历层级"""
             if depth >= len(levels):
-                # 构建选项
                 name = self.build_combined_name(current_path)
                 if name in seen:
                     return
@@ -319,10 +283,8 @@ class FieldBuilder:
                 
                 option_id = self.build_combined_id(current_ids)
                 
-                # 构建说明：根据 instruction_fields 指定的级别获取
                 instruction_parts = []
                 for i, level in enumerate(inst_levels):
-                    # 找到对应级别的索引
                     level_idx = levels.index(level) if level in levels else -1
                     if level_idx >= 0 and level_idx < len(current_instructions):
                         inst = current_instructions[level_idx]
@@ -342,7 +304,6 @@ class FieldBuilder:
             
             level = levels[depth]
             if depth == 0:
-                # 遍历一级
                 for name, data in self.hierarchy.items():
                     traverse(
                         current_path + [name],
@@ -352,7 +313,6 @@ class FieldBuilder:
                         depth + 1
                     )
             else:
-                # 遍历子级
                 children = node.get("children", {})
                 for name, data in children.items():
                     traverse(
@@ -368,34 +328,22 @@ class FieldBuilder:
     
     def build_secondary_field_options(self, parent_option: Dict, combine_levels: str,
                                        instruction_fields: str = "") -> List[Dict]:
-        """
-        为特定主字段选项构建次字段选项
-        
-        Args:
-            parent_option: 主字段选项
-            combine_levels: 次字段组合级别
-            instruction_fields: 说明来源字段，如 "level2", "level2-level3"
-                               如果为空，则使用 combine_levels 的值
-        """
+        """为特定主字段选项构建次字段选项"""
         levels = self.parse_combine_levels(combine_levels)
-        # 如果没有指定 instruction_fields，默认使用 combine_levels
         inst_levels = self.parse_combine_levels(instruction_fields) if instruction_fields else levels
         options = []
         seen = set()
         
-        # 根据主字段选项的路径找到对应的层级节点
         path = parent_option.get("_path", [])
         if not path:
             return options
         
-        # 定位到正确的层级节点
         node = self.hierarchy.get(path[0], {})
         for i in range(1, len(path)):
             node = node.get("children", {}).get(path[i], {})
         
         def traverse(current_path: List[str], current_ids: List[str],
                      current_instructions: List[str], current_node: Dict, depth: int):
-            """递归遍历"""
             if depth >= len(levels):
                 name = self.build_combined_name(current_path)
                 if name in seen:
@@ -404,10 +352,8 @@ class FieldBuilder:
                 
                 option_id = self.build_combined_id(current_ids)
                 
-                # 构建说明：根据 instruction_fields 指定的级别获取
                 instruction_parts = []
                 for i, level in enumerate(inst_levels):
-                    # 找到对应级别的索引
                     level_idx = levels.index(level) if level in levels else -1
                     if level_idx >= 0 and level_idx < len(current_instructions):
                         inst = current_instructions[level_idx]
@@ -426,12 +372,10 @@ class FieldBuilder:
             level = levels[depth]
             level_num = int(level.replace("level", ""))
             
-            # 根据当前深度找到对应的子节点
             if level_num == 2:
                 children = current_node.get("children", {})
             elif level_num == 3:
                 children = current_node.get("children", {})
-                # 如果当前节点是二级，需要遍历其三级子节点
                 if current_node.get("children"):
                     for child_name, child_data in current_node.get("children", {}).items():
                         traverse(
@@ -459,7 +403,7 @@ class FieldBuilder:
 
 
 class APIClient:
-    """API客户端"""
+    """API客户端 - 新架构（无page_name）"""
     
     def __init__(self, base_url: str, api_key: str, timeout: int = 30):
         self.base_url = base_url
@@ -470,16 +414,16 @@ class APIClient:
             "Authorization": f"Bearer {api_key}"
         }
     
-    def create_field_group(self, page_name: str, group_name: str, 
+    def create_field_group(self, app_name: str, group_name: str, 
                            fields: List[Dict], is_append: bool = False) -> Dict:
-        """创建/更新字段组"""
+        """创建/更新字段组 - 新API格式（无page_name）"""
         url = f"{self.base_url}/api/autofill/field_group/upsert"
         
+        # 新格式：使用app_name替代page_name
         payload = {
-            "page_name": page_name,
+            "app_name": app_name,
             "group_name": group_name,
-            "fields": fields,
-            "is_append": is_append
+            "fields": fields
         }
         
         try:
@@ -494,11 +438,13 @@ class APIClient:
                 print(f"响应内容: {e.response.text[:500]}")
             raise
     
-    def verify_field(self, page_name: str, field_name: str) -> bool:
-        """验证字段是否创建成功"""
+    def verify_field(self, app_name: str, field_name: str) -> bool:
+        """验证字段是否创建成功 - 新API格式"""
         url = f"{self.base_url}/api/autofill/field_spec/list"
+        
+        # 新格式：使用app_name和group_names/field_names
         params = {
-            "page_name": page_name,
+            "app_name": app_name,
             "field_names": [field_name]
         }
         
@@ -534,7 +480,6 @@ class SmartFieldCreator:
     def create_select_field(self, field_name: str, field_label: str,
                            options: List[Dict], fill_instruction: str = "") -> Dict:
         """创建下拉单选字段"""
-        # 清理选项中的内部字段
         clean_options = []
         for opt in options:
             clean_opt = {
@@ -559,12 +504,11 @@ class SmartFieldCreator:
     def run(self):
         """执行字段创建流程"""
         print("=" * 60)
-        print("智能字段创建脚本")
+        print("智能字段创建脚本 V2 - 新架构")
         print("=" * 60)
         
         # 1. 加载CSV数据
         csv_path = self.config["csv"]["file_path"]
-        # 如果CSV路径是相对路径且不存在，尝试在脚本目录下查找
         csv_path_obj = Path(csv_path)
         if not csv_path_obj.is_absolute() and not csv_path_obj.exists():
             script_dir_csv = SCRIPT_DIR / csv_path
@@ -591,7 +535,6 @@ class SmartFieldCreator:
             self.config["main_field"]["separator"]
         )
         
-        # 构建主字段选项
         main_config = self.config["main_field"]
         main_options = field_builder.build_main_field_options(
             main_config["combine_levels"],
@@ -599,7 +542,6 @@ class SmartFieldCreator:
         )
         print(f"      主字段选项数: {len(main_options)}")
         
-        # 创建主字段
         main_field = self.create_select_field(
             main_config["name"],
             main_config["label"],
@@ -608,19 +550,16 @@ class SmartFieldCreator:
         )
         
         fields = [main_field]
-        secondary_fields = []  # 初始化次字段列表
+        secondary_fields = []
         
-        # 构建次字段（如果启用）
         secondary_config = self.config["secondary_field"]
         if secondary_config["enabled"]:
             print(f"\n      创建次字段（后缀: {secondary_config['suffix']}）...")
             
             for option in main_options:
-                # 构建次字段名称
                 secondary_name = f"{option['label']}{secondary_config['suffix']}"
                 secondary_label = f"{option['label']}{secondary_config['suffix']}"
                 
-                # 构建次字段选项
                 secondary_options = field_builder.build_secondary_field_options(
                     option,
                     secondary_config["combine_levels"],
@@ -642,39 +581,28 @@ class SmartFieldCreator:
         
         # 4. 创建字段组（分批创建）
         print(f"\n[4/5] 创建字段组...")
-        print(f"      页面: {self.config['page']['page_name']}")
-        print(f"      字段组: {self.config['page']['field_group_name']}")
+        app_name = self.config["app"]["app_name"]
+        group_name = self.config["app"]["field_group_name"]
+        print(f"      应用: {app_name}")
+        print(f"      字段组: {group_name}")
         print(f"      字段总数: {len(fields)}")
         
         try:
-            # 先创建主字段
-            print(f"\n      4.1 创建主字段: {main_config['name']}")
-            result = self.api_client.create_field_group(
-                self.config["page"]["page_name"],
-                self.config["page"]["field_group_name"],
-                [main_field],
-                is_append=False  # 首次创建，不追加
-            )
-            print(f"          主字段创建成功!")
+            # 分批创建所有字段
+            print(f"\n      4.1 创建字段组（共{len(fields)}个字段）...")
+            batch_size = 10
+            for i in range(0, len(fields), batch_size):
+                batch = fields[i:i+batch_size]
+                print(f"          创建批次 {i//batch_size + 1}/{(len(fields)-1)//batch_size + 1} ({len(batch)}个字段)...")
+                result = self.api_client.create_field_group(
+                    app_name,
+                    group_name,
+                    batch,
+                    is_append=(i > 0)  # 第一批不追加，后续追加
+                )
+                time.sleep(self.config["advanced"].get("batch_interval", 0.5))
+            print(f"          所有字段创建成功!")
             
-            # 分批创建次字段
-            if secondary_fields:
-                print(f"\n      4.2 创建次字段（共{len(secondary_fields)}个）...")
-                batch_size = 5  # 每批5个字段
-                for i in range(0, len(secondary_fields), batch_size):
-                    batch = secondary_fields[i:i+batch_size]
-                    print(f"          创建批次 {i//batch_size + 1}/{(len(secondary_fields)-1)//batch_size + 1} ({len(batch)}个字段)...")
-                    result = self.api_client.create_field_group(
-                        self.config["page"]["page_name"],
-                        self.config["page"]["field_group_name"],
-                        batch,
-                        is_append=True  # 追加模式
-                    )
-                    import time
-                    time.sleep(self.config["advanced"].get("batch_interval", 0.5))
-                print(f"          所有次字段创建成功!")
-            
-            print(f"\n      所有字段创建成功!")
         except Exception as e:
             print(f"      创建失败: {e}")
             import traceback
@@ -685,9 +613,9 @@ class SmartFieldCreator:
         if self.config["advanced"]["verify_creation"]:
             print(f"\n[5/5] 验证字段创建...")
             all_verified = True
-            for field in fields[:5]:  # 只验证前5个字段
+            for field in fields[:5]:
                 verified = self.api_client.verify_field(
-                    self.config["page"]["page_name"],
+                    app_name,
                     field["field_name"]
                 )
                 status = "✓" if verified else "✗"
@@ -706,15 +634,15 @@ class SmartFieldCreator:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="智能字段创建脚本 - 基于YAML配置",
+        description="智能字段创建脚本 V2 - 新架构",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
     # 使用默认配置文件 create_fields_config.yaml
-    python create_smart_fields.py
+    python create_fields_v2.py
     
     # 指定配置文件
-    python create_smart_fields.py my_config.yaml
+    python create_fields_v2.py my_config.yaml
         """
     )
     parser.add_argument(
@@ -726,15 +654,12 @@ def main():
     
     args = parser.parse_args()
     
-    # 如果没有指定配置文件，使用默认路径
     config_path = args.config if args.config else get_default_config_path()
     
     try:
-        # 加载配置
         print(f"加载配置文件: {config_path}")
         config = ConfigLoader.load(config_path)
         
-        # 创建并运行
         creator = SmartFieldCreator(config)
         success = creator.run()
         

@@ -3,51 +3,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
-# ==================== 填单页面 Schemas ====================
-
-class FillPageCreate(BaseModel):
-    page_name: str = Field(..., max_length=64)
-    page_code: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]*$", description="页面编码，不传则后端自动生成")
-    app_name: str = Field(..., max_length=64, description="关联应用名称")
-    app_id: int = Field(0, description="关联应用ID，后端自动填充")
-    tenant_id: int = Field(0, description="租户ID")
-    description: str = Field("", description="页面描述")
-    dify_agent_url: str = Field("", max_length=512, description="Dify Agent URL")
-    dify_api_key: str = Field("", max_length=128, description="Dify API Key")
-    is_active: bool = Field(True, description="是否启用")
-
-
-class FillPageUpdate(BaseModel):
-    id: int
-    page_name: str = Field("", max_length=64)
-    page_code: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
-    app_name: str = Field("", max_length=64, description="关联应用名称")
-    app_id: int = Field(0, description="关联应用ID，后端自动填充")
-    description: str = Field("", description="页面描述")
-    dify_agent_url: str = Field("", max_length=512, description="Dify Agent URL")
-    dify_api_key: str = Field("", max_length=128, description="Dify API Key")
-    is_active: bool = Field(True, description="是否启用")
-
-
-class FillPageOut(BaseModel):
-    id: int
-    page_name: str = ""
-    page_code: str = ""
-    app_id: int = 0
-    app_name: str = ""
-    tenant_id: int = 0
-    description: str = ""
-    dify_agent_url: str = ""
-    dify_api_key: str = ""
-    is_active: bool = True
-    created_at: str = ""
-    updated_at: str = ""
-
-    class Config:
-        from_attributes = True
-
-
-# ==================== 字段组配置 Schemas ====================
+# ==================== 字段组配置 Schemas（删除页面关联） ====================
 
 class OutputTemplateItem(BaseModel):
     """输出模板项"""
@@ -58,9 +14,7 @@ class OutputTemplateItem(BaseModel):
 class FieldGroupConfigCreate(BaseModel):
     group_name: str = Field(..., max_length=64)
     group_code: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]*$", description="字段组编码，不传则后端自动生成")
-    page_id: int = Field(0, description="关联页面ID")
-    app_name: str = Field("", max_length=64)
-    page_name: str = Field("", max_length=64)
+    app_name: str = Field(..., max_length=64, description="关联应用名称")
     prompt_template_base: str = Field("", description="Prompt基础模板")
     output_templates: Dict[str, OutputTemplateItem] = Field(default_factory=dict)
     description: str = Field("", description="字段组描述")
@@ -72,9 +26,7 @@ class FieldGroupConfigUpdate(BaseModel):
     id: int
     group_name: str = Field("", max_length=64)
     group_code: str = Field("", max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
-    page_id: int = Field(0, description="关联页面ID")
-    app_name: str = Field("", max_length=64)
-    page_name: str = Field("", max_length=64)
+    app_name: str = Field("", max_length=64, description="关联应用名称")
     prompt_template_base: str = Field("", description="Prompt基础模板")
     output_templates: Dict[str, OutputTemplateItem] = Field(default_factory=dict)
     description: str = Field("", description="字段组描述")
@@ -86,8 +38,6 @@ class FieldGroupConfigOut(BaseModel):
     group_name: str = ""
     group_code: str = ""
     app_name: str = ""
-    page_id: int = 0
-    page_name: str = ""
     prompt_template_base: str = ""
     output_templates: Dict = {}
     description: str = ""
@@ -149,12 +99,11 @@ class FieldSpecCreate(BaseModel):
     field_label: str = Field("", max_length=128)
     field_type: str = Field(default="text")
     tenant_id: int = Field(0, description="租户ID")
-    app_name: str = Field("", max_length=64, description="应用名称")
+    app_name: str = Field(..., max_length=64, description="应用名称")
     fill_instruction: str = Field("", description="字段填写指引")
     options: FieldOptions = Field(default_factory=FieldOptions)
     corrections: List[Dict] = []
     is_active: bool = Field(True, description="是否启用")
-    field_group_ids: List[int] = Field(default_factory=list, description="关联字段组ID列表")
 
 
 class FieldSpecUpdate(BaseModel):
@@ -168,7 +117,6 @@ class FieldSpecUpdate(BaseModel):
     options: FieldOptions = Field(default_factory=FieldOptions)
     corrections: List[Dict] = []
     is_active: bool = Field(True, description="是否启用")
-    field_group_ids: List[int] = Field(default_factory=list, description="关联字段组ID列表")
 
 
 class FieldSpecOut(BaseModel):
@@ -182,8 +130,6 @@ class FieldSpecOut(BaseModel):
     options: FieldOptions = Field(default_factory=FieldOptions)
     corrections: List[Dict] = []
     is_active: bool = True
-    field_group_ids: List[int] = []
-    field_groups: List[Dict] = []
     created_at: str = ""
     updated_at: str = ""
 
@@ -238,19 +184,8 @@ class FieldSpecSyncStatusResponse(BaseModel):
 
 class FieldGroupQueryRequest(BaseModel):
     app_name: str = Field("", description="应用名称")
-    page_name: str = Field("", description="页面名称")
-    field_group_name: str = Field("", description="字段组名称")
+    group_name: str = Field("", description="字段组名称")
     code: str = Field("", description="字段组编码")
-
-
-class FieldSpecListRequest(BaseModel):
-    field_group_id: int = Field(0, description="字段组ID")
-
-
-class FieldSpecQueryRequest(BaseModel):
-    field_group_id: int = Field(0, description="字段组ID")
-    field_name: str = Field("", description="字段名称")
-    field_type: str = Field("", description="字段类型")
 
 
 class FieldSpecSyncOptionsRequest(BaseModel):
@@ -259,7 +194,6 @@ class FieldSpecSyncOptionsRequest(BaseModel):
     field_name: str = Field(..., description="字段名称（必填）")
     field_label: str = Field(..., description="字段标签（必填）")
     field_type: str = Field("select_single", description="字段类型")
-    field_group_ids: List[int] = Field(default_factory=list, description="关联字段组ID列表（必填）")
     fill_instruction: str = Field("", description="填写指引")
     options: FieldOptions = Field(default_factory=FieldOptions, description="字段选项配置包含api_schema和api_headers")
 
@@ -269,6 +203,19 @@ class FieldSpecSyncOptionsResponse(BaseModel):
     items: List[OptionItem] = Field(default_factory=list, description="同步后的选项列表")
     updated_count: int = Field(default=0, description="更新/插入的选项数量")
     message: str = Field(default="", description="同步结果消息")
+
+
+class FieldGroupBatchAddFieldsRequest(BaseModel):
+    """批量添加字段到字段组请求"""
+    field_group_id: int = Field(..., description="字段组ID")
+    field_spec_ids: List[int] = Field(..., description="字段ID列表")
+
+
+class FieldGroupBatchAddFieldsResponse(BaseModel):
+    """批量添加字段到字段组响应"""
+    success_count: int = Field(default=0, description="成功添加数量")
+    failed_count: int = Field(default=0, description="失败数量")
+    message: str = Field(default="", description="操作结果消息")
 
 
 class CurlParseRequest(BaseModel):
@@ -353,6 +300,3 @@ class TemplateCurlParseResponse(BaseModel):
     openapi_schema: str = Field("", description="生成的 OpenAPI Schema (YAML 格式)")
     response_preview: Dict = Field(default_factory=dict, description="API 响应数据预览")
     message: str = Field("", description="处理结果消息")
-
-
-

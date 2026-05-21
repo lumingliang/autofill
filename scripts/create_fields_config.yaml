@@ -1,15 +1,15 @@
-# 智能字段创建脚本配置文件
-# 用于 create_smart_fields.py
+# 智能字段创建脚本配置文件 V2 - 新架构（无页面管理）
+# 用于 create_fields_v2.py
 
 # API配置
 api:
   base_url: "http://localhost:9999"
   api_key: "af_1fzDujUFl7SLg9L3CWMSV5upBT4GU1bR"
 
-# 页面和字段组配置
-page:
-  page_name: "话务工作台"
-  field_group_name: "事件类型"
+# 应用和字段组配置 - 新格式（使用app替代page）
+app:
+  app_name: "autofill"           # 应用名称（必填）
+  field_group_name: "事件类型"    # 字段组名称
 
 # CSV数据源配置
 csv:
@@ -103,11 +103,11 @@ advanced:
   # 请求超时时间（秒）
   timeout: 30
   
-  # 是否验证字段创建成功
+  # 是否验证创建结果
   verify_creation: true
   
-  # 批量创建时的间隔时间（秒）
+  # 批次间隔时间（秒）
   batch_interval: 0.5
   
-  # 是否输出详细日志
+  # 详细输出
   verbose: true

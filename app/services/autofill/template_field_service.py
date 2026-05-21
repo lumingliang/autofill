@@ -19,8 +19,7 @@ from app.models.autofill import (
     FieldGroupFieldSpec,
     FieldSpec,
     FieldSpecSyncRecord,
-    FieldType,
-    FillPage
+    FieldType
 )
 
 
@@ -255,16 +254,13 @@ class TemplateFieldService:
             template
         )
 
-        # 4.4 获取页面信息
+        # 4.4 获取字段组信息
         relations = await FieldGroupFieldSpec.filter(
             field_spec_id=field_spec.id
         ).all()
 
         if not relations:
             raise ValueError("字段未关联字段组")
-
-        field_group = await FieldGroupConfig.get(id=relations[0].field_group_id)
-        page = await FillPage.get(id=field_group.page_id)
 
         # 4.5 创建字段组和字段
         from app.services.autofill.field_group_service import FieldGroupService
@@ -307,7 +303,6 @@ class TemplateFieldService:
         await field_group_service.upsert_field_group(
             tenant_id=field_spec.tenant_id,
             app_name=field_spec.app_name,
-            page_name=page.page_name,
             group_name=group_name,
             output_templates=output_templates,
             fields=fields_for_group
@@ -378,16 +373,29 @@ class TemplateFieldService:
         # 创建下拉选择字段
         from app.services.autofill.field_spec_service import upsert_field_spec
 
-        await upsert_field_spec(
+        result = await upsert_field_spec(
             tenant_id=field_spec.tenant_id,
             app_name=field_spec.app_name,
             field_name=selector_field_name,
             field_label=selector_field_label,
             field_type=FieldType.SELECT_SINGLE,
-            field_group_ids=[relations[0].field_group_id],
             fill_instruction="请选择适用的模板",
             options={"items": items}
         )
+
+        # 创建字段组与字段的关联关系
+        field_group_id = relations[0].field_group_id
+        existing_relation = await FieldGroupFieldSpec.filter(
+            field_group_id=field_group_id,
+            field_spec_id=result["field_spec"].id
+        ).first()
+        if not existing_relation:
+            await FieldGroupFieldSpec.create(
+                field_group_id=field_group_id,
+                field_spec_id=result["field_spec"].id,
+                tenant_id=field_spec.tenant_id,
+                app_name=field_spec.app_name
+            )
 
         logger.info(f"[TemplateFieldService] 创建模板选择器字段成功: {selector_field_name}, 选项数: {len(items)}")
 

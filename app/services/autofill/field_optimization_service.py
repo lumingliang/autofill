@@ -23,22 +23,12 @@ class FieldOptimizationService:
     async def optimize_field_instructions(
         tenant_id: int,
         app_name: str,
-        page_name: str,
         group_name: str = None,
         field_name: str = None,
         batch_size: int = 10,
         model: str = None
     ) -> Dict[str, Any]:
         """优化字段填写指引"""
-        page = await field_group_config_controller.model.filter(
-            tenant_id=tenant_id,
-            app_name=app_name,
-            page_name=page_name
-        ).first()
-        
-        if not page:
-            raise HTTPException(status_code=404, detail=f"Page '{page_name}' not found")
-        
         field_q = Q(tenant_id=tenant_id, app_name=app_name, is_active=True)
         
         if field_name:
@@ -48,7 +38,6 @@ class FieldOptimizationService:
                 field_group = await field_group_config_controller.model.filter(
                     tenant_id=tenant_id,
                     app_name=app_name,
-                    page_id=page.id,
                     group_name=group_name
                 ).first()
                 
@@ -69,8 +58,7 @@ class FieldOptimizationService:
             else:
                 field_groups = await field_group_config_controller.model.filter(
                     tenant_id=tenant_id,
-                    app_name=app_name,
-                    page_id=page.id
+                    app_name=app_name
                 ).all()
                 
                 if not field_groups:

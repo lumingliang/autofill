@@ -5,6 +5,25 @@ import { getToken, removeToken } from './auth'
 const request = axios.create({
     baseURL: import.meta.env.VITE_BASE_API,
     timeout: 600000,
+    paramsSerializer: (params) => {
+        // 自定义参数序列化，将数组格式化为重复的key（FastAPI兼容格式）
+        const parts: string[] = []
+        Object.entries(params).forEach(([key, value]) => {
+            if (value === null || value === undefined) {
+                return
+            }
+            if (Array.isArray(value)) {
+                value.forEach((v) => {
+                    if (v !== null && v !== undefined) {
+                        parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`)
+                    }
+                })
+            } else {
+                parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+            }
+        })
+        return parts.join('&')
+    },
 })
 
 request.interceptors.request.use(

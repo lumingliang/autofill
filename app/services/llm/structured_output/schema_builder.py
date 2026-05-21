@@ -256,7 +256,15 @@ class FCSchemaBuilder:
                 # 默认字符串 - 使用 Optional 允许 null
                 fields[name] = (Optional[str], Field(default=None, description=desc))
 
-        return create_model("DynamicFormModel", **fields)
+        # 创建模型配置，允许额外字段
+        from pydantic import ConfigDict
+        config = ConfigDict(extra='ignore')
+        
+        return create_model(
+            "DynamicFormModel",
+            __config__=config,
+            **fields
+        )
 
     @staticmethod
     def build_json_prompt_from_fc(fc_schema: Dict[str, Any]) -> str:

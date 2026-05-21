@@ -1,5 +1,5 @@
 """
-字段组管理接口
+字段组管理接口 - 直接关联应用，不再关联页面
 """
 import json
 
@@ -9,7 +9,6 @@ from tortoise.expressions import Q
 from app.controllers.autofill import (
     field_group_config_controller,
     field_spec_controller,
-    fill_page_controller,
 )
 from app.core.dependency import AuthControl, is_superuser, build_tenant_query, TenantControl
 from app.schemas.base import Fail, Success, SuccessExtra
@@ -25,7 +24,6 @@ async def list_field_group(
     page_size: int = Query(10, description="每页数量"),
     group_name: str = Query("", description="字段组名称"),
     app_name: str = Query("", description="应用名称"),
-    page_id: int = Query(0, description="页面ID"),
     tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
@@ -35,8 +33,6 @@ async def list_field_group(
         q &= Q(group_name__contains=group_name)
     if app_name:
         q &= Q(app_name__contains=app_name)
-    if page_id > 0:
-        q &= Q(page_id=page_id)
 
     tenant_query = build_tenant_query(current_user, tenant_id)
     if tenant_query["tenant_id"] > 0:
@@ -78,24 +74,14 @@ async def create_field_group(
 ):
     current_user = await AuthControl.is_authed(token)
 
-    page = await fill_page_controller.get(id=group_in.page_id)
-    if not page:
-        return Fail(code=400, msg="页面不存在")
-
     # 使用公共方法验证租户ID
     success, msg, effective_tenant_id = TenantControl.validate_create_tenant_id(
         current_user, group_in.tenant_id
     )
     if not success:
         return Fail(code=400, msg=msg)
-    
-    # 如果超管没传tenant_id，使用页面的租户
-    if is_superuser(current_user) and group_in.tenant_id <= 0:
-        effective_tenant_id = page.tenant_id
-    
+
     group_in.tenant_id = effective_tenant_id
-    group_in.page_name = page.page_name
-    group_in.app_name = page.app_name
 
     group = await field_group_config_controller.create_field_group(obj_in=group_in)
     return Success(data=await group.to_dict())
@@ -112,13 +98,6 @@ async def update_field_group(
     if not is_superuser(current_user):
         if group.tenant_id != current_user.current_tenant_id:
             return Fail(code=403, msg="无权操作其他租户的字段组")
-
-    if group_in.page_id > 0 and group_in.page_id != group.page_id:
-        page = await fill_page_controller.get(id=group_in.page_id)
-        if not page:
-            return Fail(code=400, msg="页面不存在")
-        group_in.page_name = page.page_name
-        group_in.app_name = page.app_name
 
     updated = await field_group_config_controller.update_field_group(id=group_in.id, obj_in=group_in)
     return Success(data=await updated.to_dict())
@@ -145,7 +124,6 @@ async def delete_field_group(
 
 @router.get("/field_group/select", summary="字段组下拉列表")
 async def get_field_group_select(
-    page_id: int = Query(0, description="页面ID"),
     app_name: str = Query("", description="应用名称"),
     tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
@@ -157,8 +135,6 @@ async def get_field_group_select(
     if tenant_query["tenant_id"] > 0:
         q &= Q(tenant_id=tenant_query["tenant_id"])
 
-    if page_id > 0:
-        q &= Q(page_id=page_id)
     if app_name:
         q &= Q(app_name=app_name)
 
@@ -227,8 +203,6 @@ async def get_field_group_detail(
             "group_name": group.group_name,
             "group_code": group.group_code,
             "app_name": group.app_name,
-            "page_id": group.page_id,
-            "page_name": group.page_name,
             "description": group.description,
             "is_active": group.is_active,
             "created_at": str(group.created_at) if group.created_at else None,
@@ -244,54 +218,6 @@ async def get_field_group_detail(
             "json_schema": json.dumps(function_schema, ensure_ascii=False, indent=2),
         },
         "output_templates": group.output_templates or {},
-    }
-
-    return Success(data=result)
-
-
-@router.get("/field_group/detail_by_name", summary="通过页面ID和字段组名称获取字段组详情")
-async def get_field_group_detail_by_name(
-    page_id: int = Query(..., description="页面ID"),
-    group_name: str = Query(..., description="字段组名称"),
-    token: str = Header(..., description="token验证"),
-):
-    """
-    通过页面ID和字段组名称获取字段组详情（包含字段列表）
-    用于测试填单页面的级联选择
-    """
-    current_user = await AuthControl.is_authed(token)
-
-    # 查询字段组
-    q = Q(page_id=page_id, group_name=group_name, is_active=True)
-    tenant_query = build_tenant_query(current_user, 0)
-    if tenant_query["tenant_id"] > 0:
-        q &= Q(tenant_id=tenant_query["tenant_id"])
-
-    group = await field_group_config_controller.model.filter(q).first()
-    if not group:
-        return Fail(code=404, msg="字段组不存在")
-
-    if not is_superuser(current_user):
-        if group.tenant_id != current_user.current_tenant_id:
-            return Fail(code=403, msg="无权查看其他租户的字段组")
-
-    # 获取字段列表
-    fields = await field_spec_controller.get_by_field_group(group.id)
-
-    result = {
-        "basic_info": {
-            "id": group.id,
-            "group_name": group.group_name,
-            "group_code": group.group_code,
-            "app_name": group.app_name,
-            "page_id": group.page_id,
-            "page_name": group.page_name,
-            "description": group.description,
-            "is_active": group.is_active,
-            "created_at": str(group.created_at) if group.created_at else None,
-            "updated_at": str(group.updated_at) if group.updated_at else None,
-        },
-        "field_specs": [await obj.to_dict() for obj in fields],
     }
 
     return Success(data=result)
@@ -328,7 +254,6 @@ def _build_field_group_markdown(group, fields) -> str:
     lines.append("")
     lines.append(f"**编码**: `{group.group_code}`")
     lines.append(f"**应用**: {group.app_name}")
-    lines.append(f"**页面**: {group.page_name}")
     lines.append(f"**状态**: {'启用' if group.is_active else '禁用'}")
     lines.append("")
 

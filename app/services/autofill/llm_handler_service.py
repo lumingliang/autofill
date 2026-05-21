@@ -3,18 +3,16 @@ LLM Handler 业务服务层
 将 llm_handlers.py 中的业务逻辑下沉到这里
 """
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from fastapi.exceptions import HTTPException
-from tortoise.expressions import Q
 
 from app.controllers.autofill import (
     field_group_config_controller,
     field_spec_controller,
-    fill_page_controller,
 )
 from app.controllers.llm_config import llm_config_controller
 from app.log import logger
-from app.models.autofill import FieldGroupFieldSpec, FillPage
+from app.models.autofill import FieldGroupFieldSpec
 from app.services.autofill.field_group_query_service import field_group_query_service
 from app.services.autofill.prompt_service import build_fields_instructions
 from app.services.llm.structured_output.schema_builder import FCSchemaBuilder
@@ -30,27 +28,10 @@ class LLMFillDataService:
         app_name: str,
         session_id: str,
         data: Dict,
-        page_name: str = "",
         response_mode: str = "sync"
     ) -> Dict[str, Any]:
         """获取 AI 填充数据"""
         from app.services.autofill.ai_fill_service import get_ai_fill_service
-        
-        dify_url = ""
-        dify_api_key = ""
-        
-        if page_name:
-            page = await FillPage.filter(
-                tenant_id=tenant_id,
-                page_name=page_name,
-                is_active=True
-            ).first()
-            if page and page.dify_agent_url and page.dify_api_key:
-                dify_url = page.dify_agent_url
-                dify_api_key = page.dify_api_key
-        
-        if not dify_url or not dify_api_key:
-            raise HTTPException(status_code=500, detail="Dify configuration not found")
         
         service = get_ai_fill_service()
         
@@ -59,18 +40,14 @@ class LLMFillDataService:
                 session_id=session_id,
                 tenant_id=tenant_id,
                 app_name=app_name,
-                data=data,
-                dify_url=dify_url,
-                dify_api_key=dify_api_key
+                data=data
             )
         else:
             result = await service.process_sync(
                 session_id=session_id,
                 tenant_id=tenant_id,
                 app_name=app_name,
-                data=data,
-                dify_url=dify_url,
-                dify_api_key=dify_api_key
+                data=data
             )
         
         return result
@@ -95,7 +72,6 @@ class FieldGroupSchemaService:
     async def get_field_groups_schema(
         tenant_id: int,
         app_name: str,
-        page_name: str,
         field_names: List[str] = None,
         group_names: List[str] = None
     ) -> Dict[str, Any]:
@@ -103,29 +79,16 @@ class FieldGroupSchemaService:
         field_names_filter = set(field_names or [])
         group_names_filter = set(group_names or [])
         
-        page = await fill_page_controller.model.filter(
+        # 构建字段组查询
+        group_query = field_group_config_controller.model.filter(
             tenant_id=tenant_id,
-            app_name=app_name,
-            page_name=page_name
-        ).first()
-        
-        if not page:
-            return {"fields": [], "merged_config": {}, "prompt_info": {}, "function_calling": {}}
+            app_name=app_name
+        )
         
         if group_names_filter:
-            field_groups = await field_group_config_controller.model.filter(
-                tenant_id=tenant_id,
-                app_name=app_name,
-                page_id=page.id,
-                group_name__in=list(group_names_filter)
-            ).all()
-        else:
-            field_groups = await field_group_config_controller.model.filter(
-                tenant_id=tenant_id,
-                app_name=app_name,
-                page_id=page.id,
-                group_name="default"
-            ).all()
+            group_query = group_query.filter(group_name__in=list(group_names_filter))
+        
+        field_groups = await group_query.all()
         
         if not field_groups:
             return {"fields": [], "merged_config": {}, "prompt_info": {}, "function_calling": {}}
@@ -229,6 +192,7 @@ class FieldGroupSchemaService:
             merged["description"] = "; ".join(descriptions)
         
         return merged
-    
+
+
 llm_fill_data_service = LLMFillDataService()
 field_group_schema_service = FieldGroupSchemaService()

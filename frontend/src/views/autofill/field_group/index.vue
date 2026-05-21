@@ -25,12 +25,6 @@
               @change="handleSearch" />
           </a-form-item>
         </a-col>
-        <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="页面" class="filter-item">
-            <a-select v-model:value="queryParams.page_id" placeholder="请选择页面" allow-clear :options="pageOptions"
-              @change="handleSearch" />
-          </a-form-item>
-        </a-col>
       </template>
 
       <!-- 操作按钮 -->
@@ -80,9 +74,9 @@
         <a-form-item label="字段组名称" name="group_name">
           <a-input v-model:value="form.group_name" placeholder="请输入字段组名称" />
         </a-form-item>
-        <a-form-item label="所属页面" name="page_id">
-          <a-select v-model:value="form.page_id" placeholder="请选择页面" :options="pageOptions"
-            :disabled="modalAction === 'edit'" @change="handlePageChange" />
+        <a-form-item label="所属应用" name="app_name">
+          <a-select v-model:value="form.app_name" placeholder="请选择应用" :options="appOptions"
+            :disabled="modalAction === 'edit'" />
         </a-form-item>
         <a-form-item label="Prompt模板" name="prompt_template_base">
           <a-textarea v-model:value="form.prompt_template_base"
@@ -121,10 +115,16 @@
     </CrudTable>
 
     <!-- 字段管理弹窗 -->
-    <a-modal v-model:open="fieldModalVisible" :title="`管理字段 - ${currentFieldGroup?.group_name}`" width="1000px"
+    <a-modal v-model:open="fieldModalVisible" :title="`管理字段 - ${currentFieldGroup?.group_name}`" width="1200px"
       :footer="null">
-      <FieldSpecManagement :field-group-id="currentFieldGroup?.id" :field-group-name="currentFieldGroup?.group_name"
-        @close="fieldModalVisible = false" />
+      <ManageFieldsModal
+        :field-group-id="currentFieldGroup?.id"
+        :field-group-name="currentFieldGroup?.group_name"
+        :tenant-id="currentFieldGroup?.tenant_id"
+        :app-name="currentFieldGroup?.app_name"
+        @close="fieldModalVisible = false"
+        @success="handleManageFieldsSuccess"
+      />
     </a-modal>
 
     <!-- 详情弹窗 -->
@@ -139,7 +139,6 @@
             <a-descriptions-item label="字段组名称">{{ detailData.basic_info?.group_name }}</a-descriptions-item>
             <a-descriptions-item label="编码">{{ detailData.basic_info?.group_code }}</a-descriptions-item>
             <a-descriptions-item label="应用">{{ detailData.basic_info?.app_name }}</a-descriptions-item>
-            <a-descriptions-item label="页面">{{ detailData.basic_info?.page_name }}</a-descriptions-item>
             <a-descriptions-item label="版本">v{{ detailData.basic_info?.version }}</a-descriptions-item>
             <a-descriptions-item label="状态">
               <a-tag :color="detailData.basic_info?.is_active ? 'green' : 'red'">
@@ -244,7 +243,7 @@ import CrudTable from '@/components/CrudTable/index.vue'
 import JsonViewer from '@/components/JsonViewer/index.vue'
 import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
-import FieldSpecManagement from '@/views/autofill/field_spec/index.vue'
+import ManageFieldsModal from './components/ManageFieldsModal.vue'
 import { DeleteOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -258,7 +257,6 @@ const crudTableRef = ref<InstanceType<typeof CrudTable>>()
 const queryParams = reactive({
   group_name: '',
   app_name: undefined as string | undefined,
-  page_id: undefined as number | undefined,
   tenant_id: undefined as number | undefined,
 })
 
@@ -278,9 +276,7 @@ const modalAction = ref<'add' | 'edit'>('add')
 const modalForm = reactive({
   id: undefined as number | undefined,
   group_name: '',
-  group_code: '',
-  page_id: undefined as number | undefined,
-  page_name: '',
+  app_name: undefined as string | undefined,
   prompt_template_base: '',
   output_templates: {} as Record<string, any>,
   description: '',
@@ -318,15 +314,12 @@ const fieldSpecColumns = [
 
 // 其他数据
 const appOptions = ref<any[]>([])
-const pageOptions = ref<any[]>([])
 const tenantOptions = ref<any[]>([])
 
 // 计算属性
 const columns = computed(() => [
   { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
-  { title: '编码', dataIndex: 'group_code', key: 'group_code', width: 150 },
   { title: '字段组名称', dataIndex: 'group_name', key: 'group_name' },
-  { title: '页面名称', dataIndex: 'page_name', key: 'page_name' },
   { title: '应用名称', dataIndex: 'app_name', key: 'app_name' },
   { title: '状态', key: 'is_active', width: 100 },
   { title: '创建时间', key: 'created_at', width: 180 },
@@ -334,7 +327,7 @@ const columns = computed(() => [
 ])
 
 const filterItemCount = computed(() => {
-  let count = 3
+  let count = 2
   if (userStore.isSuperUser) count++
   return count
 })
@@ -343,8 +336,8 @@ const modalRules = {
   group_name: [
     { required: true, message: '请输入字段组名称', trigger: 'blur' },
   ],
-  page_id: [
-    { required: true, message: '请选择页面', trigger: 'change' },
+  app_name: [
+    { required: true, message: '请选择应用', trigger: 'change' },
   ],
 }
 
@@ -386,25 +379,6 @@ const fetchAppOptions = async (tenantId?: number) => {
   }
 }
 
-const fetchPageOptions = async (tenantId?: number) => {
-  try {
-    const params: any = {}
-    // 如果指定了租户（大于0），只加载该租户的页面
-    if (tenantId && tenantId > 0) {
-      params.tenant_id = tenantId
-    }
-    const res: any = await api.getPageSelect(params)
-    if (res.code === 200) {
-      pageOptions.value = (res.data || []).map((p: any) => ({
-        label: p.label,
-        value: p.value,
-      }))
-    }
-  } catch (error) {
-    console.error('获取页面列表失败:', error)
-  }
-}
-
 const fetchTenantOptions = async () => {
   if (!userStore.isSuperUser) return
   try {
@@ -420,13 +394,6 @@ const fetchTenantOptions = async () => {
   }
 }
 
-const handlePageChange = (value: number) => {
-  const page = pageOptions.value.find((p: any) => p.value === value)
-  if (page) {
-    modalForm.page_name = page.label.split(' (')[0]
-  }
-}
-
 const handleSearch = () => {
   pagination.current = 1
   fetchData()
@@ -435,29 +402,26 @@ const handleSearch = () => {
 const handleReset = () => {
   queryParams.group_name = ''
   queryParams.app_name = undefined
-  queryParams.page_id = undefined
   queryParams.tenant_id = undefined
   pagination.current = 1
   fetchData()
 }
 
 const handleTenantChange = (tenantId: number) => {
-  // 重置应用和页面选择
+  // 重置应用选择
   queryParams.app_name = undefined
-  queryParams.page_id = undefined
-  // 重新加载该租户的应用和页面
+  // 重新加载该租户的应用
   fetchAppOptions(tenantId)
-  fetchPageOptions(tenantId)
   // 刷新数据
   handleSearch()
 }
 
 // 弹窗中租户变更处理
 const handleModalTenantChange = (tenantId: number, form: any) => {
-  // 重置页面选择
-  form.page_id = undefined
-  // 重新加载该租户的页面
-  fetchPageOptions(tenantId)
+  // 重置应用选择
+  form.app_name = undefined
+  // 重新加载该租户的应用
+  fetchAppOptions(tenantId)
 }
 
 const handleTableChange = (pag: any) => {
@@ -471,9 +435,7 @@ const handleAdd = () => {
   modalTitle.value = '新建字段组'
   modalForm.id = undefined
   modalForm.group_name = ''
-  modalForm.group_code = ''
-  modalForm.page_id = undefined
-  modalForm.page_name = ''
+  modalForm.app_name = undefined
   modalForm.prompt_template_base = `你是专业的车企售后工单智能填写助手。
 请根据用户描述，严格提取信息并填写以下字段。
 
@@ -507,9 +469,7 @@ const handleEdit = (record: any) => {
   modalTitle.value = '编辑字段组'
   modalForm.id = record.id
   modalForm.group_name = record.group_name
-  modalForm.group_code = record.group_code
-  modalForm.page_id = record.page_id
-  modalForm.page_name = record.page_name
+  modalForm.app_name = record.app_name
   modalForm.prompt_template_base = record.prompt_template_base
   modalForm.output_templates = record.output_templates || {}
   modalForm.description = record.description
@@ -521,6 +481,13 @@ const handleEdit = (record: any) => {
 const handleManageFields = (record: any) => {
   currentFieldGroup.value = record
   fieldModalVisible.value = true
+}
+
+const handleManageFieldsSuccess = () => {
+  // 刷新详情数据（如果详情弹窗打开）
+  if (detailModalVisible.value && detailData.value) {
+    handleViewDetail(currentFieldGroup.value)
+  }
 }
 
 // 输出模板相关方法
@@ -632,7 +599,6 @@ const handleDelete = async (record: any) => {
 onMounted(() => {
   fetchData()
   fetchAppOptions()
-  fetchPageOptions()
   fetchTenantOptions()
 })
 </script>

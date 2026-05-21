@@ -88,7 +88,7 @@
                 <a-tab-pane key="fill" tab="测试填单">
                     <div class="test-fill-section">
                         <a-form layout="vertical">
-                            <!-- 第一行：租户选择（仅超级用户显示）、应用名称、页面名称 -->
+                            <!-- 第一行：租户选择（仅超级用户显示）、应用名称 -->
                             <a-row :gutter="16">
                                 <a-col :span="8" v-if="isSuperUser">
                                     <a-form-item label="租户">
@@ -97,34 +97,36 @@
                                             allow-clear />
                                     </a-form-item>
                                 </a-col>
-                                <a-col :span="8">
+                                <a-col :span="isSuperUser ? 8 : 12">
                                     <a-form-item label="应用名称" required>
-                                        <a-select v-model:value="queryParams.app_id" placeholder="请选择应用"
+                                        <a-select v-model:value="queryParams.app_name" placeholder="请选择应用"
                                             :options="appOptions" @change="handleAppChange" style="width: 100%" />
                                     </a-form-item>
                                 </a-col>
-                                <a-col :span="8">
-                                    <a-form-item label="页面名称" required>
-                                        <a-select v-model:value="queryParams.page_id" placeholder="请选择页面"
-                                            :options="pageOptions" @change="handlePageChange" style="width: 100%" />
-                                    </a-form-item>
-                                </a-col>
-                            </a-row>
-                            <!-- 第二行：字段组名称 -->
-                            <a-row :gutter="16">
-                                <a-col :span="8">
-                                    <a-form-item label="字段组名称" required>
-                                        <a-select v-model:value="queryParams.group_id" placeholder="请选择字段组"
-                                            :options="groupOptions" @change="handleGroupChange" style="width: 100%" />
+                                <a-col :span="isSuperUser ? 8 : 12">
+                                    <a-form-item label="指定System Prompt字段组">
+                                        <a-select v-model:value="queryParams.system_prompt_group" placeholder="可选：指定使用哪个字段组的system_prompt"
+                                            :options="groupOptions" style="width: 100%" allow-clear />
                                     </a-form-item>
                                 </a-col>
                             </a-row>
 
-                            <!-- 第二行：字段名称（多选） -->
+                            <!-- 第二行：字段组名称（多选） -->
+                            <a-row :gutter="16">
+                                <a-col :span="24">
+                                    <a-form-item label="字段组名称" required>
+                                        <a-select v-model:value="fillForm.group_names" mode="multiple"
+                                            placeholder="请选择字段组" :options="groupOptions" style="width: 100%"
+                                            @change="handleGroupChange" />
+                                    </a-form-item>
+                                </a-col>
+                            </a-row>
+
+                            <!-- 第三行：字段名称（多选） -->
                             <a-row :gutter="16">
                                 <a-col :span="24">
                                     <a-form-item label="字段名称">
-                                        <a-select v-model:value="fillForm.field_ids" mode="multiple"
+                                        <a-select v-model:value="fillForm.field_names" mode="multiple"
                                             placeholder="请选择字段（不选则使用全部）" :options="fieldOptions" style="width: 100%" />
                                     </a-form-item>
                                 </a-col>
@@ -152,7 +154,7 @@
                                 <a-descriptions :column="2" bordered size="small">
                                     <a-descriptions-item label="Session ID">{{ fillResult.data?.session_id
                                     }}</a-descriptions-item>
-                                    <a-descriptions-item label="页面">{{ fillResult.data?.page_name }}</a-descriptions-item>
+                                    <a-descriptions-item label="应用">{{ fillResult.data?.app_name }}</a-descriptions-item>
                                     <a-descriptions-item label="状态">
                                         <a-tag color="green">{{ fillResult.data?.status }}</a-tag>
                                     </a-descriptions-item>
@@ -321,25 +323,24 @@ const exportChat = () => {
 const userStore = useUserStore()
 const isSuperUser = computed(() => userStore.isSuperUser)
 
-// 查询参数（参考system/user页面的模式）
+// 查询参数
 const queryParams = reactive({
     tenant_id: undefined as number | undefined,
-    app_id: undefined as number | undefined,
-    page_id: undefined as number | undefined,
-    group_id: undefined as number | undefined,
+    app_name: undefined as string | undefined,
+    system_prompt_group: undefined as string | undefined,
 })
 
 const tenantOptions = ref<{ label: string; value: number }[]>([])
 
 const fillForm = reactive({
-    field_ids: [] as number[],
+    group_names: [] as string[],
+    field_names: [] as string[],
     chat_record: ''
 })
 
-const appOptions = ref<{ label: string; value: number }[]>([])
-const pageOptions = ref<{ label: string; value: number }[]>([])
-const groupOptions = ref<{ label: string; value: number }[]>([])
-const fieldOptions = ref<{ label: string; value: number }[]>([])
+const appOptions = ref<{ label: string; value: string }[]>([])
+const groupOptions = ref<{ label: string; value: string }[]>([])
+const fieldOptions = ref<{ label: string; value: string }[]>([])
 const allFieldSpecs = ref<any[]>([])
 
 const filling = ref(false)
@@ -353,7 +354,6 @@ const resultColumns = [
 ]
 
 const resultTableData = computed(() => {
-    // fillResult 结构: { code, msg, data: { result: {...} } }
     const result = fillResult.value?.data?.result
     if (!result) return []
 
@@ -376,15 +376,14 @@ const loadTenants = async () => {
     }
 }
 
-// 租户变化处理（参考system/user页面的模式，只作为查询条件，不切换当前租户）
+// 租户变化处理
 const handleTenantChange = async (tenantId: number) => {
     // 重置所有下级选择
-    queryParams.app_id = undefined
-    queryParams.page_id = undefined
-    queryParams.group_id = undefined
-    fillForm.field_ids = []
+    queryParams.app_name = undefined
+    queryParams.system_prompt_group = undefined
+    fillForm.group_names = []
+    fillForm.field_names = []
     appOptions.value = []
-    pageOptions.value = []
     groupOptions.value = []
     fieldOptions.value = []
     allFieldSpecs.value = []
@@ -404,61 +403,38 @@ const loadApps = async () => {
         const items = res?.data?.items || res?.data || []
         appOptions.value = items.map((a: any) => ({
             label: a.app_name,
-            value: a.id
+            value: a.app_name
         }))
     } catch (error) {
         console.error('加载应用失败:', error)
     }
 }
 
-// 应用变化时加载页面
-const handleAppChange = async (appId: number) => {
-    queryParams.page_id = undefined
-    queryParams.group_id = undefined
-    fillForm.field_ids = []
-    pageOptions.value = []
+// 应用变化时加载字段组
+const handleAppChange = async (appName: string) => {
+    queryParams.system_prompt_group = undefined
+    fillForm.group_names = []
+    fillForm.field_names = []
     groupOptions.value = []
     fieldOptions.value = []
     allFieldSpecs.value = []
 
-    if (!appId) return
+    if (!appName) return
 
     try {
-        const params: any = { page: 1, page_size: 100 }
+        const params: any = {
+            app_name: appName,
+            page: 1,
+            page_size: 100
+        }
         if (isSuperUser.value && queryParams.tenant_id) {
             params.tenant_id = queryParams.tenant_id
         }
-        const res: any = await api.getPageList({ app_id: appId, ...params })
-        const items = res?.data?.items || res?.data || []
-        pageOptions.value = items.map((p: any) => ({
-            label: p.page_name,
-            value: p.id
-        }))
-    } catch (error) {
-        console.error('加载页面失败:', error)
-    }
-}
-
-// 页面变化时加载字段组
-const handlePageChange = async (pageId: number) => {
-    queryParams.group_id = undefined
-    fillForm.field_ids = []
-    groupOptions.value = []
-    fieldOptions.value = []
-    allFieldSpecs.value = []
-
-    if (!pageId || !queryParams.app_id) return
-
-    try {
-        const res: any = await api.getFieldGroupList({
-            page_id: pageId,
-            page: 1,
-            page_size: 100
-        })
+        const res: any = await api.getFieldGroupList(params)
         const items = res?.data?.items || res?.data || []
         groupOptions.value = items.map((g: any) => ({
             label: g.group_name,
-            value: g.id
+            value: g.group_name
         }))
     } catch (error) {
         console.error('加载字段组失败:', error)
@@ -466,20 +442,28 @@ const handlePageChange = async (pageId: number) => {
 }
 
 // 字段组变化时加载字段
-const handleGroupChange = async (groupId: number) => {
-    fillForm.field_ids = []
+const handleGroupChange = async (groupNames: string[]) => {
+    fillForm.field_names = []
     fieldOptions.value = []
     allFieldSpecs.value = []
 
-    if (!groupId || !queryParams.app_id || !queryParams.page_id) return
+    if (!groupNames || groupNames.length === 0 || !queryParams.app_name) return
 
     try {
-        const res: any = await api.getFieldSpecsByGroup({ field_group_id: groupId })
-        const fieldSpecs = res?.data || []
-        allFieldSpecs.value = fieldSpecs
-        fieldOptions.value = fieldSpecs.map((f: any) => ({
+        // 获取所有选中字段组的字段
+        const allFields: any[] = []
+        for (const groupName of groupNames) {
+            const res: any = await api.getFieldGroupDetailByName({
+                app_name: queryParams.app_name,
+                group_name: groupName
+            })
+            const fieldSpecs = res?.data?.field_specs || []
+            allFields.push(...fieldSpecs)
+        }
+        allFieldSpecs.value = allFields
+        fieldOptions.value = allFields.map((f: any) => ({
             label: `${f.field_label || f.field_name} (${f.field_name})`,
-            value: f.id
+            value: f.field_name
         }))
     } catch (error) {
         console.error('加载字段失败:', error)
@@ -487,15 +471,11 @@ const handleGroupChange = async (groupId: number) => {
 }
 
 const handleTestFill = async () => {
-    if (!queryParams.app_id) {
+    if (!queryParams.app_name) {
         message.warning('请选择应用')
         return
     }
-    if (!queryParams.page_id) {
-        message.warning('请选择页面')
-        return
-    }
-    if (!queryParams.group_id) {
+    if (!fillForm.group_names || fillForm.group_names.length === 0) {
         message.warning('请选择字段组')
         return
     }
@@ -508,17 +488,13 @@ const handleTestFill = async () => {
     fillResult.value = null
 
     try {
-        // 构建字段ID列表
-        const fieldIdsToUse = fillForm.field_ids.length > 0
-            ? fillForm.field_ids
-            : allFieldSpecs.value.map(f => f.id)
-
         const requestData: any = {
-            app_id: queryParams.app_id,
-            page_id: queryParams.page_id,
-            group_id: queryParams.group_id,
-            field_ids: fieldIdsToUse,
-            chat_record: fillForm.chat_record
+            app_name: queryParams.app_name,
+            group_names: fillForm.group_names,
+            field_names: fillForm.field_names.length > 0 ? fillForm.field_names : undefined,
+            system_prompt_group: queryParams.system_prompt_group,
+            query: fillForm.chat_record,
+            session_id: chatSessionId.value || undefined
         }
 
         // 超级用户传递tenant_id
@@ -599,38 +575,46 @@ onMounted(() => {
             flex-direction: row-reverse;
 
             .message-content {
-                margin-left: 0;
                 margin-right: 12px;
+                margin-left: 0;
                 background-color: #1890ff;
                 color: white;
-                border-radius: 12px 12px 0 12px;
+
+                .message-time {
+                    color: rgba(255, 255, 255, 0.7);
+                }
             }
         }
 
         &.assistant {
             .message-content {
                 background-color: white;
-                border-radius: 12px 12px 12px 0;
             }
         }
-    }
 
-    .message-content {
-        margin-left: 12px;
-        padding: 12px 16px;
-        max-width: 70%;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
+        .message-avatar {
+            flex-shrink: 0;
+        }
 
-    .message-text {
-        white-space: pre-wrap;
-        word-break: break-word;
-    }
+        .message-content {
+            max-width: 70%;
+            margin-left: 12px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 
-    .message-time {
-        font-size: 12px;
-        margin-top: 4px;
-        opacity: 0.7;
+            .message-text {
+                word-break: break-word;
+                white-space: pre-wrap;
+            }
+
+            .message-time {
+                margin-top: 4px;
+                font-size: 12px;
+                color: #999;
+            }
+        }
     }
 
     .chat-input-area {
@@ -639,7 +623,11 @@ onMounted(() => {
         border-top: 1px solid #e8e8e8;
     }
 
-    // 填单结果样式
+    // 填单测试样式
+    .test-fill-section {
+        padding: 16px 0;
+    }
+
     .fill-result {
         margin-top: 16px;
     }

@@ -17,11 +17,6 @@ class BasePublicRequest(BaseModel):
         extra = "allow"
 
 
-class PageBaseRequest(BasePublicRequest):
-    """需要页面名称的基础请求"""
-    page_name: str = Field(..., description="页面名称（必填）")
-
-
 class AppBaseRequest(BasePublicRequest):
     """需要应用名称的基础请求"""
     app_name: str = Field(..., description="应用名称（必填）")
@@ -35,7 +30,7 @@ class TenantAppBaseRequest(BasePublicRequest):
 
 # ==================== 字段明细相关请求 ====================
 
-class FieldSpecListRequest(PageBaseRequest):
+class FieldSpecListRequest(AppBaseRequest):
     """查询字段明细列表请求"""
     group_names: List[str] = Field(default_factory=list, description="字段组名称列表（可选，不传则查询所有）")
     field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
@@ -43,7 +38,6 @@ class FieldSpecListRequest(PageBaseRequest):
 
 class FieldSpecCreateRequest(BasePublicRequest):
     """创建字段明细请求"""
-    field_group_id: int = Field(..., description="字段组ID")
     field_name: str = Field(..., description="字段名（英文）")
     field_label: str = Field(..., description="字段显示名称")
     field_type: str = Field(default="text", description="字段类型: text/select_single/select_multi")
@@ -60,7 +54,7 @@ class FieldItem(BaseModel):
     options: Optional[Dict[str, Any]] = Field(default=None, description="选项配置")
 
 
-class UpsertFieldGroupRequest(PageBaseRequest):
+class UpsertFieldGroupRequest(AppBaseRequest):
     """创建或更新字段组请求"""
     group_name: str = Field(..., description="字段组名称")
     group_code: Optional[str] = Field(default=None, description="字段组编码（可选，不传则自动生成）")
@@ -71,9 +65,10 @@ class UpsertFieldGroupRequest(PageBaseRequest):
 
 # ==================== 字段组相关请求 ====================
 
-class FieldGroupRequest(PageBaseRequest):
+class FieldGroupRequest(AppBaseRequest):
     """查询字段组配置请求"""
-    group_fields: Optional[Dict[str, List[str]]] = Field(default=None, description="字段组与字段的映射关系，如 {'default': ['field1'], 'group2': []}，空列表表示查询该组所有字段")
+    group_names: List[str] = Field(default_factory=list, description="字段组名称列表")
+    field_names: List[str] = Field(default_factory=list, description="字段名称列表")
 
 
 class FieldGroupDetailRequest(BasePublicRequest):
@@ -135,7 +130,6 @@ class AIFillDataRequest(BasePublicRequest):
     """获取AI填单数据请求"""
     session_id: str = Field(..., description="会话ID")
     data: Dict[str, Any] = Field(default_factory=dict, description="请求数据")
-    page_name: Optional[str] = Field(default=None, description="页面名称（可选，用于获取页面特定的Dify配置）")
     response_mode: str = Field(default="sync", description="响应模式: sync=同步, async=异步")
 
 
@@ -144,21 +138,23 @@ class AIFillDataResultRequest(BasePublicRequest):
     session_id: str = Field(..., description="会话ID")
 
 
-class LLMFillRequest(PageBaseRequest):
+class LLMFillRequest(AppBaseRequest):
     """LLM填单请求"""
-    group_fields: Optional[Dict[str, List[str]]] = Field(default=None, description="字段组与字段的映射关系，如 {'default': ['field1'], 'group2': []}，空列表表示查询该组所有字段")
+    group_names: List[str] = Field(default_factory=list, description="字段组名称列表")
+    field_names: List[str] = Field(default_factory=list, description="字段名称列表")
+    system_prompt_group: Optional[str] = Field(default=None, description="指定使用哪个字段组的system_prompt")
     query: str = Field(..., description="用户输入的查询内容")
     additional_data: Optional[Dict[str, Any]] = Field(default=None, description="附加数据，包含预填充的字段值")
     use_additional_data: bool = Field(default=False, description="是否使用附加数据，为true时跳过additional_data中已有字段的LLM提取")
 
 
-class FieldGroupsSchemaRequest(PageBaseRequest):
+class FieldGroupsSchemaRequest(AppBaseRequest):
     """获取字段组Function Calling Schema请求"""
     group_names: List[str] = Field(default_factory=list, description="字段组名称列表")
     field_names: List[str] = Field(default_factory=list, description="字段名称列表")
 
 
-class OptimizeFieldInstructionRequest(PageBaseRequest):
+class OptimizeFieldInstructionRequest(AppBaseRequest):
     """优化字段填写指引请求"""
     group_name: Optional[str] = Field(default=None, description="字段组名称")
     field_name: Optional[str] = Field(default=None, description="单个字段名称")
@@ -182,7 +178,7 @@ class AgentRunRequest(BasePublicRequest):
 
 
 class DataQueryRequest(BasePublicRequest):
-    """数据查询请求"""
+    """数据查询"""
     query: str = Field(..., description="用户查询语句，描述要查询的数据")
     openapi_spec: str = Field(..., description="OpenAPI 规范来源（URL 或本地文件路径）")
     api_key: Optional[str] = Field(default=None, description="API 认证密钥（可选）")
@@ -197,7 +193,6 @@ class DataQueryRequest(BasePublicRequest):
 __all__ = [
     # 基础请求类
     "BasePublicRequest",
-    "PageBaseRequest",
     "AppBaseRequest",
     "TenantAppBaseRequest",
     # 字段明细相关

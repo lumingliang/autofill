@@ -1,7 +1,6 @@
 """
 Autofill handlers package
 """
-from .page_handlers import router as page_router
 from .field_group_handlers import router as field_group_router
 from .field_spec_handlers import router as field_spec_router
 from .app_handlers import router as app_router
@@ -12,7 +11,6 @@ from .test_fill_handlers import router as test_fill_router
 from .cascade_handlers import router as cascade_router
 
 __all__ = [
-    "page_router",
     "field_group_router",
     "field_spec_router",
     "app_router",

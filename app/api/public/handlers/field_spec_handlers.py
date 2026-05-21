@@ -24,14 +24,13 @@ async def list_field_spec(
     auth_info: dict = Depends(APIKeyAuth.authenticate)
 ):
     """
-    根据app_name/page_name/group_names查询字段明细列表
+    根据app_name/group_names查询字段明细列表
     """
     params = await parse_request_params(request, FieldSpecListRequest)
     
     result = await field_group_service.list_field_specs(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
-        page_name=params.get("page_name"),
         group_names=params.get("group_names"),
         field_names=params.get("field_names")
     )
@@ -46,18 +45,17 @@ async def create_field_spec_public(
 ):
     """公共接口：创建字段明细"""
     params = await parse_request_params(request, FieldSpecCreateRequest)
-    
+
     result = await field_spec_service.create_field_spec(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
-        field_group_id=params["field_group_id"],
         field_name=params["field_name"],
         field_label=params["field_label"],
         field_type=params.get("field_type", "text"),
         fill_instruction=params.get("fill_instruction", ""),
         options=params.get("options", {})
     )
-    
+
     return Success(data=result)
 
 
@@ -74,7 +72,6 @@ async def upsert_field_group(
     result = await field_group_service.upsert_field_group(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
-        page_name=params["page_name"],
         group_name=params["group_name"],
         group_code=params.get("group_code"),
         output_templates=params.get("output_templates"),

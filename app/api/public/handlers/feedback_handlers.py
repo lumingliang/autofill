@@ -68,9 +68,9 @@ async def summary_feedback(
         result = await step_llm_fill_service.execute_llm_fill_step(
             tenant_id=tenant_id,
             app_name=app_name,
-            page_name="common",
             session_id=session_id,
-            group_fields={"default": ["feedback_content_summary"]},
+            group_names=["default"],
+            field_names=["feedback_content_summary"],
             query=request.feedback_content,
             is_last=True
         )

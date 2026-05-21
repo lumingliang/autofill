@@ -17,7 +17,6 @@ from .field_group import (
 from .schemas import (
     # 基础请求类
     BasePublicRequest as BaseRequest,
-    PageBaseRequest,
     AppBaseRequest,
     TenantAppBaseRequest,
     # 字段明细相关
@@ -53,7 +52,6 @@ __all__ = [
     # 基础请求类
     "BasePublicRequest",
     "BaseRequest",
-    "PageBaseRequest",
     "AppBaseRequest",
     "TenantAppBaseRequest",
     # 字段明细相关

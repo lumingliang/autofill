@@ -35,7 +35,6 @@ import requests
 # 默认配置
 DEFAULT_API_BASE_URL = "http://localhost:9999"
 DEFAULT_API_KEY = "af_1fzDujUFl7SLg9L3CWMSV5upBT4GU1bR"
-PAGE_NAME = "话务工作台"
 
 # ========== 测试用例 ==========
 
@@ -136,8 +135,9 @@ def send_step_llm_fill_request(
     api_base_url: str,
     api_key: str,
     session_id: str,
-    page_name: str,
-    group_fields: Dict[str, List[str]],
+    group_names: List[str],
+    field_names: List[str],
+    system_prompt_group: Optional[str],
     query: str,
     method: str = None,
     is_last: bool = False,
@@ -154,8 +154,9 @@ def send_step_llm_fill_request(
 
     payload = {
         "session_id": session_id,
-        "page_name": page_name,
-        "group_fields": group_fields,
+        "group_names": group_names,
+        "field_names": field_names,
+        "system_prompt_group": system_prompt_group,
         "query": query,
         "is_last": is_last
     }
@@ -211,7 +212,6 @@ def extract_field_value(field_data: Any) -> Any:
 def run_step_test_scenario(
     api_base_url: str,
     api_key: str,
-    page_name: str,
     session_id: str,
     conversation: str,
     scenario_name: str,
@@ -230,7 +230,6 @@ def run_step_test_scenario(
     print("=" * 80)
     print(f"Session ID: {session_id}")
     print(f"API Base URL: {api_base_url}")
-    print(f"页面名称: {page_name}")
     if method:
         print(f"使用方法: {method}")
     print("=" * 80)
@@ -247,15 +246,14 @@ def run_step_test_scenario(
     print("【步骤1】获取一级事件类型和服务记录类型")
     print("-" * 80)
 
-    step1_fields = {"事件类型": ["一级事件类型"], "服务记录类型": ["服务记录类型"]}
-
     try:
         response1 = send_step_llm_fill_request(
             api_base_url=api_base_url,
             api_key=api_key,
             session_id=session_id,
-            page_name=page_name,
-            group_fields=step1_fields,
+            group_names=["事件类型", "服务记录类型"],
+            field_names=["一级事件类型", "服务记录类型"],
+            system_prompt_group="事件类型",
             query=conversation,
             method=method,
             is_last=False,
@@ -307,22 +305,24 @@ def run_step_test_scenario(
     print(f"一级事件类型: {event_type}")
     print(f"服务记录类型: {service_type}")
 
-    # 构建步骤2的字段组
-    step2_fields = {}
+    # 构建步骤2的字段组和字段名
+    step2_group_names = []
+    step2_field_names = []
 
     # 添加二三级事件类型字段
     if event_type:
+        step2_group_names.append("事件类型")
         secondary_field_name = f"{event_type}-二三级事件类型"
-        step2_fields["事件类型"] = [secondary_field_name]
+        step2_field_names.append(secondary_field_name)
         print(f"请求次字段: {secondary_field_name}")
 
     # 添加服务记录模板字段组
     if service_type:
         group_name = f"服务记录-{service_type}"
-        step2_fields[group_name] = []  # 空列表表示获取该字段组下的所有字段
+        step2_group_names.append(group_name)
         print(f"请求字段组: {group_name}")
 
-    if not step2_fields:
+    if not step2_group_names:
         print("⚠ 无法确定步骤2字段，跳过")
         results["steps"].append({"step": 2, "status": "skipped", "reason": "无法确定字段"})
         return results
@@ -332,8 +332,9 @@ def run_step_test_scenario(
             api_base_url=api_base_url,
             api_key=api_key,
             session_id=session_id,
-            page_name=page_name,
-            group_fields=step2_fields,
+            group_names=step2_group_names,
+            field_names=step2_field_names,
+            system_prompt_group=step2_group_names[0] if step2_group_names else None,
             query=conversation,
             method=method,
             is_last=True,  # 标记为最后一步
@@ -414,7 +415,6 @@ def run_step_test_scenario(
 def run_all_tests(
     api_base_url: str,
     api_key: str,
-    page_name: str,
     method: str = None,
     memory_rounds: int = 0
 ) -> List[Dict]:
@@ -439,7 +439,6 @@ def run_all_tests(
         result = run_step_test_scenario(
             api_base_url=api_base_url,
             api_key=api_key,
-            page_name=page_name,
             session_id=session_id,
             conversation=conversation,
             scenario_name=scenario_name,
@@ -482,7 +481,6 @@ def main():
     parser = argparse.ArgumentParser(description="分步LLM填单测试")
     parser.add_argument("--api-key", default=DEFAULT_API_KEY, help="API Key")
     parser.add_argument("--base-url", default=DEFAULT_API_BASE_URL, help="API基础URL")
-    parser.add_argument("--page-name", default=PAGE_NAME, help="页面名称")
     parser.add_argument("--session-id", help="会话ID（不指定则自动生成）")
     parser.add_argument("--method", choices=[
         "with_structured_output", "bind_tools_non_stream", "bind_tools_stream",
@@ -501,7 +499,6 @@ def main():
         results = run_all_tests(
             api_base_url=args.base_url,
             api_key=args.api_key,
-            page_name=args.page_name,
             method=args.method,
             memory_rounds=args.memory_rounds
         )
@@ -528,7 +525,6 @@ def main():
         results = run_step_test_scenario(
             api_base_url=args.base_url,
             api_key=args.api_key,
-            page_name=args.page_name,
             session_id=session_id,
             conversation=conversation,
             scenario_name=scenario_name,

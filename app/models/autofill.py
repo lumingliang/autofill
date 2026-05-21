@@ -19,12 +19,6 @@ def generate_field_group_code():
     return f"fg_{random_str}"
 
 
-def generate_page_code():
-    """生成页面唯一编码: page_{16位随机字符串}"""
-    random_str = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(16))
-    return f"page_{random_str}"
-
-
 class AppManagement(BaseModel, TimestampMixin):
     """应用管理表"""
     app_name = fields.CharField(max_length=64, default="", description="应用名称(英文)", index=True)
@@ -85,7 +79,7 @@ class FillDataRecord(BaseModel, TimestampMixin):
         table = "fill_data_record"
 
 
-# ==================== 新增模型 ====================
+# ==================== 字段类型枚举 ====================
 
 class FieldType(str, Enum):
     """字段类型枚举 - 文本输入、下拉单选、下拉多选、模板类型"""
@@ -95,42 +89,13 @@ class FieldType(str, Enum):
     TEMPLATE = "template"   # 模板类型（新增）
 
 
-class FillPage(BaseModel, TimestampMixin):
-    """填单页面管理表"""
-    page_name = fields.CharField(max_length=64, default="", description="页面名称", index=True)
-    page_code = fields.CharField(max_length=64, default=generate_page_code, description="页面编码", index=True)
-    app_id = fields.BigIntField(default=0, description="关联应用ID", index=True)
-    app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
-    tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
-    description = fields.TextField(default="", description="页面描述")
-    dify_agent_url = fields.CharField(max_length=512, default="", description="Dify Agent URL")
-    dify_api_key = fields.CharField(max_length=128, default="", description="Dify API Key")
-    is_active = fields.BooleanField(default=True, description="是否启用")
-
-    class Meta:
-        table = "fill_page"
-
-    async def to_dict(self, exclude_fields: list[str] | None = None):
-        """转换为字典，同时返回 app_id 和 app_name"""
-        if exclude_fields is None:
-            exclude_fields = []
-
-        data = await super().to_dict(exclude_fields=exclude_fields)
-
-        # 确保 app_id 和 app_name 都在数据中
-        data["app_id"] = self.app_id
-        data["app_name"] = self.app_name
-
-        return data
-
+# ==================== 字段组配置（删除页面关联） ====================
 
 class FieldGroupConfig(BaseModel, TimestampMixin):
-    """字段组配置表"""
+    """字段组配置表 - 直接关联应用，不再关联页面"""
     group_name = fields.CharField(max_length=64, default="", description="字段组名称", index=True)
     group_code = fields.CharField(max_length=64, description="字段组编码", unique=True, index=True, default=generate_field_group_code)
     app_name = fields.CharField(max_length=64, default="", description="应用名称", index=True)
-    page_id = fields.BigIntField(default=0, description="关联页面ID", index=True)
-    page_name = fields.CharField(max_length=64, default="", description="页面名称")
     prompt_template_base = fields.TextField(default="", description="Prompt基础模板，包含{{fields_instructions}}占位符")
     output_templates = fields.JSONField(default=dict, description="多输出模板配置，如{key: {template, description}}")
     description = fields.TextField(default="", description="字段组描述")

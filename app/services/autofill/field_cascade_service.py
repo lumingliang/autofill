@@ -17,7 +17,7 @@ from app.core.tenant import TenantContext
 from app.log import logger
 from app.models.autofill import (
     FieldCascadeConfig, FieldCascadeData,
-    FieldSpec, FieldGroupConfig
+    FieldSpec, FieldGroupConfig, FieldGroupFieldSpec
 )
 from app.services.autofill.field_flatten_service import FieldFlattener
 from app.services.autofill.field_spec_service import upsert_field_spec
@@ -325,10 +325,22 @@ class FieldCascadeService:
             field_name=child_field_name,
             field_label=child_field_label,
             field_type=parent_field_type,
-            field_group_ids=[config.parent_field_group_id],
             fill_instruction=f"根据'{parent_label}'选择的子项",
             options={"items": options}
         )
+
+        # 创建字段组与字段的关联关系
+        existing_relation = await FieldGroupFieldSpec.filter(
+            field_group_id=config.parent_field_group_id,
+            field_spec_id=upsert_result["field_spec"].id
+        ).first()
+        if not existing_relation:
+            await FieldGroupFieldSpec.create(
+                field_group_id=config.parent_field_group_id,
+                field_spec_id=upsert_result["field_spec"].id,
+                tenant_id=config.tenant_id,
+                app_name=config.app_name
+            )
 
         logger.info(f"[FieldCascadeService] 同步单个级联字段成功: child_field={child_field_name}")
 

@@ -19,15 +19,15 @@ async def get_field_group(
     auth_info: dict = Depends(APIKeyAuth.authenticate)
 ):
     """
-    根据app_name/page_name/字段组名或code查询字段组配置
+    根据app_name/字段组名查询字段组配置
     """
     params = await parse_request_params(request, FieldGroupRequest)
     
     result = await field_group_query_service.fetch_field_groups(
         tenant_id=auth_info["tenant_id"],
         app_name=auth_info["app_name"],
-        page_name=params.get("page_name"),
-        group_fields=params.get("group_fields", {})
+        group_names=params.get("group_names"),
+        field_names=params.get("field_names")
     )
     
     return Success(data=result.get("field_groups", []))

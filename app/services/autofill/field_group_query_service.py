@@ -1,147 +1,118 @@
 """
-字段组查询服务（原 fetch_field_groups 从 handler 下沉）
+字段组查询服务 - 直接关联应用，不再关联页面
 """
-import json
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from app.controllers.autofill import (
-    field_group_config_controller,
-    field_spec_controller,
-    fill_page_controller,
-)
-from app.models.autofill import FieldGroupFieldSpec
+from app.models.autofill import FieldGroupConfig, FieldSpec, FieldGroupFieldSpec
 from app.services.llm.structured_output.schema_builder import FCSchemaBuilder
 
 
 class FieldGroupQueryService:
-    """字段组查询服务"""
-    
+    """字段组查询服务 - 新实现：直接关联应用"""
+
     @staticmethod
     async def fetch_field_groups(
         tenant_id: int,
         app_name: str,
-        page_name: str,
-        group_fields: Dict[str, List[str]] = None,
+        group_names: List[str] = None,
+        field_names: List[str] = None,
         additional_data: Dict[str, Any] = None,
         use_additional_data: bool = False,
         include_reason: bool = False
     ) -> Dict[str, Any]:
         """
         查询字段组配置核心业务逻辑
-        
+
         设计说明：
         - 字段的唯一索引是 field_name + tenant_id + app_name
         - FieldGroupFieldSpec 仅用于管理字段组和字段的映射关系
-        - 查询策略分为两种情况：
-          1. 指定了字段名：直接用 field_name + tenant_id + app_name 查询字段明细
-          2. 未指定字段名：通过 field_group_id 查中间表获取 field_spec_id，再查字段明细
+        - 查询策略：
+          1. 如果指定了 field_names：直接查询这些字段
+          2. 如果指定了 group_names：查询这些字段组下的所有字段
+          3. 如果都没指定：查询该应用下所有字段组的所有字段
         """
-        group_fields = group_fields or {}
-        group_names = list(group_fields.keys())
-        
+        group_names = group_names or []
+        field_names = field_names or []
+
         # 参数验证
-        if not page_name:
-            raise ValueError("page_name 不能为空")
         if not tenant_id or not app_name:
             raise ValueError("tenant_id 和 app_name 不能为空")
-        
-        # 1. 查询页面
-        page = await fill_page_controller.model.filter(
+
+        # 1. 查询字段组
+        q = FieldGroupConfig.filter(
             tenant_id=tenant_id,
             app_name=app_name,
-            page_name=page_name
-        ).first()
-        
-        if not page:
-            raise ValueError(f"页面 '{page_name}' 不存在 (tenant_id={tenant_id}, app_name={app_name})")
-        
-        # 2. 查询字段组
-        q = field_group_config_controller.model.filter(tenant_id=tenant_id, app_name=app_name, page_id=page.id)
+            is_active=True
+        )
+
+        # 如果指定了字段组名称，则过滤
         if group_names:
             q = q.filter(group_name__in=group_names)
-        
+
         field_groups = await q.all()
-        
+
         if not field_groups:
             return {
-                "page_name": page_name,
+                "app_name": app_name,
                 "field_groups": [],
                 "all_field_specs": [],
                 "unified_function_schema": None,
                 "combined_prompt": "",
+                "group_template_map": {},
             }
-        
-        # 3. 批量查询策略
-        (
-            all_field_specs_map, 
-            group_to_spec_ids, 
-            group_query_info
-        ) = await FieldGroupQueryService._batch_query_fields(
+
+        # 2. 批量查询字段
+        all_field_specs_map, group_to_spec_ids = await FieldGroupQueryService._batch_query_fields(
             field_groups,
-            group_fields,
+            field_names,
             tenant_id,
             app_name
         )
-        
-        # 4. 组装结果
-        return await FieldGroupQueryService._assemble_result(
+
+        # 3. 组装结果
+        return FieldGroupQueryService._assemble_result(
             field_groups,
             all_field_specs_map,
             group_to_spec_ids,
-            group_query_info,
+            field_names,
             additional_data,
             use_additional_data,
             include_reason,
-            page,
-            page_name
+            app_name
         )
-    
+
     @staticmethod
     async def _batch_query_fields(
         field_groups: List,
-        group_fields: Dict[str, List[str]],
+        field_names: List[str],
         tenant_id: int,
         app_name: str
-    ) -> Tuple[Dict, Dict, Dict]:
-        """批量查询字段策略"""
+    ) -> Tuple[Dict, Dict]:
+        """批量查询字段策略 - 简化版
         
-        # 1. 收集查询条件
-        group_query_info = {}
-        all_specified_field_names = set()
-        all_full_fetch_group_ids = []
-        
-        for fg in field_groups:
-            group_field_names = group_fields.get(fg.group_name) if group_fields else None
-            
-            if group_field_names:
-                all_specified_field_names.update(group_field_names)
-                group_query_info[fg.id] = {
-                    "type": "specified", 
-                    "field_names": set(group_field_names)
-                }
-            else:
-                all_full_fetch_group_ids.append(fg.id)
-                group_query_info[fg.id] = {"type": "full"}
-        
-        # 2. 批量查询字段
+        1. 根据 field_names 查询指定字段
+        2. 根据 field_groups 查询每个组下的所有字段
+        3. 合并结果
+        """
         all_field_specs_map = {}
+        group_to_spec_ids = {}
         
-        # 策略1：通过 field_name 批量查询
-        if all_specified_field_names:
-            specified_fields = await field_spec_controller.model.filter(
+        # 1. 根据 field_names 查询指定字段
+        if field_names:
+            specified_fields = await FieldSpec.filter(
                 tenant_id=tenant_id,
                 app_name=app_name,
-                field_name__in=list(all_specified_field_names),
+                field_name__in=field_names,
                 is_active=True
             ).all()
             for fs in specified_fields:
                 all_field_specs_map[fs.field_name] = fs
         
-        # 策略2：通过 field_group_id 批量查询
-        group_to_spec_ids = {}
-        if all_full_fetch_group_ids:
+        # 2. 根据 field_groups 查询每个组下的所有字段
+        if field_groups:
+            group_ids = [fg.id for fg in field_groups]
             relations = await FieldGroupFieldSpec.filter(
-                field_group_id__in=all_full_fetch_group_ids,
+                field_group_id__in=group_ids,
                 tenant_id=tenant_id,
                 app_name=app_name
             ).all()
@@ -153,122 +124,78 @@ class FieldGroupQueryService:
             
             all_spec_ids = [sid for ids in group_to_spec_ids.values() for sid in ids]
             if all_spec_ids:
-                full_fetch_fields = await field_spec_controller.model.filter(
+                group_fields = await FieldSpec.filter(
                     id__in=all_spec_ids,
                     tenant_id=tenant_id,
                     app_name=app_name,
                     is_active=True
                 ).all()
-                for fs in full_fetch_fields:
+                for fs in group_fields:
                     all_field_specs_map[fs.field_name] = fs
         
-        return all_field_specs_map, group_to_spec_ids, group_query_info
-    
+        return all_field_specs_map, group_to_spec_ids
+
     @staticmethod
-    async def _assemble_result(
+    def _assemble_result(
         field_groups: List,
         all_field_specs_map: Dict,
         group_to_spec_ids: Dict,
-        group_query_info: Dict,
+        field_names: List[str],
         additional_data: Dict[str, Any],
         use_additional_data: bool,
         include_reason: bool,
-        page,
-        page_name: str
+        app_name: str
     ) -> Dict[str, Any]:
-        """组装结果返回"""
-
-        field_groups_result = []
-        all_db_fields = []  # 收集所有字段用于生成统一 schema
-        system_prompts = []
-
+        """组装结果返回 - 简化版
+        
+        直接使用 all_field_specs_map 中的字段，不需要再通过 group_to_spec_ids 筛选
+        """
+        # 获取所有字段
+        all_field_specs_list = list(all_field_specs_map.values())
+        
+        # 如果指定了 field_names，过滤字段
+        if field_names:
+            all_field_specs_list = [fs for fs in all_field_specs_list if fs.field_name in field_names]
+        
+        # 使用附加数据过滤
         additional_field_names = set(additional_data.keys()) if use_additional_data and additional_data else set()
-
-        # 第一步：收集所有字段组和字段信息
+        if use_additional_data and additional_field_names:
+            all_field_specs_list = [fs for fs in all_field_specs_list if fs.field_name not in additional_field_names]
+        
+        # 构建字段组模板映射
+        group_template_map = {fg.group_name: fg.prompt_template_base for fg in field_groups}
+        
+        # 收集系统提示词（取第一个字段组的模板）
+        system_prompt = ""
         for fg in field_groups:
-            query_info = group_query_info.get(fg.id, {})
-            query_type = query_info.get("type", "full")
-
-            # 获取字段列表
-            if query_type == "specified":
-                target_names = query_info.get("field_names", set())
-                field_specs = [
-                    all_field_specs_map[name]
-                    for name in target_names
-                    if name in all_field_specs_map
-                ]
-                if not field_specs:
-                    continue
-            else:
-                spec_ids = set(group_to_spec_ids.get(fg.id, []))
-                field_specs = [
-                    fs for fs in all_field_specs_map.values()
-                    if fs.id in spec_ids
-                ]
-
-            # 使用附加数据过滤
-            if use_additional_data and additional_field_names:
-                field_specs = [fs for fs in field_specs if fs.field_name not in additional_field_names]
-                if not field_specs:
-                    continue
-
-            # 转换 field_specs 为 db_fields 格式并收集
-            db_fields = [
-                {
-                    "field_name": fs.field_name,
-                    "field_label": fs.field_label,
-                    "field_type": fs.field_type.value if hasattr(fs.field_type, 'value') else fs.field_type,
-                    "fill_instruction": fs.fill_instruction,
-                    "options": fs.options,
-                    "corrections": fs.corrections,
-                }
-                for fs in field_specs
-            ]
-            all_db_fields.extend(db_fields)
-
-            if fg.prompt_template_base and not system_prompts:
-                system_prompts.append(fg.prompt_template_base)
-
-            field_groups_result.append({
-                "id": fg.id,
-                "group_name": fg.group_name,
-                "group_code": fg.group_code,
-                "page_id": fg.page_id,
-                "page_name": page.page_name if page else "",
-                "prompt_template_base": fg.prompt_template_base,
-                "output_templates": fg.output_templates or {},
-                "version": fg.version,
-                "is_active": fg.is_active,
-                "description": fg.description,
-                "field_specs": [
-                    {
-                        "id": fs.id,
-                        "field_name": fs.field_name,
-                        "field_label": fs.field_label,
-                        "field_type": fs.field_type.value if hasattr(fs.field_type, 'value') else str(fs.field_type),
-                        "fill_instruction": fs.fill_instruction,
-                        "options": fs.options,
-                        "corrections": fs.corrections,
-                        "is_active": fs.is_active,
-                    }
-                    for fs in field_specs
-                ],
-                "prompt_info": {
-                    "template_base": fg.prompt_template_base,
-                },
-            })
-
-        # 第二步：一次性生成统一的 Function Calling Schema
+            if fg.prompt_template_base:
+                system_prompt = fg.prompt_template_base
+                break
+        
+        # 构建 db_fields 用于生成 schema
+        db_fields = [
+            {
+                "field_name": fs.field_name,
+                "field_label": fs.field_label,
+                "field_type": fs.field_type.value if hasattr(fs.field_type, 'value') else fs.field_type,
+                "fill_instruction": fs.fill_instruction,
+                "options": fs.options,
+                "corrections": fs.corrections,
+            }
+            for fs in all_field_specs_list
+        ]
+        
+        # 生成统一的 Function Calling Schema
         unified_function_schema = None
-        if all_db_fields:
+        if db_fields:
             unified_function_schema = FCSchemaBuilder.build_fc_tools(
-                all_db_fields,
+                db_fields,
                 function_name="fill_form",
                 include_reason=include_reason,
                 description="从对话中提取表单数据"
             )
-
-        # 构建统一字段列表
+        
+        # 构建返回的字段列表
         all_field_specs = [
             {
                 "id": fs.id,
@@ -280,17 +207,32 @@ class FieldGroupQueryService:
                 "corrections": fs.corrections,
                 "is_active": fs.is_active,
             }
-            for fs in all_field_specs_map.values()
+            for fs in all_field_specs_list
         ]
-
-        combined_prompt = system_prompts[0] if system_prompts else ""
-
+        
+        # 构建字段组结果（简化版，只包含基本信息）
+        field_groups_result = [
+            {
+                "id": fg.id,
+                "group_name": fg.group_name,
+                "group_code": fg.group_code,
+                "app_name": fg.app_name,
+                "prompt_template_base": fg.prompt_template_base,
+                "output_templates": fg.output_templates or {},
+                "version": fg.version,
+                "is_active": fg.is_active,
+                "description": fg.description,
+            }
+            for fg in field_groups
+        ]
+        
         return {
-            "page_name": page.page_name if page else page_name,
+            "app_name": app_name,
             "field_groups": field_groups_result,
             "all_field_specs": all_field_specs,
             "unified_function_schema": unified_function_schema,
-            "combined_prompt": combined_prompt,
+            "combined_prompt": system_prompt,
+            "group_template_map": group_template_map,
         }
 
 

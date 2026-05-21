@@ -1,5 +1,5 @@
 """
-测试填单服务层
+测试填单服务层 - 新实现：直接关联应用，不再关联页面
 封装参数并通过 HTTP 请求调用 step_llm_fill_handler 接口
 """
 import os
@@ -11,7 +11,7 @@ import httpx
 from fastapi.exceptions import HTTPException
 
 from app.log import logger
-from app.models.autofill import AppManagement, FillPage, FieldGroupConfig, FieldSpec
+from app.models.autofill import AppManagement, FieldGroupConfig, FieldSpec
 from app.services.llm.llm_config_service import llm_config_service
 
 
@@ -111,89 +111,66 @@ class TestFillService:
     @staticmethod
     async def test_fill(
         tenant_id: int,
-        app_id: int,
-        page_id: int,
-        group_id: int,
-        field_ids: List[int],
+        app_name: str,
+        group_names: List[str],
+        field_names: List[str],
         chat_record: str
     ) -> Dict[str, Any]:
         """
         测试填单功能
-        根据应用ID、页面ID、字段组ID、字段ID列表和聊天记录进行填单
-        1. 根据ID查询对应的名称
-        2. 根据app_name+tenant_id查询api_key
-        3. 构造参数，通过HTTP请求调用 step_llm_fill_handler 接口
+        根据应用名称、字段组名称列表、字段名称列表和聊天记录进行填单
+        1. 根据app_name+tenant_id查询api_key
+        2. 构造参数，通过HTTP请求调用 step_llm_fill_handler 接口
         """
-        if not app_id:
-            raise HTTPException(status_code=400, detail="app_id is required")
-        if not page_id:
-            raise HTTPException(status_code=400, detail="page_id is required")
-        if not group_id:
-            raise HTTPException(status_code=400, detail="group_id is required")
-        if not field_ids:
-            raise HTTPException(status_code=400, detail="field_ids is required")
+        if not app_name:
+            raise HTTPException(status_code=400, detail="app_name is required")
+        if not group_names:
+            raise HTTPException(status_code=400, detail="group_names is required")
         if not chat_record:
             raise HTTPException(status_code=400, detail="chat_record is required")
 
         # 1. 查询应用信息
         app = await AppManagement.filter(
-            id=app_id,
+            app_name=app_name,
             tenant_id=tenant_id,
             is_active=True
         ).first()
         if not app:
-            raise HTTPException(status_code=404, detail=f"App with id '{app_id}' not found")
+            raise HTTPException(status_code=404, detail=f"App with name '{app_name}' not found")
 
-        # 2. 查询页面信息
-        page = await FillPage.filter(
-            id=page_id,
+        # 2. 查询字段组信息
+        groups = await FieldGroupConfig.filter(
+            app_name=app_name,
             tenant_id=tenant_id,
-            is_active=True
-        ).first()
-        if not page:
-            raise HTTPException(status_code=404, detail=f"Page with id '{page_id}' not found")
-
-        # 3. 查询字段组信息
-        group = await FieldGroupConfig.filter(
-            id=group_id,
-            page_id=page_id,
-            is_active=True
-        ).first()
-        if not group:
-            raise HTTPException(status_code=404, detail=f"Field group with id '{group_id}' not found")
-
-        # 4. 查询字段信息
-        # 先验证这些字段是否确实属于该字段组（通过中间表关联）
-        from app.models.autofill import FieldGroupFieldSpec
-        relations = await FieldGroupFieldSpec.filter(
-            field_group_id=group_id,
-            field_spec_id__in=field_ids
-        ).all()
-        valid_field_ids = [r.field_spec_id for r in relations]
-
-        if not valid_field_ids:
-            raise HTTPException(status_code=404, detail="No valid fields found for this group")
-
-        fields = await FieldSpec.filter(
-            id__in=valid_field_ids,
+            group_name__in=group_names,
             is_active=True
         ).all()
-        if not fields:
-            raise HTTPException(status_code=404, detail="Fields not found")
+        if not groups:
+            raise HTTPException(status_code=404, detail=f"Field groups not found: {group_names}")
 
-        field_names = [f.field_name for f in fields]
+        # 3. 如果指定了字段名，查询字段信息
+        if field_names:
+            fields = await FieldSpec.filter(
+                app_name=app_name,
+                tenant_id=tenant_id,
+                field_name__in=field_names,
+                is_active=True
+            ).all()
+            if not fields:
+                raise HTTPException(status_code=404, detail="Fields not found")
+            valid_field_names = [f.field_name for f in fields]
+        else:
+            valid_field_names = []
 
-        # 5. 生成session_id
+        # 4. 生成session_id
         session_id = f"test_{uuid.uuid4().hex[:12]}"
 
-        # 6. 构造 group_fields 参数
-        group_fields = {group.group_name: field_names}
-
-        # 7. 构造请求参数（符合 step_llm_fill_handler 的接口格式）
+        # 5. 构造请求参数（符合新接口格式）
         request_data = {
             "session_id": session_id,
-            "page_name": page.page_name,
-            "group_fields": group_fields,
+            "field_names": valid_field_names,
+            "group_names": group_names,
+            "system_prompt_group": group_names[0] if group_names else None,
             "query": chat_record,
             "method": None,
             "system_prompt": None,
@@ -204,7 +181,7 @@ class TestFillService:
             "is_last": True
         }
 
-        # 8. 调用 step_llm_fill_handler 接口
+        # 6. 调用 step_llm_fill_handler 接口
         # 使用内部HTTP请求访问public接口
         try:
             # 从环境变量获取端口，默认为 9999（与 run.py 一致）
@@ -244,7 +221,7 @@ class TestFillService:
             if result.get("code") == 200:
                 data = result.get("data", {})
                 data["elapsed_time"] = elapsed_time
-                data["page_name"] = page.page_name
+                data["app_name"] = app_name
                 return data
             else:
                 raise HTTPException(
