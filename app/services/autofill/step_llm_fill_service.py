@@ -536,12 +536,26 @@ class StepLLMFillService:
         enriched_result = {}
         output_templates = {}
 
-        if method == "plain":
-            enriched_result = llm_result
-        else:
-            # 从 llm_result['data'] 获取提取的数据
-            extracted_data = llm_result.get("data", {}) or {}
+        # 从 llm_result['data'] 获取提取的数据
+        extracted_data = llm_result.get("data", {}) or {}
 
+        # plain 模式：使用 field_specs 构造虚拟结构，字段名来自请求配置，类型为 text
+        if method == "plain":
+            raw_content = extracted_data.get("content") or extracted_data.get("raw_response", "")
+            field_specs = context.get("field_specs", [])
+            enriched_result = {}
+            for fs in field_specs:
+                if isinstance(fs, dict):
+                    field_name = fs.get("field_name")
+                    field_label = fs.get("field_label", field_name)
+                else:
+                    field_name = fs.field_name
+                    field_label = getattr(fs, "field_label", field_name)
+                if field_name:
+                    enriched_result[field_name] = {"type": "text", "value": raw_content, "label": field_label}
+            field_groups = context["result_data"].get("field_groups", [])
+            output_templates = _process_output_templates(field_groups, enriched_result)
+        else:
             if use_additional_data and additional_data:
                 extracted_data = {**extracted_data, **additional_data}
 
@@ -569,7 +583,7 @@ class StepLLMFillService:
                 "fields": list(enriched_result.keys()) if enriched_result else [],
                 "fields_count": len(enriched_result) if enriched_result else 0
             },
-            "raw_result": enriched_result if method != "plain" else llm_result,
+            "raw_result": enriched_result,
             "extracted_fields": {k: _extract_field_value(v) for k, v in enriched_result.items()},
             "timing": {
                 "elapsed_time": elapsed_time,
@@ -676,11 +690,25 @@ class StepLLMFillService:
         enriched_result = {}
         output_templates = {}
 
-        if method == "plain":
-            enriched_result = llm_result
-        else:
-            extracted_data = llm_result.get("data", {}) or {}
+        extracted_data = llm_result.get("data", {}) or {}
 
+        # plain 模式：使用 field_specs 构造虚拟结构，字段名来自请求配置，类型为 text
+        if method == "plain":
+            raw_content = extracted_data.get("content") or extracted_data.get("raw_response", "")
+            field_specs = context.get("field_specs", [])
+            enriched_result = {}
+            for fs in field_specs:
+                if isinstance(fs, dict):
+                    field_name = fs.get("field_name")
+                    field_label = fs.get("field_label", field_name)
+                else:
+                    field_name = fs.field_name
+                    field_label = getattr(fs, "field_label", field_name)
+                if field_name:
+                    enriched_result[field_name] = {"type": "text", "value": raw_content, "label": field_label}
+            field_groups = context["result_data"].get("field_groups", [])
+            output_templates = _process_output_templates(field_groups, enriched_result)
+        else:
             if use_additional_data and additional_data:
                 extracted_data = {**extracted_data, **additional_data}
 

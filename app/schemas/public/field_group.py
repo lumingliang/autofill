@@ -57,7 +57,7 @@ class StepLLMFillRequest(BasePublicRequest):
     page_name: str = Field(..., description="页面名称（必填）")
     group_fields: Optional[Dict[str, List[str]]] = Field(default=None, description="字段组与字段的映射关系")
     query: str = Field(..., description="用户输入的查询内容")
-    method: Optional[str] = Field(default=None, description="LLM调用方法（可选）")
+    method: Optional[str] = Field(default="pydantic_parser", description="LLM调用方法（可选），默认使用pydantic_parser")
     system_prompt: Optional[str] = Field(default=None, description="系统提示词（可选）")
     include_reason: bool = Field(default=False, description="是否返回字段填写理由（可选，默认false）")
     memory_rounds: int = Field(default=0, description="保留历史消息的轮数（可选，默认0）")
