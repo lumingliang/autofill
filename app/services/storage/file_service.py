@@ -374,6 +374,43 @@ class FileService:
             logger.error(f"获取文件信息失败: {e}")
             return None
 
+    async def read_file(self, file_path: str) -> bytes:
+        """
+        读取文件内容
+
+        Args:
+            file_path: 文件路径（绝对路径或相对 upload_dir 的路径）
+
+        Returns:
+            bytes: 文件内容
+        """
+        path = Path(file_path)
+        if not path.is_absolute():
+            path = self.upload_dir / path
+
+        with open(path, "rb") as f:
+            return f.read()
+
+    async def save_file(self, relative_path: str, content: bytes) -> str:
+        """
+        保存文件内容（同步方法）
+
+        Args:
+            relative_path: 相对路径
+            content: 文件内容
+
+        Returns:
+            str: 文件绝对路径
+        """
+        file_path = self.upload_dir / relative_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        logger.info(f"文件已保存: {file_path}")
+        return str(file_path)
+
 
 # 创建默认实例
 file_service = FileService()

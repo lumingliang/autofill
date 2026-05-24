@@ -185,10 +185,27 @@ autofill_menus = [
                 component="autofill/test_fill",
                 keepalive=False,
             ),
+            MenuConfig(
+                name="规则管理",
+                path="rule",
+                menu_type=MenuType.MENU,
+                icon="FileTextOutlined",
+                order=9,
+                component="autofill/rule",
+                keepalive=False,
+            ),
+            MenuConfig(
+                name="系统提示词",
+                path="system_prompt",
+                menu_type=MenuType.MENU,
+                icon="MessageOutlined",
+                order=10,
+                component="autofill/system_prompt",
+                keepalive=False,
+            ),
         ],
     ),
 ]
-
 
 
 def register_all_menus():

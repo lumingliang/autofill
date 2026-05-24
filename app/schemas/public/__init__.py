@@ -6,7 +6,6 @@ from .base import BasePublicRequest
 from .field_group import (
     FieldGroupRequest,
     LLMFillRequest,
-    OptimizeFieldInstructionRequest,
     StepLLMFillRequest,
     StepLLMFillResultRequest,
     ChatSessionRequest,
@@ -25,7 +24,7 @@ from .schemas import (
     FieldItem,
     UpsertFieldGroupRequest,
     # 字段组相关
-    FieldGroupRequest,
+    FieldGroupRequest as SchemasFieldGroupRequest,
     FieldGroupDetailRequest,
     # 填单数据相关
     RecordFillDataRequest,
@@ -40,12 +39,7 @@ from .schemas import (
     # LLM/AI填单相关
     AIFillDataRequest,
     AIFillDataResultRequest,
-    LLMFillRequest,
-    FieldGroupsSchemaRequest,
-    OptimizeFieldInstructionRequest,
-    # Agent相关
-    AgentRunRequest,
-    DataQueryRequest,
+    LLMFillRequest as SchemasLLMFillRequest,
 )
 
 __all__ = [
@@ -63,7 +57,6 @@ __all__ = [
     "FieldGroupRequest",
     "FieldGroupDetailRequest",
     "LLMFillRequest",
-    "OptimizeFieldInstructionRequest",
     "StepLLMFillRequest",
     "StepLLMFillResponse",
     "StepLLMFillResponseData",
@@ -80,7 +73,6 @@ __all__ = [
     # LLM/AI填单相关
     "AIFillDataRequest",
     "AIFillDataResultRequest",
-    "FieldGroupsSchemaRequest",
     # Agent相关
     "AgentRunRequest",
     "DataQueryRequest",

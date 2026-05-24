@@ -289,8 +289,8 @@ function closeModal() {
 async function handleModalOk() {
   try {
     await modalFormRef.value?.validate()
-    // 使用 props.modalForm 确保获取最新的表单数据
-    emit('modal-ok', { ...props.modalForm }, modalAction.value)
+    // 使用内部的 modalForm 确保获取最新的表单数据
+    emit('modal-ok', { ...modalForm }, modalAction.value)
   } catch (error) {
     // 校验失败
   }

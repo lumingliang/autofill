@@ -50,6 +50,15 @@ pyyaml==6.0.1
 # JSONPath
 jsonpath-ng==1.7.0
 
+# Curl Parser
+curl_parsers==0.2.1
+
+# Async HTTP Client
+aiohttp==3.11.11
+
+# Progress Bar
+tqdm==4.67.1
+
 # Development Tools
 black==24.10.0
 isort==5.13.2

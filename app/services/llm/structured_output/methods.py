@@ -246,14 +246,10 @@ class StructuredOutputMethods:
 
             latency_ms = (time.time() - start_time) * 1000
 
-            result_data = {
-                "raw_response": content,
-                "content": content
-            }
-
+            # plain 方法直接返回 content，不封装 raw_response
             result = StructuredOutputResult(
                 success=True,
-                data=result_data,
+                data=content,
                 method=method_name,
                 latency_ms=latency_ms
             )

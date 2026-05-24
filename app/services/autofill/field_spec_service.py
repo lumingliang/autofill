@@ -2,9 +2,12 @@
 字段规格服务层
 提供字段的创建、更新、同步等核心逻辑
 """
+import logging
 from typing import Dict, List, Optional, Any
 
-from app.models.autofill import FieldGroupFieldSpec, FieldSpec
+from app.models.autofill import FieldGroupFieldSpec, FieldSpec, FieldGroupConfig
+
+logger = logging.getLogger(__name__)
 
 
 async def upsert_field_spec(
@@ -17,6 +20,7 @@ async def upsert_field_spec(
     options: Optional[Dict[str, Any]] = None,
     delete_not_exist: bool = True,
     sync_mode: str = "merge",
+    field_group_id: int = 0,
 ) -> Dict[str, Any]:
     """
     创建或更新字段规格
@@ -31,6 +35,7 @@ async def upsert_field_spec(
         options: 选项配置
         delete_not_exist: 是否删除接口返回中不存在的选项
         sync_mode: 同步模式，仅支持merge=合并（新值非空时更新，否则保留原值），保留参数用于后续扩展
+        field_group_id: 关联字段组ID，可选。如果为0，则使用app_name下的default字段组
 
     Returns:
         Dict包含: field_spec(字段对象), is_new(是否新建), updated_count(更新选项数)
@@ -41,38 +46,18 @@ async def upsert_field_spec(
         app_name=app_name,
         field_name=field_name
     ).first()
-    
+
     # 处理options
     if options is None:
         options = {}
-    
+
     # 确保options包含必要的默认值
     options_data = {
         'items': options.get('items', []),
         'min_selections': options.get('min_selections', 1),
         'max_selections': options.get('max_selections', 0),
     }
-    
-    # 保留api_schema和api_headers（如果存在）
-    if 'api_schema' in options:
-        options_data['api_schema'] = options['api_schema']
-    if 'api_headers' in options:
-        options_data['api_headers'] = options['api_headers']
-    # 保留parse_prompt（如果存在）
-    if 'parse_prompt' in options:
-        options_data['parse_prompt'] = options['parse_prompt']
-    # 保留模板选择器配置（如果存在）
-    if 'enable_template_selector' in options:
-        options_data['enable_template_selector'] = options['enable_template_selector']
-    if 'template_selector_field_name' in options:
-        options_data['template_selector_field_name'] = options['template_selector_field_name']
-    if 'template_selector_field_label' in options:
-        options_data['template_selector_field_label'] = options['template_selector_field_label']
-    if 'template_selector_label_path' in options:
-        options_data['template_selector_label_path'] = options['template_selector_label_path']
-    if 'template_selector_value_path' in options:
-        options_data['template_selector_value_path'] = options['template_selector_value_path']
-    
+
     if field_spec:
         # 字段已存在，使用merge模式处理选项
         existing_options = field_spec.options or {}
@@ -89,7 +74,7 @@ async def upsert_field_spec(
             label = new_item['label']
             if label in merged_items_map:
                 # 新值非空时更新，否则保留原值
-                for key in ['value', 'label', 'fill_instruction', 'corrections']:
+                for key in ['value', 'label', 'fill_instruction']:
                     if new_item.get(key):
                         merged_items_map[label][key] = new_item[key]
             else:
@@ -109,6 +94,7 @@ async def upsert_field_spec(
         field_spec.field_type = field_type
         field_spec.fill_instruction = fill_instruction
         field_spec.options = options_data
+        
         await field_spec.save()
 
         return {
@@ -128,6 +114,21 @@ async def upsert_field_spec(
             fill_instruction=fill_instruction,
             options=options_data
         )
+
+        # 如果没有指定字段组ID，使用app_name下的default字段组
+        if field_group_id == 0:
+            field_group_id = await get_or_create_default_field_group(tenant_id, app_name)
+
+        # 如果指定了字段组ID，创建字段组关联
+        if field_group_id > 0:
+            group = await FieldGroupConfig.filter(id=field_group_id).first()
+            if group:
+                await FieldGroupFieldSpec.create(
+                    field_group_id=field_group_id,
+                    field_spec_id=field_spec.id,
+                    tenant_id=tenant_id,
+                    app_name=app_name
+                )
 
         return {
             "field_spec": field_spec,

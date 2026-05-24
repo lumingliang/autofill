@@ -41,7 +41,11 @@ request.interceptors.request.use(
 
 request.interceptors.response.use(
     (response) => {
-        const { data, status, statusText } = response
+        const { data, status, statusText, config } = response
+        // 如果是 blob 响应类型，直接返回 response，让调用方处理
+        if (config.responseType === 'blob') {
+            return response
+        }
         if (data?.code !== 200) {
             const code = data?.code ?? status
             const msg = resolveErrorMessage(code, data?.msg ?? statusText)

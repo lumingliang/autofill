@@ -211,7 +211,6 @@ class FieldGroupService:
                 "field_type": fs.field_type,
                 "fill_instruction": fs.fill_instruction,
                 "options": fs.options,
-                "corrections": fs.corrections,
                 "is_active": fs.is_active,
                 "field_groups": group_info
             })

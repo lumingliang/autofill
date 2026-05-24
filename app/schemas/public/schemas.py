@@ -148,46 +148,6 @@ class LLMFillRequest(AppBaseRequest):
     use_additional_data: bool = Field(default=False, description="是否使用附加数据，为true时跳过additional_data中已有字段的LLM提取")
 
 
-class FieldGroupsSchemaRequest(AppBaseRequest):
-    """获取字段组Function Calling Schema请求"""
-    group_names: List[str] = Field(default_factory=list, description="字段组名称列表")
-    field_names: List[str] = Field(default_factory=list, description="字段名称列表")
-
-
-class OptimizeFieldInstructionRequest(AppBaseRequest):
-    """优化字段填写指引请求"""
-    group_name: Optional[str] = Field(default=None, description="字段组名称")
-    field_name: Optional[str] = Field(default=None, description="单个字段名称")
-    batch_size: int = Field(default=10, description="每批处理的字段数量")
-    model: Optional[str] = Field(default=None, description="使用的模型名称")
-
-
-# ==================== Agent 相关请求 ====================
-
-class AgentRunRequest(BasePublicRequest):
-    """Agent 执行请求"""
-    query: str = Field(..., description="用户查询语句，描述要执行的操作")
-    curl: str = Field(..., description="API 调用的 curl 命令（无需占位符）")
-    system_prompt: str = Field(default="", description="系统提示词，指导如何提取参数")
-    expected_result: str = Field(default="", description="期望结果描述，用于验证")
-    max_attempts: int = Field(default=10, description="最大尝试次数")
-    timeout: int = Field(default=30, description="每次请求的超时时间(秒)")
-    llm_model: str = Field(default="gpt-4o-mini", description="使用的 LLM 模型")
-    llm_temperature: float = Field(default=0.0, description="温度参数")
-    llm_method: str = Field(default="bind_tools_stream", description="LLM 调用方法")
-
-
-class DataQueryRequest(BasePublicRequest):
-    """数据查询"""
-    query: str = Field(..., description="用户查询语句，描述要查询的数据")
-    openapi_spec: str = Field(..., description="OpenAPI 规范来源（URL 或本地文件路径）")
-    api_key: Optional[str] = Field(default=None, description="API 认证密钥（可选）")
-    headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头（可选）")
-    max_iterations: int = Field(default=5, description="最大迭代次数")
-    temperature: float = Field(default=0.0, description="LLM 温度参数")
-    chat_history: Optional[List[Dict[str, str]]] = Field(default=None, description="聊天记录")
-
-
 # ==================== 导出所有请求类 ====================
 
 __all__ = [
@@ -217,9 +177,4 @@ __all__ = [
     "AIFillDataRequest",
     "AIFillDataResultRequest",
     "LLMFillRequest",
-    "FieldGroupsSchemaRequest",
-    "OptimizeFieldInstructionRequest",
-    # Agent相关
-    "AgentRunRequest",
-    "DataQueryRequest",
 ]

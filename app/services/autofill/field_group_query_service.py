@@ -180,11 +180,10 @@ class FieldGroupQueryService:
                 "field_type": fs.field_type.value if hasattr(fs.field_type, 'value') else fs.field_type,
                 "fill_instruction": fs.fill_instruction,
                 "options": fs.options,
-                "corrections": fs.corrections,
             }
             for fs in all_field_specs_list
         ]
-        
+
         # 生成统一的 Function Calling Schema
         unified_function_schema = None
         if db_fields:
@@ -194,7 +193,7 @@ class FieldGroupQueryService:
                 include_reason=include_reason,
                 description="从对话中提取表单数据"
             )
-        
+
         # 构建返回的字段列表
         all_field_specs = [
             {
@@ -204,7 +203,6 @@ class FieldGroupQueryService:
                 "field_type": fs.field_type.value if hasattr(fs.field_type, 'value') else str(fs.field_type),
                 "fill_instruction": fs.fill_instruction,
                 "options": fs.options,
-                "corrections": fs.corrections,
                 "is_active": fs.is_active,
             }
             for fs in all_field_specs_list

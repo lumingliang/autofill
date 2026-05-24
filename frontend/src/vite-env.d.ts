@@ -17,6 +17,12 @@ interface ImportMeta {
 declare module 'uno.css'
 declare module '*.less'
 
+// 声明 Handsontable Vue3 模块
+declare module '@handsontable/vue3' {
+  import type { DefineComponent } from 'vue'
+  export const HotTable: DefineComponent<{}, {}, any>
+}
+
 // 声明 Vue 文件
 declare module '*.vue' {
   import type { DefineComponent } from 'vue'

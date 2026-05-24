@@ -20,7 +20,8 @@ class LLMProxyService:
         config: LLMConfig = None,
         session_id: str = None,
         memory_rounds: int = None,
-        full_system_prompt: str = None
+        full_system_prompt: str = None,
+        temperature: float = None
     ) -> Dict[str, Any]:
         """
         处理 LLM 结构化输出请求
@@ -35,6 +36,7 @@ class LLMProxyService:
             session_id: 会话 ID
             memory_rounds: 记忆轮数
             full_system_prompt: 完整的系统提示词（包含字段指引，用于 json_parser 方法）
+            temperature: 温度参数
 
         Returns:
             Dict 包含处理结果
@@ -49,6 +51,10 @@ class LLMProxyService:
 
         if not config:
             raise ValueError("config 参数不能为空")
+
+        # 如果指定了temperature，更新配置
+        if temperature is not None and config.litellm_params:
+            config.litellm_params["temperature"] = temperature
 
         service = StructuredOutputService(config)
 

@@ -37,6 +37,8 @@ export default defineConfig({
       'dayjs/plugin/weekOfYear',
       'dayjs/plugin/weekYear',
     ],
+    // 排除 handsontable 内部模块，避免 tree-shaking 问题
+    exclude: ['handsontable'],
   },
   server: {
     host: '0.0.0.0',

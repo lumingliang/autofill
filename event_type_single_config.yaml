@@ -1,0 +1,74 @@
+scenario: event_type_single
+description: 事件类型单请求树形结构导入
+mode: single
+output:
+  path: event_type_single_output.csv
+  encoding: utf-8-sig
+  deduplicate: true
+request:
+  timeout: 30
+  max_retries: 3
+  retry_delay: 1
+data:
+  root_path: $.data
+csv_headers:
+  level1_level1: level1
+  level1_level1_summary: level1_summary
+  level1_level1_id: level1_id
+  level1_level1_code: level1_code
+  level2_level2: level2
+  level2_level2_summary: level2_summary
+  level2_level2_id: level2_id
+  level3_level3: level3
+  level3_level3_summary: level3_summary
+level_config: &id002
+  level1:
+    source:
+      type: request
+      index: 0
+    fields:
+    - csv_header: level1
+      jsonpath: $.option_value
+    - csv_header: level1_summary
+      jsonpath: $.summary
+    - csv_header: level1_id
+      jsonpath: $.id
+    - csv_header: level1_code
+      jsonpath: $.code
+    children_jsonpath: $.children
+    params: &id001 {}
+  level2:
+    source:
+      type: children
+      from_level: level1
+    fields:
+    - csv_header: level2
+      jsonpath: $.option_value
+    - csv_header: level2_summary
+      jsonpath: $.summary
+    - csv_header: level2_id
+      jsonpath: $.id
+    children_jsonpath: $.children
+    params: {}
+  level3:
+    source:
+      type: children
+      from_level: level2
+    fields:
+    - csv_header: level3
+      jsonpath: $.option_value
+    - csv_header: level3_summary
+      jsonpath: $.summary
+    children_jsonpath: null
+    params: {}
+requests:
+- name: 请求1
+  method: GET
+  url: http://localhost:3200/api/v1/autofill/dropdown/tree?app_name=test_app&class_name=%E4%BA%8B%E4%BB%B6%E7%B1%BB%E5%9E%8B
+  headers:
+    Accept: application/json, text/plain, */*
+    token: '{TOKEN}'
+  cookies: {}
+  params: *id001
+  level: level1
+  level_config: *id002

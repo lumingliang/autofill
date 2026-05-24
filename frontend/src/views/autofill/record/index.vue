@@ -81,10 +81,10 @@
         <div v-if="hasStepData">
           <h4>分步填单记录</h4>
           <a-tabs v-model:activeKey="activeDetailTab">
-            <a-tab-pane v-for="(step, index) in mergedSteps" :key="String(index)" :tab="`步骤 ${step.step || index + 1}`">
+            <a-tab-pane v-for="(step, index) in mergedSteps" :key="String(index)" :tab="`步骤 ${Number(step.step || index) + 1}`">
               <!-- 步骤概览 -->
               <a-descriptions :column="2" bordered size="small">
-                <a-descriptions-item label="步骤">{{ step.step || index + 1 }}</a-descriptions-item>
+                <a-descriptions-item label="步骤">{{ Number(step.step || index) + 1 }}</a-descriptions-item>
                 <a-descriptions-item label="时间">{{ formatDateTime(step.timestamp) }}</a-descriptions-item>
                 <a-descriptions-item label="用时" v-if="step.timing?.elapsed_time">
                   {{ step.timing.elapsed_time.toFixed(2) }}s
@@ -241,6 +241,17 @@ const formatFieldsForTable = (fields: any) => {
   if (!fields || typeof fields !== 'object') return []
 
   return Object.entries(fields).map(([key, value]: [string, any]) => {
+    // 新格式: {"llm_res": "xxx"} 或 {"llm_res": "xxx", "error": "xxx"}
+    if (value && typeof value === 'object' && 'llm_res' in value) {
+      return {
+        fieldName: key,
+        fieldLabel: key,
+        fieldType: 'llm_result',
+        value: value.llm_res || '',
+      }
+    }
+
+    // 旧格式: {type, label, value}
     const fieldType = value?.type || 'unknown'
     const fieldLabel = value?.label || key
     let displayValue = ''

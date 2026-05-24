@@ -100,22 +100,17 @@ def build_fields_instructions(fields: List, is_plain: bool = False) -> str:
             field_name = field.get("field_name", "")
             field_label = field.get("field_label", field_name)
             fill_instruction = field.get("fill_instruction", "")
-            corrections = field.get("corrections", [])
             options = field.get("options", {})
         else:
             field_type = field.field_type.value if hasattr(field.field_type, 'value') else str(field.field_type)
             field_name = field.field_name
             field_label = field.field_label
             fill_instruction = field.fill_instruction
-            corrections = field.corrections
             options = field.options
 
         if is_plain:
             # Plain模式：简化格式，直接输出填写指引
             instruction = fill_instruction or "根据内容提取"
-            if corrections:
-                corrections_text = "；".join([c['text'] for c in corrections])
-                instruction += f"（注意：{corrections_text}）"
             sections.append(f"- {instruction}")
         else:
             # 结构化模式：混合格式（# 模块 + - 层级）
@@ -131,7 +126,7 @@ def build_fields_instructions(fields: List, is_plain: bool = False) -> str:
             
             # ## 层级1.1：填写规则
             rules = _parse_instruction_rules(fill_instruction)
-            if rules or corrections:
+            if rules:
                 field_section.append("## 填写规则")
                 
                 # 主要规则
@@ -140,11 +135,6 @@ def build_fields_instructions(fields: List, is_plain: bool = False) -> str:
                     # 处理多行规则的缩进
                     indented_rule = _indent_multiline_text(f"{rule_type}{rule}", "    ")
                     field_section.append(f"- {indented_rule}")
-                
-                # 补充规则
-                if corrections:
-                    corrections_text = "；".join([c['text'] for c in corrections])
-                    field_section.append(f"- 【补充】{corrections_text}")
             
             # ## 层级1.2：选项（仅下拉类型）
             if field_type in ['select_single', 'select_multi']:
@@ -156,7 +146,6 @@ def build_fields_instructions(fields: List, is_plain: bool = False) -> str:
                     for opt in items:
                         label = opt['label']
                         opt_instruction = opt.get('fill_instruction', '')
-                        opt_corrections = opt.get('corrections', [])
                         
                         # 选项名称作为子模块
                         field_section.append(f"### {label}")
@@ -178,14 +167,6 @@ def build_fields_instructions(fields: List, is_plain: bool = False) -> str:
                                 rule_type = _classify_rule(opt_instruction)
                                 indented_instruction = _indent_multiline_text(f"{rule_type}{opt_instruction}", "  ")
                                 field_section.append(f"- {indented_instruction}")
-                        
-                        # 选项补充规则（支持多行）
-                        if opt_corrections:
-                            for corr in opt_corrections:
-                                corr_text = corr.get('text', '')
-                                if corr_text:
-                                    indented_corr = _indent_multiline_text(f"【补充】{corr_text}", "  ")
-                                    field_section.append(f"- {indented_corr}")
                 
                 # ## 层级1.3：选择限制
                 field_section.append("## 选择限制")

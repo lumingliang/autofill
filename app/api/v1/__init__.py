@@ -10,9 +10,12 @@ from .autofill import (
     field_group_router,
     field_spec_router,
     record_router,
+    rule_router,
+    rule_test_router,
+    rule_import_router,
     template_router,
     test_fill_router,
-    cascade_router,
+    system_prompt_router,
 )
 from .base import base_router
 from .depts import depts_router
@@ -22,7 +25,6 @@ from .tenants import tenant_router
 from .users import users_router
 from .upload import router as upload_router
 from .ai.llm_config import llm_config_router
-from .byd_dealer import byd_dealer_router
 
 v1_router = APIRouter()
 
@@ -46,14 +48,20 @@ v1_router.include_router(record_router, prefix="/autofill", dependencies=[Depend
 v1_router.include_router(field_group_router, prefix="/autofill", dependencies=[DependPermission], tags=["字段组管理"])
 v1_router.include_router(field_spec_router, prefix="/autofill", dependencies=[DependPermission], tags=["字段管理"])
 
-# 级联下拉配置
-v1_router.include_router(cascade_router, prefix="/autofill", dependencies=[DependPermission], tags=["级联下拉配置"])
-
 # 测试填单模块
 v1_router.include_router(test_fill_router, prefix="/autofill", dependencies=[DependPermission], tags=["测试填单"])
 
+# 规则管理模块
+v1_router.include_router(rule_router, prefix="/autofill", dependencies=[DependPermission], tags=["规则管理"])
+
+# 规则测试模块
+v1_router.include_router(rule_test_router, prefix="/autofill", dependencies=[DependPermission], tags=["规则测试"])
+
+# 规则导入模块
+v1_router.include_router(rule_import_router, prefix="/autofill", dependencies=[DependPermission], tags=["规则导入"])
+
+# 系统提示词管理模块
+v1_router.include_router(system_prompt_router, prefix="/autofill", dependencies=[DependPermission], tags=["系统提示词管理"])
+
 # AI 模块 - LLM 配置管理
 v1_router.include_router(llm_config_router, prefix="/ai", dependencies=[DependPermission], tags=["LLM配置管理"])
-
-# 比亚迪经销商门店管理（内部 API，需要 JWT 认证）
-v1_router.include_router(byd_dealer_router, prefix="/byd-dealers", dependencies=[DependPermission], tags=["比亚迪经销商门店"])

@@ -19,27 +19,6 @@ from app.schemas.fill_page import (FieldGroupConfigCreate, FieldGroupConfigUpdat
 from app.services.autofill.field_spec_service import upsert_field_spec
 
 
-def _convert_corrections_to_list(options: Optional[Dict]) -> Optional[Dict]:
-    """将选项中的 corrections 字符串转换为列表格式"""
-    if not options or not options.get('items'):
-        return options
-
-    for item in options['items']:
-        corrections = item.get('corrections')
-        if isinstance(corrections, str):
-            corrections_str = corrections.strip()
-            if corrections_str:
-                # 将字符串按换行+*分割转换为列表
-                item['corrections'] = [
-                    {"text": text.strip()}
-                    for text in corrections_str.split('\n*')
-                    if text.strip()
-                ]
-            else:
-                item['corrections'] = []
-    return options
-
-
 class AppManagementController(CRUDBase[AppManagement, AppCreate, AppUpdate]):
     def __init__(self):
         super().__init__(model=AppManagement)
@@ -306,6 +285,16 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
     def __init__(self):
         super().__init__(model=FieldSpec)
 
+    async def _apply_is_active(self, field_spec: FieldSpec, obj_in) -> None:
+        """应用 is_active 状态到字段
+        
+        注意：使用 update 方法单独更新 is_active，避免覆盖其他已更新的字段
+        """
+        if hasattr(obj_in, 'is_active') and obj_in.is_active is not None:
+            field_spec.is_active = obj_in.is_active
+            # 使用 update 方法单独更新 is_active，避免覆盖其他字段
+            await FieldSpec.filter(id=field_spec.id).update(is_active=obj_in.is_active)
+
     async def create_field_spec(self, obj_in: FieldSpecCreate, tenant_id: int = 0, app_name: str = "", sync_mode: str = "merge") -> FieldSpec:
         """
         创建或更新字段明细（Upsert模式）
@@ -320,9 +309,6 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
         Returns:
             FieldSpec: 创建或更新后的字段对象
         """
-        # 处理选项中的 corrections 字段
-        options = _convert_corrections_to_list(obj_in.options.model_dump() if obj_in.options else {})
-
         # 复用 service 层的 upsert_field_spec 逻辑
         result = await upsert_field_spec(
             tenant_id=tenant_id,
@@ -331,10 +317,15 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
             field_label=obj_in.field_label,
             field_type=obj_in.field_type.value if hasattr(obj_in.field_type, 'value') else str(obj_in.field_type),
             fill_instruction=obj_in.fill_instruction or "",
-            options=options if options else None
+            options=obj_in.options.model_dump() if obj_in.options else None,
+            field_group_id=getattr(obj_in, 'field_group_id', 0) or 0
         )
 
-        return result["field_spec"]
+        # 处理 is_active 状态
+        field_spec = result["field_spec"]
+        await self._apply_is_active(field_spec, obj_in)
+
+        return field_spec
 
     async def update_field_spec(self, id: int, obj_in: FieldSpecUpdate, tenant_id: int = 0, app_name: str = "", merge_groups: bool = True, merge_options: bool = True) -> FieldSpec:
         """
@@ -360,8 +351,22 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
             if existing:
                 raise HTTPException(status_code=400, detail="该应用下已存在同名字段")
 
-        # 处理选项中的 corrections 字段
-        options = _convert_corrections_to_list(obj_in.options.model_dump() if obj_in.options else None)
+        # 处理字段组关联
+        field_group_id = getattr(obj_in, 'field_group_id', 0) or 0
+        if field_group_id > 0:
+            # 检查是否已存在关联
+            existing_relation = await FieldGroupFieldSpec.filter(
+                field_spec_id=id,
+                field_group_id=field_group_id
+            ).first()
+            if not existing_relation:
+                # 创建新的关联
+                await FieldGroupFieldSpec.create(
+                    field_group_id=field_group_id,
+                    field_spec_id=id,
+                    tenant_id=field_spec.tenant_id,
+                    app_name=field_spec.app_name
+                )
 
         # 复用 service 层的 upsert_field_spec 逻辑
         result = await upsert_field_spec(
@@ -371,8 +376,11 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
             field_label=obj_in.field_label or field_spec.field_label,
             field_type=obj_in.field_type.value if hasattr(obj_in.field_type, 'value') else str(obj_in.field_type or field_spec.field_type),
             fill_instruction=obj_in.fill_instruction or field_spec.fill_instruction or "",
-            options=options
+            options=obj_in.options.model_dump() if obj_in.options else None
         )
+
+        # 处理 is_active 状态（使用 update 方法单独更新，避免覆盖其他已更新的字段）
+        await self._apply_is_active(field_spec, obj_in)
 
         return result["field_spec"]
 

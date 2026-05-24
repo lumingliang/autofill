@@ -38,7 +38,6 @@ class FCSchemaBuilder:
         - field_type: str     # text / single_select / multi_select / select_single / select_multi
         - fill_instruction: str # 填写指引
         - options: dict       # { items, min_selections, max_selections }
-        - corrections: list   # 人工补充规则
         """
         properties = {}
         required = []
@@ -49,16 +48,12 @@ class FCSchemaBuilder:
             label = f["field_label"]
             instruction = f.get("fill_instruction", "")
             options = f.get("options", {}) or {}
-            corrections = f.get("corrections", [])
             reason_field_name = f"{fname}_reason"
 
             # 构建描述
             desc_parts = [f"{label}"]
             if instruction:
                 desc_parts.append(instruction)
-            if corrections:
-                corrections_text = "；".join([c["text"] if isinstance(c, dict) else str(c) for c in corrections])
-                desc_parts.append(f"人工补充规则：{corrections_text}")
             desc = "，".join(desc_parts)
 
             # 处理不同类型的字段
@@ -87,14 +82,10 @@ class FCSchemaBuilder:
                     if isinstance(opt, dict):
                         opt_label = opt.get("label", "")
                         opt_fill_inst = opt.get("fill_instruction", "")
-                        opt_corrections = opt.get("corrections", [])
-                        opt_corrections_text = "；".join([c["text"] if isinstance(c, dict) else str(c) for c in opt_corrections])
 
                         line = f"  - {opt_label}"
                         if opt_fill_inst:
                             line += f"：{opt_fill_inst}"
-                        if opt_corrections_text:
-                            line += f"（人工补充：{opt_corrections_text}）"
                         option_lines.append(line)
 
                 # 组合描述
@@ -133,14 +124,10 @@ class FCSchemaBuilder:
                     if isinstance(opt, dict):
                         opt_label = opt.get("label", "")
                         opt_fill_inst = opt.get("fill_instruction", "")
-                        opt_corrections = opt.get("corrections", [])
-                        opt_corrections_text = "；".join([c["text"] if isinstance(c, dict) else str(c) for c in opt_corrections])
 
                         line = f"  - {opt_label}"
                         if opt_fill_inst:
                             line += f"：{opt_fill_inst}"
-                        if opt_corrections_text:
-                            line += f"（人工补充：{opt_corrections_text}）"
                         option_lines.append(line)
 
                 # 组合描述

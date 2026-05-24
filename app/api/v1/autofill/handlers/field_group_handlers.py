@@ -171,7 +171,6 @@ async def get_field_group_detail_by_name(
             "field_type": f.field_type.value if hasattr(f.field_type, 'value') else f.field_type,
             "fill_instruction": f.fill_instruction,
             "options": f.options,
-            "corrections": f.corrections,
         }
         for f in fields
     ]
@@ -251,7 +250,6 @@ async def get_field_group_detail(
             "field_type": f.field_type.value if hasattr(f.field_type, 'value') else f.field_type,
             "fill_instruction": f.fill_instruction,
             "options": f.options,
-            "corrections": f.corrections,
         }
         for f in fields
     ]
@@ -376,12 +374,6 @@ def _build_field_group_markdown(group, fields) -> str:
                         annotation = opt.get('base_annotation', '')
                         lines.append(f"| {value} | {label} | {annotation} |")
 
-        if field.corrections:
-            lines.append("")
-            lines.append("**修正规则**:")
-            for corr in field.corrections:
-                lines.append(f"- {corr.get('text', '')}")
-
         lines.append("")
 
     lines.append("## Prompt模板")
@@ -401,7 +393,6 @@ def _build_field_group_markdown(group, fields) -> str:
             "field_type": f.field_type.value if hasattr(f.field_type, 'value') else f.field_type,
             "fill_instruction": f.fill_instruction,
             "options": f.options,
-            "corrections": f.corrections,
         }
         for f in fields
     ]

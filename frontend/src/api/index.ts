@@ -219,6 +219,7 @@ export default {
   updateFieldGroup: (data: any = {}) => request.post('/autofill/field_group/update', data),
   deleteFieldGroup: (params: any = {}) => request.delete('/autofill/field_group/delete', { params }),
   getFieldGroupSelect: (params: any = {}) => request.get('/autofill/field_group/select', { params }),
+  getFieldGroupFieldSpecList: (params: any = {}) => request.get('/autofill/field_group/field_spec/list', { params }),
 
   // autofill - 字段管理
   getFieldSpecList: (params: any = {}) => request.get('/autofill/field_spec/list', { params }),
@@ -230,28 +231,70 @@ export default {
   updateFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/update', data),
   deleteFieldSpec: (params: any = {}) => request.delete('/autofill/field_spec/delete', { params }),
   batchDeleteFieldSpecs: (data: any = {}) => request.post('/autofill/field_spec/batch_delete', data),
-  syncFieldSpecOptions: (data: any = {}) => request.post('/autofill/field_spec/sync_options', data),
-  parseCurlCommand: (data: any = {}) => request.post('/autofill/field_spec/parse_curl', data),
-  applyFieldMapping: (data: any = {}) => request.post('/autofill/field_spec/apply_mapping', data),
-  syncFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/sync', data),
-  getFieldSpecSyncStatus: (params: any = {}) => request.get('/autofill/field_spec/sync_status', { params }),
-  parseTemplateCurl: (data: any = {}) => request.post('/autofill/field_spec/template/parse_curl', data),
-  applyTemplateFieldMapping: (data: any = {}) => request.post('/autofill/field_spec/template/apply_mapping', data),
+  getFieldSpecsByApp: (params: any = {}) => request.get('/autofill/field_spec/by_app', { params }),
 
   // 测试填单
   testFillChat: (data: any = {}) => request.post('/autofill/test-fill/chat', data),
   testFill: (data: any = {}) => request.post('/autofill/test-fill/fill', data),
 
-  // 级联下拉配置
-  createCascadeConfig: (data: any = {}) => request.post('/autofill/cascade/config/create', data),
-  updateCascadeConfig: (data: any = {}) => request.post('/autofill/cascade/config/update', data),
-  getCascadeConfigList: (params: any = {}) => request.get('/autofill/cascade/config/list', { params }),
-  deleteCascadeConfig: (params: any = {}) => request.delete('/autofill/cascade/config/delete', { params }),
-  syncCascadeFields: (data: any = {}) => request.post('/autofill/cascade/sync', data),
-  getCascadeData: (params: any = {}) => request.get('/autofill/cascade/data/list', { params }),
+  // 规则管理
+  getRuleList: (params: any = {}) => request.get('/autofill/rule/list', { params }),
+  getRuleDetail: (params: any = {}) => request.get('/autofill/rule/get', { params }),
+  createRule: (data: any = {}) => request.post('/autofill/rule/create', data),
+  updateRule: (data: any = {}) => request.post('/autofill/rule/update', data),
+  deleteRule: (params: any = {}) => request.delete('/autofill/rule/delete', { params }),
+  saveRuleVersion: (data: any = {}) => request.post('/autofill/rule/save', data),
+  getRuleVersions: (params: any = {}) => request.get('/autofill/rule/versions', { params }),
+  getRuleVersionByNo: (params: any = {}) => request.get('/autofill/rule/version', { params }),
+  rollbackRuleVersion: (data: any = {}) => request.post('/autofill/rule/rollback', data),
+  importRuleCsv: (ruleId: number, file: File, currentMd5: string = '', tenantId?: number) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('rule_id', ruleId.toString())
+    formData.append('current_md5', currentMd5)
+    const params: any = {}
+    if (tenantId) params.tenant_id = tenantId
+    return request.post('/autofill/rule/import', formData, {
+      params,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  exportRuleCsv: (params: any = {}) => request.get('/autofill/rule/export', { params, responseType: 'blob' }),
+  previewRuleCsv: (data: any = {}) => request.post('/autofill/rule/import/preview', data),
 
-  // 字段展平配置
-  createFlattenConfig: (data: any = {}) => request.post('/autofill/flatten/config/create', data),
-  getFlattenConfig: (data: any = {}) => request.post('/autofill/flatten/config/get', data),
+  // 系统提示词管理
+  getSystemPromptList: (params: any = {}) => request.get('/autofill/system_prompts', { params }),
+  getSystemPromptById: (params: any = {}) => request.get('/autofill/system_prompts/' + params.id),
+  createSystemPrompt: (data: any = {}) => request.post('/autofill/system_prompts?tenant_id=' + (data.tenant_id || 0), data),
+  updateSystemPrompt: (data: any = {}) => request.post('/autofill/system_prompts/' + data.id + '?tenant_id=' + (data.tenant_id || 0), data),
+  deleteSystemPrompt: (params: any = {}) => request.delete('/autofill/system_prompts/' + params.id, { params }),
+  getSystemPromptCategories: (params: any = {}) => request.get('/autofill/system_prompts/categories', { params }),
+
+  // 规则执行引擎 (使用 API Key 认证，使用绝对路径)
+  executeRule: (data: any = {}, apiKey: string) => publicRequest.post('/api/autofill/llm/rule/execute', data, {
+    headers: { 'X-API-Key': apiKey }
+  }),
+  getRuleExecuteResult: (data: any = {}, apiKey: string) => publicRequest.post('/api/autofill/llm/rule/execute/result', data, {
+    headers: { 'X-API-Key': apiKey }
+  }),
+
+  // 规则导入接口
+  previewFileImport: (data: any = {}) => request.post('/autofill/rule/import/file/preview', data),
+  getImportConfig: (params: any = {}) => request.get('/autofill/rule/import/config', { params }),
+  saveImportConfig: (data: any = {}) => request.post('/autofill/rule/import/config', data),
+  applyImport: (data: any = {}) => request.post('/autofill/rule/import/apply', data),
+
+  // CURL导入接口
+  previewCurlImport: (data: any = {}) => request.post('/autofill/rule/import/curl/preview', data),
+  getCurlImportConfig: (params: any = {}) => request.get('/autofill/rule/import/curl/config', { params }),
+  saveCurlImportConfig: (data: any = {}) => request.post('/autofill/rule/import/curl/config', data),
+  applyCurlImport: (data: any = {}) => request.post('/autofill/rule/import/curl/apply', data),
+
+  // 规则执行测试接口
+  getRuleTestApps: () => request.get('/autofill/rule_test/apps'),
+  getRuleTestRules: (params: any = {}) => request.get('/autofill/rule_test/rules', { params }),
+  getRuleTestColumns: (params: any = {}) => request.get('/autofill/rule_test/rule_columns', { params }),
+  executeRuleTest: (data: any = {}) => request.post('/autofill/rule_test/execute', data),
+  exportRuleTestCurl: (data: any = {}) => request.post('/autofill/rule_test/export_curl', data),
 
 }

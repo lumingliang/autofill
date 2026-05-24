@@ -6,12 +6,12 @@ from fastapi import APIRouter
 
 from app.api.public.handlers import (
     dropdown_router,
-    field_group_router,
     field_spec_router,
     fill_data_router,
     llm_router,
     template_router,
     feedback_router,
+    rule_execute_router,
 )
 
 autofill_public_router = APIRouter()
@@ -20,7 +20,7 @@ autofill_public_router = APIRouter()
 autofill_public_router.include_router(template_router)
 autofill_public_router.include_router(dropdown_router)
 autofill_public_router.include_router(fill_data_router)
-autofill_public_router.include_router(field_group_router)
 autofill_public_router.include_router(field_spec_router)
 autofill_public_router.include_router(llm_router)
 autofill_public_router.include_router(feedback_router)
+autofill_public_router.include_router(rule_execute_router)

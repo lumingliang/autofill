@@ -15,19 +15,13 @@ from app.schemas.public import (
     AIFillDataRequest,
     AIFillDataResultRequest,
     LLMFillRequest,
-    FieldGroupsSchemaRequest,
-    OptimizeFieldInstructionRequest,
     StepLLMFillRequest,
     StepLLMFillResultRequest,
     StepLLMFillResponse,
     ChatSessionRequest,
     TestFillRequest,
 )
-from app.services.autofill.llm_handler_service import (
-    llm_fill_data_service,
-    field_group_schema_service,
-)
-from app.services.autofill.field_optimization_service import field_optimization_service
+from app.services.autofill.llm_handler_service import llm_fill_data_service
 from app.services.autofill.step_llm_fill_service import step_llm_fill_service
 from app.services.autofill.test_fill_service import test_fill_service
 
@@ -261,26 +255,6 @@ async def get_ai_fill_data_result(
     return Success(data=result)
 
 
-# ==================== 字段组 Schema 接口 ====================
-
-@router.post("/autofill/field_groups/schema", summary="查询多个字段组的完整Schema")
-async def get_field_groups_schema(
-    request: Request,
-    auth_info: dict = Depends(APIKeyAuth.authenticate)
-):
-    """查询多个字段组的完整 Schema 信息"""
-    params = await parse_request_params(request, FieldGroupsSchemaRequest)
-
-    result = await field_group_schema_service.get_field_groups_schema(
-        tenant_id=auth_info["tenant_id"],
-        app_name=auth_info["app_name"],
-        field_names=params.get("field_names"),
-        group_names=params.get("group_names")
-    )
-
-    return Success(data=result)
-
-
 # ==================== LLM 填单接口 ====================
 
 @router.post("/autofill/llm/fill", summary="直接LLM填单")
@@ -456,28 +430,6 @@ async def get_step_llm_fill_result(
         result["fields"] = _simplify_field_structure(result["merged_fields"])
         # 移除冗余的 merged_fields
         del result["merged_fields"]
-
-    return Success(data=result)
-
-
-# ==================== 字段优化接口 ====================
-
-@router.post("/autofill/llm/optimize_instructions", summary="优化字段填写指引")
-async def optimize_field_instructions(
-    request: Request,
-    auth_info: dict = Depends(APIKeyAuth.authenticate)
-):
-    """使用 LLM 优化字段填写指引"""
-    params = await parse_request_params(request, OptimizeFieldInstructionRequest)
-
-    result = await field_optimization_service.optimize_field_instructions(
-        tenant_id=auth_info["tenant_id"],
-        app_name=auth_info["app_name"],
-        group_name=params.get("group_name"),
-        field_name=params.get("field_name"),
-        batch_size=params.get("batch_size", 10),
-        model=params.get("model")
-    )
 
     return Success(data=result)
 

@@ -29,6 +29,17 @@ class StructuredOutputService:
     # 类级别的历史管理器（所有实例共享）
     _history_manager = SessionHistoryManager(max_rounds=10)
 
+    # 方法名到方法函数的映射（排除 plain，因为它参数签名不同）
+    _METHOD_MAP = {
+        "with_structured_output": "method_with_structured_output",
+        "bind_tools_non_stream": "method_bind_tools_non_stream",
+        "bind_tools_stream": "method_bind_tools_stream",
+        "custom_fc_non_stream": "method_custom_fc_non_stream",
+        "custom_fc_stream": "method_custom_fc_stream",
+        "pydantic_parser": "method_pydantic_parser",
+        "json_parser": "method_json_parser",
+    }
+
     def __init__(self, config: LLMConfig):
         self.config = config
         self.litellm_params = config.litellm_params or {}
@@ -139,7 +150,7 @@ class StructuredOutputService:
         if method == "plain":
             return await self.methods.method_plain(
                 query=query,
-                system_prompt=system_prompt,
+                system_prompt=full_system_prompt or system_prompt,
                 field_specs=field_specs,
                 include_reason=include_reason,
                 session_id=session_id,
@@ -147,44 +158,33 @@ class StructuredOutputService:
                 history_manager=self._history_manager
             )
 
-        method_map = {
-            "with_structured_output": self.methods.method_with_structured_output,
-            "bind_tools_non_stream": self.methods.method_bind_tools_non_stream,
-            "bind_tools_stream": self.methods.method_bind_tools_stream,
-            "custom_fc_non_stream": self.methods.method_custom_fc_non_stream,
-            "custom_fc_stream": self.methods.method_custom_fc_stream,
-            "pydantic_parser": self.methods.method_pydantic_parser,
-            "json_parser": self.methods.method_json_parser,
-        }
-
-        if method not in method_map:
+        if method not in self._METHOD_MAP:
             return StructuredOutputResult(
                 success=False,
                 error=f"未知方法: {method}",
                 method=method
             )
 
-        # json_parser 方法使用 full_system_prompt
-        if method == "json_parser":
-            return await method_map[method](
-                query=query,
-                tools=tools,
-                system_prompt=full_system_prompt or system_prompt,
-                session_id=session_id,
-                memory_rounds=memory_rounds,
-                tool_choice=tool_choice,
-                history_manager=self._history_manager
-            )
+        # 获取方法函数
+        method_func = getattr(self.methods, self._METHOD_MAP[method])
 
-        return await method_map[method](
-            query=query,
-            tools=tools,
-            system_prompt=system_prompt,
-            session_id=session_id,
-            memory_rounds=memory_rounds,
-            tool_choice=tool_choice,
-            history_manager=self._history_manager
-        )
+        # 构建通用参数
+        call_kwargs = {
+            "query": query,
+            "tools": tools,
+            "session_id": session_id,
+            "memory_rounds": memory_rounds,
+            "tool_choice": tool_choice,
+            "history_manager": self._history_manager,
+        }
+
+        # json_parser 方法使用 full_system_prompt，其他方法使用 system_prompt
+        if method == "json_parser":
+            call_kwargs["system_prompt"] = full_system_prompt or system_prompt
+        else:
+            call_kwargs["system_prompt"] = system_prompt
+
+        return await method_func(**call_kwargs)
 
     async def _record_method_failure(self, method: str, error: str):
         """记录方法失败"""

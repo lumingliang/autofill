@@ -696,7 +696,11 @@ class StepLLMFillService:
 
         # plain 模式：使用 field_specs 构造虚拟结构，字段名来自请求配置，类型为 text
         if method == "plain":
-            raw_content = extracted_data.get("content") or extracted_data.get("raw_response", "")
+            # 适配修改后的 plain 方法：直接返回字符串或字典格式
+            if isinstance(extracted_data, str):
+                raw_content = extracted_data
+            else:
+                raw_content = extracted_data.get("content") or extracted_data.get("raw_response", "")
             field_specs = context.get("field_specs", [])
             enriched_result = {}
             for fs in field_specs:
@@ -849,7 +853,11 @@ class StepLLMFillService:
 
         # plain 模式：使用 field_specs 构造虚拟结构，字段名来自请求配置，类型为 text
         if method == "plain":
-            raw_content = extracted_data.get("content") or extracted_data.get("raw_response", "")
+            # 适配修改后的 plain 方法：直接返回字符串或字典格式
+            if isinstance(extracted_data, str):
+                raw_content = extracted_data
+            else:
+                raw_content = extracted_data.get("content") or extracted_data.get("raw_response", "")
             field_specs = context.get("field_specs", [])
             enriched_result = {}
             for fs in field_specs:

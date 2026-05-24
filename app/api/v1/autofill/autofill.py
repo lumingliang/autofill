@@ -7,6 +7,10 @@ from app.api.v1.autofill.handlers import (
     record_router,
     template_router,
     test_fill_router,
+    rule_router,
+    rule_test_router,
+    rule_import_router,
+    system_prompt_router,
 )
 
 # 导出路由
@@ -15,3 +19,7 @@ template_router = template_router
 dropdown_router = dropdown_router
 record_router = record_router
 test_fill_router = test_fill_router
+rule_router = rule_router
+rule_test_router = rule_test_router
+rule_import_router = rule_import_router
+system_prompt_router = system_prompt_router

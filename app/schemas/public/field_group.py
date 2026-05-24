@@ -73,14 +73,6 @@ class StepLLMFillResultRequest(BaseModel):
         extra = "allow"  # 允许额外字段
 
 
-class OptimizeFieldInstructionRequest(BasePublicRequest):
-    """优化字段填写指引请求"""
-    group_name: Optional[str] = Field(default=None, description="字段组名称（可选，不传则查询应用下所有字段）")
-    field_name: Optional[str] = Field(default=None, description="单个字段名称（可选，传了则只优化该字段）")
-    batch_size: int = Field(default=10, description="每批处理的字段数量（默认10个）")
-    model: Optional[str] = Field(default=None, description="使用的模型名称（可选，默认使用系统配置）")
-
-
 class ChatMessage(BaseModel):
     """聊天消息"""
     role: str = Field(..., description="角色：user 或 assistant")

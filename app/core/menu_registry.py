@@ -191,7 +191,7 @@ class MenuRegistry:
 
         if new_permissions:
             pairs = [(admin_role.id, mid) for mid in new_permissions]
-            await RelationQuery.batch_add_role_menus(pairs)
+            await RelationQuery.batch_add_role_menus(pairs, tenant_id=0)
             logger.info(
                 f"[MenuRegistry] 为管理员角色分配了 {len(new_permissions)} 个菜单权限"
             )
