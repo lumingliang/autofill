@@ -6,6 +6,12 @@ user = "root"
 password = "root123456"
 database = "autofill"
 
+# seekdb 配置
+[seekdb]
+enabled = true
+db_path = "./data/seekdb.db"
+default_database = "autofill"
+
 # Redis 配置
 [redis]
 host = "127.0.0.1"

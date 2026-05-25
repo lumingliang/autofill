@@ -38,3 +38,6 @@ config.toml
 
 # Temp directories
 llmtemp/
+
+# SeekDB data directory
+data/seekdb.db/

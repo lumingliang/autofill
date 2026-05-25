@@ -59,6 +59,9 @@ aiohttp==3.11.11
 # Progress Bar
 tqdm==4.67.1
 
+# seekdb - AI Native Search Database
+pyseekdb>=1.2.0
+
 # Development Tools
 black==24.10.0
 isort==5.13.2

@@ -51,7 +51,12 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str = ""
     REDIS_DB: int = 0
     REDIS_KEY_PREFIX: str = "autofill"
-    
+
+    # seekdb 配置
+    SEEKDB_ENABLED: bool = True
+    SEEKDB_PATH: str = "./data/seekdb.db"
+    SEEKDB_DEFAULT_DATABASE: str = "autofill"
+
     # Dify 配置
     DIFY_TIMEOUT: float = 60.0
     
@@ -132,7 +137,14 @@ class Settings(BaseSettings):
                     instance.REDIS_PASSWORD = redis_config.get("password", instance.REDIS_PASSWORD)
                     instance.REDIS_DB = redis_config.get("db", instance.REDIS_DB)
                     instance.REDIS_KEY_PREFIX = redis_config.get("key_prefix", instance.REDIS_KEY_PREFIX)
-                
+
+                # 加载 seekdb 配置
+                if "seekdb" in config:
+                    seekdb_config = config["seekdb"]
+                    instance.SEEKDB_ENABLED = seekdb_config.get("enabled", instance.SEEKDB_ENABLED)
+                    instance.SEEKDB_PATH = seekdb_config.get("db_path", instance.SEEKDB_PATH)
+                    instance.SEEKDB_DEFAULT_DATABASE = seekdb_config.get("default_database", instance.SEEKDB_DEFAULT_DATABASE)
+
                 # 加载 Dify 配置
                 if "dify" in config:
                     dify_config = config["dify"]

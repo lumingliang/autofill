@@ -15,6 +15,7 @@ from app.services.autofill.system_prompt_service import system_prompt_service
 from app.services.llm.llm_config_service import llm_config_service
 from app.services.llm.llm_proxy_service import llm_proxy_service
 from app.services.rule_management.rule_service import rule_service
+from app.services.storage.seekdb_service import seekdb_service
 
 
 class RuleEngineService:
@@ -172,26 +173,26 @@ class RuleEngineService:
         Returns:
             规则执行结果
         """
-        # 1. 获取规则数据
-        rule_data = await self._get_rule_data(
-            tenant_id=tenant_id,
-            app_name=app_name,
-            rule_name=rule_name
-        )
-
-        if not rule_data:
-            raise ValueError(f"规则不存在: {rule_name}")
-
-        # 3. 获取任务类型和配置
+        # 1. 获取规则版本和配置
         task_type = prompt_config.get("type", "choice")
         select_fields = prompt_config.get("select_fields", [])
         name_fields = prompt_config.get("name_fields", [])
         rule_fields = prompt_config.get("rule_fields", [])
         name_separator = prompt_config.get("name_separator", " - ")
 
-        # 2. 根据filter筛选数据（传入name_fields用于去重）
-        filtered_data = self._apply_filter(
-            rule_data=rule_data,
+        # 2. 获取规则版本
+        version = await self._get_rule_version(
+            tenant_id=tenant_id,
+            app_name=app_name,
+            rule_name=rule_name
+        )
+
+        if not version or not version.seekdb_collection_name:
+            raise ValueError(f"规则不存在或未配置: {rule_name}")
+
+        # 3. 直接从 seekdb 查询过滤后的数据
+        filtered_data = await self._get_filtered_rule_data(
+            collection_name=version.seekdb_collection_name,
             filter_config=prompt_config.get("filter", {}),
             name_fields=name_fields
         )
@@ -297,17 +298,6 @@ class RuleEngineService:
             if not rule_name or not prompt_config:
                 continue
 
-            # 获取规则数据
-            rule_data = await self._get_rule_data(
-                tenant_id=tenant_id,
-                app_name=app_name,
-                rule_name=rule_name
-            )
-
-            if not rule_data:
-                results[rule_name] = {"llm_res": "", "error": f"规则不存在: {rule_name}"}
-                continue
-
             # 获取任务配置
             task_type = prompt_config.get("type", "choice")
             select_fields = prompt_config.get("select_fields", [])
@@ -315,9 +305,20 @@ class RuleEngineService:
             rule_fields = prompt_config.get("rule_fields", [])
             name_separator = prompt_config.get("name_separator", " - ")
 
-            # 筛选数据（传入name_fields用于去重）
-            filtered_data = self._apply_filter(
-                rule_data=rule_data,
+            # 获取规则版本
+            version = await self._get_rule_version(
+                tenant_id=tenant_id,
+                app_name=app_name,
+                rule_name=rule_name
+            )
+
+            if not version or not version.seekdb_collection_name:
+                results[rule_name] = {"llm_res": "", "error": f"规则不存在或未配置: {rule_name}"}
+                continue
+
+            # 直接从 seekdb 查询过滤后的数据
+            filtered_data = await self._get_filtered_rule_data(
+                collection_name=version.seekdb_collection_name,
                 filter_config=prompt_config.get("filter", {}),
                 name_fields=name_fields
             )
@@ -474,14 +475,14 @@ class RuleEngineService:
                 rule_fields=rule_fields
             )
 
-    async def _get_rule_data(
+    async def _get_rule_version(
         self,
         tenant_id: int,
         app_name: str,
         rule_name: str
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Optional[RuleVersion]:
         """
-        获取规则数据
+        获取规则的最新版本
 
         Args:
             tenant_id: 租户ID
@@ -489,7 +490,7 @@ class RuleEngineService:
             rule_name: 规则名称（即rule_code）
 
         Returns:
-            规则数据列表
+            RuleVersion 对象或 None
         """
         # 查询规则
         rule = await RuleInfo.filter(
@@ -509,29 +510,124 @@ class RuleEngineService:
             deleted=0
         ).first()
 
-        if not version:
+        return version
+
+    async def _get_filtered_rule_data(
+        self,
+        collection_name: str,
+        filter_config: Dict[str, Any],
+        name_fields: List[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        从 seekdb 直接查询过滤后的规则数据
+
+        Args:
+            collection_name: seekdb 集合名称
+            filter_config: 筛选配置
+            name_fields: 名称字段列表，用于去重
+
+        Returns:
+            筛选并去重后的数据列表
+        """
+        try:
+            # 使用 seekdb 的 query_with_filter 直接查询
+            if filter_config:
+                # 构建 seekdb 过滤条件
+                seekdb_filter = {f"data.{key}": value for key, value in filter_config.items()}
+                result_data = await seekdb_service.query_with_filter(collection_name, seekdb_filter)
+            else:
+                # 没有过滤条件，获取全部数据
+                result = await seekdb_service.get_rule_data(collection_name)
+                if not result:
+                    return []
+
+                # 转换为字典列表
+                headers = result.get("headers", [])
+                data = result.get("data", [])
+
+                result_data = []
+                for row in data:
+                    row_dict = {}
+                    for i, header in enumerate(headers):
+                        if i < len(row):
+                            row_dict[header] = row[i]
+                        else:
+                            row_dict[header] = ""
+                    result_data.append(row_dict)
+
+            # 根据 name_fields 去重
+            if name_fields and result_data:
+                seen = set()
+                deduplicated = []
+                for row in result_data:
+                    # 构建唯一键：根据name_fields的值组合
+                    key_parts = []
+                    for field in name_fields:
+                        value = row.get(field)
+                        if value is not None:
+                            key_parts.append(str(value))
+                    key = tuple(key_parts) if key_parts else None
+
+                    if key and key not in seen:
+                        seen.add(key)
+                        deduplicated.append(row)
+                    elif not key:
+                        # 如果无法构建key，保留数据
+                        deduplicated.append(row)
+                return deduplicated
+
+            return result_data
+
+        except Exception as e:
+            logger.error(f"从 seekdb 查询过滤数据失败: {collection_name}, error: {e}")
+            return []
+
+    async def _get_rule_data(
+        self,
+        tenant_id: int,
+        app_name: str,
+        rule_name: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        获取规则数据（从 seekdb）- 保留此方法用于兼容性
+
+        Args:
+            tenant_id: 租户ID
+            app_name: 应用名称
+            rule_name: 规则名称（即rule_code）
+
+        Returns:
+            规则数据列表
+        """
+        version = await self._get_rule_version(tenant_id, app_name, rule_name)
+
+        if not version or not version.seekdb_collection_name:
             return None
 
-        # 获取内容
-        content_json = await rule_service._get_content_json(version)
-        if not content_json:
+        try:
+            result = await seekdb_service.get_rule_data(version.seekdb_collection_name)
+            if not result:
+                return None
+
+            # 转换为字典列表
+            headers = result.get("headers", [])
+            data = result.get("data", [])
+
+            dict_list = []
+            for row in data:
+                row_dict = {}
+                for i, header in enumerate(headers):
+                    if i < len(row):
+                        row_dict[header] = row[i]
+                    else:
+                        row_dict[header] = ""
+                dict_list.append(row_dict)
+
+            return dict_list
+
+        except Exception as e:
+            logger.error(f"从 seekdb 获取规则数据失败: {rule_name}, error: {e}")
             return None
-
-        # 转换为字典列表
-        headers = content_json.get("headers", [])
-        data = content_json.get("data", [])
-
-        result = []
-        for row in data:
-            row_dict = {}
-            for i, header in enumerate(headers):
-                if i < len(row):
-                    row_dict[header] = row[i]
-                else:
-                    row_dict[header] = ""
-            result.append(row_dict)
-
-        return result
 
     def _apply_filter(
         self,
@@ -541,6 +637,7 @@ class RuleEngineService:
     ) -> List[Dict[str, Any]]:
         """
         应用filter筛选数据，并根据name_fields去重
+        注意：此方法仅在内存中过滤，新代码应使用 _get_filtered_rule_data
 
         Args:
             rule_data: 规则数据
