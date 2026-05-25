@@ -134,6 +134,7 @@ async def _save_primary_keys_config(
 async def _save_import_result(
     rule: RuleInfo,
     merged_data: List[Dict[str, Any]],
+    all_headers: List[str],
     stats: ImportStats,
     current_md5: str,
     remark: Optional[str] = None,
@@ -142,6 +143,15 @@ async def _save_import_result(
     """
     保存导入结果为新版本
 
+    Args:
+        rule: 规则对象
+        merged_data: 合并后的数据
+        all_headers: 合并后的表头（保持正确的字段顺序）
+        stats: 导入统计
+        current_md5: 当前MD5
+        remark: 备注
+        import_type: 导入类型
+
     Returns:
         导入结果字典
     """
@@ -149,7 +159,6 @@ async def _save_import_result(
 
     # 转换为CSV格式
     if merged_data:
-        all_headers = list(merged_data[0].keys())
         csv_data = [
             [str(row.get(h, "")) for h in all_headers] for row in merged_data
         ]
@@ -240,18 +249,23 @@ async def preview_file_import(
         primary_keys = request.primary_keys
         await _save_primary_keys_config(rule, primary_keys)
 
-    # 同步字段实时从CSV表头获取（排除主键）
-    sync_fields = [h for h in csv_headers if h not in primary_keys]
+    # 合并表头：保留旧表头顺序，追加新字段
+    merged_headers = CsvImportCore.merge_headers(existing_headers, set(csv_headers))
+
+    # 同步字段从合并后的表头获取（排除主键）
+    sync_fields = [h for h in merged_headers if h not in primary_keys]
 
     return Success(
         data={
             "csv_headers": csv_headers,
             "existing_headers": existing_headers,
+            "merged_headers": merged_headers,  # 返回合并后的表头
             "row_count": len(csv_data),
             "preview_data": csv_data[:10],
             "is_first_import": is_first_import,
             "primary_keys": primary_keys,
             "sync_fields": sync_fields,
+            "allow_add_new": True,  # 默认允许新增
         }
     )
 
@@ -311,18 +325,20 @@ async def apply_import(
     )
 
     try:
-        merged_data, stats = CsvImportCore.execute_import(
+        merged_data, stats, all_headers = CsvImportCore.execute_import(
             csv_content=request.content,
             existing_data=existing_data,
             existing_headers=existing_headers,
             config=config,
             is_first_import=is_first_import,
+            allow_add_new=request.allow_add_new,
         )
 
         # 保存结果
         result = await _save_import_result(
             rule=rule,
             merged_data=merged_data,
+            all_headers=all_headers,
             stats=stats,
             current_md5=request.current_md5,
             remark=request.remark,
@@ -336,7 +352,20 @@ async def apply_import(
     except VersionConflictException:
         return Fail(code=409, msg="规则已被他人修改，请刷新后重试")
     except NoChangeException:
-        return Fail(code=400, msg="当前内容没有变化，无需保存新版本")
+        # 内容无变化时返回成功，但标记为无变化
+        return Success(
+            data={
+                "version_no": rule.latest_version_id,
+                "added_count": 0,
+                "updated_count": 0,
+                "skipped_count": 0,
+                "failed_count": 0,
+                "total_count": 0,
+                "new_md5": request.current_md5 if request.current_md5 else "",
+                "no_change": True,
+                "message": "当前内容没有变化，无需保存新版本",
+            }
+        )
     except Exception as e:
         logger.error("CSV导入失败", error=str(e))
         return Fail(code=500, msg=f"导入失败: {str(e)}")
@@ -587,7 +616,7 @@ async def apply_curl_import(
             sync_fields=sync_fields,
         )
 
-        merged_data, stats = CsvImportCore.execute_import(
+        merged_data, stats, all_headers = CsvImportCore.execute_import(
             csv_content=csv_content,
             existing_data=existing_data,
             existing_headers=existing_headers,
@@ -599,6 +628,7 @@ async def apply_curl_import(
         result = await _save_import_result(
             rule=rule,
             merged_data=merged_data,
+            all_headers=all_headers,
             stats=stats,
             current_md5=request.current_md5,
             remark=request.remark,

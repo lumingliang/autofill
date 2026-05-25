@@ -11,8 +11,8 @@
                                 <a-col :span="8" v-if="isSuperUser">
                                     <a-form-item label="租户" required>
                                         <a-select v-model:value="ruleForm.tenant_id" placeholder="请选择租户"
-                                            :options="tenantOptions" @change="handleRuleTenantChange" style="width: 100%"
-                                            allow-clear />
+                                            :options="tenantOptions" @change="handleRuleTenantChange"
+                                            style="width: 100%" allow-clear />
                                     </a-form-item>
                                 </a-col>
                                 <a-col :span="isSuperUser ? 8 : 12">
@@ -27,6 +27,19 @@
                                     <a-form-item label="用户输入" required>
                                         <a-textarea v-model:value="ruleForm.query" :rows="2"
                                             placeholder="请输入用户输入文本，例如：我买的手机屏幕碎了，我要投诉" />
+                                    </a-form-item>
+                                </a-col>
+                            </a-row>
+
+                            <a-divider />
+
+                            <!-- 全局配置：系统提示词（多个规则共用） -->
+                            <a-row :gutter="16">
+                                <a-col :span="8">
+                                    <a-form-item label="系统提示词">
+                                        <a-select v-model:value="ruleForm.system_prompt_name"
+                                            placeholder="请选择系统提示词（多个规则共用）" :options="systemPromptOptions" allow-clear
+                                            style="width: 100%" />
                                     </a-form-item>
                                 </a-col>
                             </a-row>
@@ -53,7 +66,7 @@
                                         </template>
 
                                         <a-row :gutter="16">
-                                            <a-col :span="8">
+                                            <a-col :span="12">
                                                 <a-form-item label="规则名称" required>
                                                     <a-select v-model:value="param.rule_name" placeholder="请选择规则"
                                                         :options="ruleOptions" :loading="loadingRules"
@@ -61,18 +74,12 @@
                                                         @change="(val: any) => handleRuleChange(val, index)" />
                                                 </a-form-item>
                                             </a-col>
-                                            <a-col :span="8">
+                                            <a-col :span="12">
                                                 <a-form-item label="任务类型">
                                                     <a-select v-model:value="param.prompt.type" :options="[
                                                         { label: '选择题', value: 'choice' },
                                                         { label: '填空题', value: 'text' }
                                                     ]" />
-                                                </a-form-item>
-                                            </a-col>
-                                            <a-col :span="8">
-                                                <a-form-item label="名称分隔符">
-                                                    <a-input v-model:value="param.prompt.name_separator"
-                                                        placeholder=" - " />
                                                 </a-form-item>
                                             </a-col>
                                         </a-row>
@@ -132,8 +139,9 @@
                                         <a-row v-if="param.sampleData && param.sampleData.length > 0">
                                             <a-col :span="24">
                                                 <a-form-item label="CSV示例数据">
-                                                    <a-table :dataSource="param.sampleData" :columns="param.sampleColumns"
-                                                        size="small" :pagination="false" bordered />
+                                                    <a-table :dataSource="param.sampleData"
+                                                        :columns="param.sampleColumns" size="small" :pagination="false"
+                                                        bordered />
                                                 </a-form-item>
                                             </a-col>
                                         </a-row>
@@ -186,11 +194,15 @@
                                     <h5>规则: {{ param.rule_name }}</h5>
                                     <div v-if="ruleExecuteResult.data?.results?.[param.rule_name]"
                                         class="result-content">
-                                        <p><strong>LLM返回:</strong> {{ ruleExecuteResult.data.results[param.rule_name].llm_res }}</p>
-                                        <div v-if="Object.keys(ruleExecuteResult.data.results[param.rule_name]).length > 1">
+                                        <p><strong>LLM返回:</strong> {{
+                                            ruleExecuteResult.data.results[param.rule_name].llm_res }}</p>
+                                        <div
+                                            v-if="Object.keys(ruleExecuteResult.data.results[param.rule_name]).length > 1">
                                             <p><strong>提取字段:</strong></p>
                                             <a-descriptions :column="2" bordered size="small">
-                                                <template v-for="(value, itemKey) in ruleExecuteResult.data.results[param.rule_name]" :key="itemKey">
+                                                <template
+                                                    v-for="(value, itemKey) in ruleExecuteResult.data.results[param.rule_name]"
+                                                    :key="itemKey">
                                                     <a-descriptions-item
                                                         v-if="itemKey !== 'llm_res' && itemKey !== 'error'"
                                                         :label="String(itemKey)">
@@ -200,7 +212,8 @@
                                             </a-descriptions>
                                         </div>
                                         <a-alert v-if="ruleExecuteResult.data.results[param.rule_name].error"
-                                            type="error" :message="ruleExecuteResult.data.results[param.rule_name].error"
+                                            type="error"
+                                            :message="ruleExecuteResult.data.results[param.rule_name].error"
                                             show-icon />
                                     </div>
                                 </div>
@@ -340,8 +353,7 @@
                                 <a-col :span="24">
                                     <a-form-item label="字段名称">
                                         <a-select v-model:value="fillForm.field_names" mode="multiple"
-                                            placeholder="请选择字段（不选则使用全部）" :options="fieldOptions"
-                                            style="width: 100%" />
+                                            placeholder="请选择字段（不选则使用全部）" :options="fieldOptions" style="width: 100%" />
                                     </a-form-item>
                                 </a-col>
                             </a-row>
@@ -442,6 +454,7 @@ const ruleForm = reactive({
     tenant_id: undefined as number | undefined,
     app_name: '',
     query: '',
+    system_prompt_name: undefined as string | undefined,  // 全局系统提示词（多个规则共用）
     params: [
         {
             rule_name: '',
@@ -450,8 +463,7 @@ const ruleForm = reactive({
                 filter: {} as Record<string, string>,
                 select_fields: [] as string[],
                 name_fields: [] as string[],
-                rule_fields: [] as string[],
-                name_separator: ' - '
+                rule_fields: [] as string[]
             },
             columnOptions: [] as { label: string; value: string }[],
             sampleData: [] as any[],
@@ -467,6 +479,31 @@ const ruleOptions = ref<{ label: string; value: string }[]>([])
 const loadingRules = ref(false)
 const ruleExecuting = ref(false)
 const ruleExecuteResult = ref<any>(null)
+
+// 系统提示词选项
+const systemPromptOptions = ref<{ label: string; value: string }[]>([])
+
+// 加载系统提示词列表
+const loadSystemPrompts = async () => {
+    try {
+        const tenantId = isSuperUser.value ? ruleForm.tenant_id : undefined
+        const params: any = { page: 1, page_size: 100 }
+        if (tenantId) {
+            params.tenant_id = tenantId
+        }
+        const res: any = await api.getSystemPromptList(params)
+        if (res.code === 200) {
+            // API返回的数据格式：{ data: [...], total: n } 或 { data: { items: [...] } }
+            const items = res.data?.items || res.data || []
+            systemPromptOptions.value = items.map((item: any) => ({
+                label: item.name,
+                value: item.name
+            }))
+        }
+    } catch (error) {
+        console.error('加载系统提示词失败:', error)
+    }
+}
 
 // 加载规则测试应用列表
 const loadRuleApps = async () => {
@@ -489,6 +526,7 @@ const loadRuleApps = async () => {
 // 规则测试租户变更处理
 const handleRuleTenantChange = async (tenantId: number) => {
     ruleForm.app_name = ''
+    ruleForm.system_prompt_name = undefined  // 清空系统提示词选择
     ruleForm.params.forEach(param => {
         param.rule_name = ''
         param.columnOptions = []
@@ -504,8 +542,12 @@ const handleRuleTenantChange = async (tenantId: number) => {
 
     if (!tenantId) {
         ruleAppOptions.value = []
+        systemPromptOptions.value = []  // 清空系统提示词列表
         return
     }
+
+    // 租户变更时重新加载系统提示词列表
+    await loadSystemPrompts()
 
     // 超级管理员根据租户过滤应用
     loadingRuleApps.value = true
@@ -522,6 +564,9 @@ const handleRuleTenantChange = async (tenantId: number) => {
     } finally {
         loadingRuleApps.value = false
     }
+
+    // 租户变更时重新加载系统提示词
+    await loadSystemPrompts()
 }
 
 // 规则测试应用变更处理
@@ -629,8 +674,7 @@ const addRuleParam = () => {
             filter: {},
             select_fields: [],
             name_fields: [],
-            rule_fields: [],
-            name_separator: ' - '
+            rule_fields: []
         },
         columnOptions: [],
         sampleData: [],
@@ -685,7 +729,13 @@ const handleRuleExecute = async () => {
         // 构建请求参数
         const params = ruleForm.params.map(p => ({
             rule_name: p.rule_name,
-            prompt: p.prompt
+            prompt: {
+                type: p.prompt.type,
+                filter: p.prompt.filter,
+                select_fields: p.prompt.select_fields,
+                name_fields: p.prompt.name_fields,
+                rule_fields: p.prompt.rule_fields
+            }
         }))
 
         const requestData: any = {
@@ -697,6 +747,11 @@ const handleRuleExecute = async () => {
         // 超级用户传递tenant_id
         if (isSuperUser.value && ruleForm.tenant_id) {
             requestData.tenant_id = ruleForm.tenant_id
+        }
+
+        // 添加全局系统提示词（多个规则共用）
+        if (ruleForm.system_prompt_name) {
+            requestData.system_prompt_name = ruleForm.system_prompt_name
         }
 
         const res: any = await api.executeRuleTest(requestData)
@@ -770,6 +825,11 @@ const handleExportCurl = async () => {
     // 超级用户传递tenant_id
     if (isSuperUser.value && ruleForm.tenant_id) {
         requestData.tenant_id = ruleForm.tenant_id
+    }
+
+    // 添加全局系统提示词（多个规则共用）
+    if (ruleForm.system_prompt_name) {
+        requestData.system_prompt_name = ruleForm.system_prompt_name
     }
 
     try {
@@ -1123,6 +1183,7 @@ onMounted(() => {
     loadTenants()
     loadApps()
     loadRuleApps()
+    loadSystemPrompts()
 })
 </script>
 

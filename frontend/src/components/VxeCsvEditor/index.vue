@@ -146,6 +146,20 @@
           </p>
         </a-upload-dragger>
       </div>
+      <!-- 新增：导入选项 -->
+      <a-divider>导入选项</a-divider>
+      <a-form layout="vertical">
+        <a-form-item>
+          <a-space>
+            <a-switch v-model:checked="importOptions.allowAddNew" />
+            <span class="switch-label">允许新增数据</span>
+          </a-space>
+          <div class="switch-hint">
+            开启后，新CSV中存在但旧数据中没有的主键将被新增；
+            关闭后，仅更新已有数据，不会新增任何行
+          </div>
+        </a-form-item>
+      </a-form>
       <div v-if="importPreview" class="import-preview">
         <a-divider>预览（前10行）</a-divider>
         <div class="preview-table-wrapper">
@@ -212,6 +226,11 @@ const importFileList = ref<any[]>([])
 
 const saveForm = reactive({
   remark: '',
+})
+
+// 导入选项状态
+const importOptions = reactive({
+  allowAddNew: true,  // 是否允许新增数据
 })
 
 const versionList = ref<any[]>([])
@@ -491,7 +510,14 @@ const confirmImport = async () => {
 
   try {
     const tenantId = userStore.isSuperUser ? props.tenantId : undefined
-    const res: any = await api.importRuleCsv(props.ruleId, importFile.value, currentMd5.value, tenantId)
+    // 传递 allowAddNew 参数
+    const res: any = await api.importRuleCsv(
+      props.ruleId,
+      importFile.value,
+      currentMd5.value,
+      tenantId,
+      importOptions.allowAddNew
+    )
     if (res.code === 200) {
       const { headers: newHeaders, data } = res.data.full_content || res.data
       headers.value = newHeaders || []

@@ -180,6 +180,7 @@ async def execute_rule_test(
         "app_name": "customer_service",
         "query": "我买的手机屏幕碎了，我要投诉",
         "tenant_id": 1,  // 仅超管可用
+        "system_prompt_name": "default",  // 可选：全局系统提示词名称（多个规则共用）
         "params": [
             {
                 "rule_name": "event_type",
@@ -188,8 +189,7 @@ async def execute_rule_test(
                     "filter": {"一级事件类型": "投诉"},
                     "select_fields": ["二级事件类型id", "三级事件类型id"],
                     "name_fields": ["二级事件类型", "三级事件类型"],
-                    "rule_fields": ["二级事件类型填写规则", "三级事件类型填写规则"],
-                    "name_separator": " - "
+                    "rule_fields": ["二级事件类型填写规则", "三级事件类型填写规则"]
                 }
             }
         ]
@@ -206,6 +206,7 @@ async def execute_rule_test(
     params = request_data.get("params", [])
     temperature = request_data.get("temperature", 0.7)
     request_tenant_id = request_data.get("tenant_id")
+    system_prompt_name = request_data.get("system_prompt_name")  # 全局系统提示词（多个规则共用）
 
     # 确定有效租户ID：超管使用请求的tenant_id，普通用户使用ctx的tenant_id
     if is_superuser(current_user) and request_tenant_id is not None:
@@ -260,7 +261,8 @@ async def execute_rule_test(
             temperature=temperature,
             params=params,
             step=1,
-            is_last=True
+            is_last=True,
+            system_prompt_name=system_prompt_name  # 传递全局系统提示词
         )
 
         return Success(data=result)
@@ -287,6 +289,7 @@ async def export_rule_test_curl(
         "app_name": "customer_service",
         "query": "我买的手机屏幕碎了，我要投诉",
         "tenant_id": 1,  // 仅超管可用
+        "system_prompt_name": "default",  // 可选：全局系统提示词名称（多个规则共用）
         "params": [
             {
                 "rule_name": "event_type",
@@ -295,8 +298,7 @@ async def export_rule_test_curl(
                     "filter": {"一级事件类型": "投诉"},
                     "select_fields": ["二级事件类型id", "三级事件类型id"],
                     "name_fields": ["二级事件类型", "三级事件类型"],
-                    "rule_fields": ["二级事件类型填写规则", "三级事件类型填写规则"],
-                    "name_separator": " - "
+                    "rule_fields": ["二级事件类型填写规则", "三级事件类型填写规则"]
                 }
             }
         ]
@@ -327,6 +329,7 @@ async def export_rule_test_curl(
     params = request_data.get("params", [])
     temperature = request_data.get("temperature", 0.7)
     request_tenant_id = request_data.get("tenant_id")
+    system_prompt_name = request_data.get("system_prompt_name")  # 全局系统提示词（多个规则共用）
 
     # 确定有效租户ID：超管使用请求的tenant_id，普通用户使用ctx的tenant_id
     if is_superuser(current_user) and request_tenant_id is not None:
@@ -376,6 +379,10 @@ async def export_rule_test_curl(
         "is_last": True,
         "params": params
     }
+
+    # 添加全局系统提示词（多个规则共用）
+    if system_prompt_name:
+        execute_request_body["system_prompt_name"] = system_prompt_name
 
     # 构建curl命令 - 使用应用的API Key（不是Dify API Key）
     import json

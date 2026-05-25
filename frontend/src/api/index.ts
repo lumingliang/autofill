@@ -247,11 +247,12 @@ export default {
   getRuleVersions: (params: any = {}) => request.get('/autofill/rule/versions', { params }),
   getRuleVersionByNo: (params: any = {}) => request.get('/autofill/rule/version', { params }),
   rollbackRuleVersion: (data: any = {}) => request.post('/autofill/rule/rollback', data),
-  importRuleCsv: (ruleId: number, file: File, currentMd5: string = '', tenantId?: number) => {
+  importRuleCsv: (ruleId: number, file: File, currentMd5: string = '', tenantId?: number, allowAddNew: boolean = true) => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('rule_id', ruleId.toString())
     formData.append('current_md5', currentMd5)
+    formData.append('allow_add_new', allowAddNew.toString())
     const params: any = {}
     if (tenantId) params.tenant_id = tenantId
     return request.post('/autofill/rule/import', formData, {

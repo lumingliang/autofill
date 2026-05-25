@@ -140,6 +140,7 @@ class ImportApplyRequest(BaseModel):
     current_md5: str = Field("", max_length=32, description="当前版本MD5，用于乐观锁")
     remark: str = Field("", max_length=512, description="版本备注")
     config: CsvImportConfig = Field(..., description="导入配置")
+    allow_add_new: bool = Field(True, description="是否允许新增数据")
 
 
 class ImportApplyResponse(BaseModel):

@@ -1,7 +1,8 @@
 """
 规则管理接口
 """
-from typing import Optional
+import json
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Header, Query, UploadFile, File, Form
 from fastapi.responses import PlainTextResponse
@@ -447,15 +448,20 @@ async def import_csv(
     file: UploadFile = File(..., description="CSV文件"),
     rule_id: int = Form(..., description="规则ID"),
     current_md5: str = Form("", description="当前版本MD5（可选）"),
+    allow_add_new: bool = Form(True, description="是否允许新增数据"),
     tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
-    """导入CSV文件，返回预览数据
-    
+    """导入CSV文件，执行增量导入并保存为新版本
+
     权限：
     - 超管：可传 tenant_id 指定租户
     - 普通用户：使用当前租户（从build_tenant_query获取）
     """
+    from app.services.rule_management.csv_import_core import (
+        CsvImportCore, ImportConfig, ImportStats
+    )
+
     current_user = await AuthControl.is_authed(token)
 
     # 使用全局函数获取租户查询条件
@@ -480,18 +486,108 @@ async def import_csv(
         content = await file.read()
         csv_content = content.decode('utf-8')
 
-        content_json = await rule_service.parse_csv_to_json(csv_content)
+        # 获取现有数据
+        existing_data: List[Dict[str, Any]] = []
+        existing_headers: List[str] = []
+        is_first_import = True
+
+        if rule.latest_version_id:
+            version_obj = await RuleVersion.filter(
+                id=rule.latest_version_id,
+                deleted=0
+            ).first()
+            if version_obj:
+                content_json = await rule_service._get_content_json(version_obj)
+                if content_json:
+                    existing_headers = content_json.get("headers", [])
+                    data = content_json.get("data", [])
+                    # 转换为字典列表
+                    for row in data:
+                        row_dict = {
+                            header: row[i] if i < len(row) else ""
+                            for i, header in enumerate(existing_headers)
+                        }
+                        existing_data.append(row_dict)
+                    is_first_import = False
+
+        # 解析导入配置
+        config_dict = json.loads(rule.config) if rule.config else {}
+        primary_keys = config_dict.get("primary_keys", [])
+
+        # 从CSV表头获取同步字段（排除主键）
+        csv_headers, _ = CsvImportCore.parse_csv(csv_content)
+        sync_fields = [h for h in csv_headers if h not in primary_keys]
+
+        # 执行导入
+        import_config = ImportConfig(
+            primary_keys=primary_keys,
+            sync_fields=sync_fields
+        )
+
+        merged_data, stats = CsvImportCore.execute_import(
+            csv_content=csv_content,
+            existing_data=existing_data,
+            existing_headers=existing_headers,
+            config=import_config,
+            is_first_import=is_first_import,
+            allow_add_new=allow_add_new
+        )
+
+        # 转换为CSV格式保存
+        if merged_data:
+            all_headers = list(merged_data[0].keys())
+            csv_data = [
+                [str(row.get(h, "")) for h in all_headers] for row in merged_data
+            ]
+        else:
+            all_headers = []
+            csv_data = []
+
+        save_content_json = {"headers": all_headers, "data": csv_data}
+
+        # 构建备注
+        if stats.added_count > 0 and stats.updated_count == 0:
+            remark = f"CSV导入：新增{stats.added_count}条，跳过{stats.skipped_count}条"
+        else:
+            remark = f"CSV导入：新增{stats.added_count}条，更新{stats.updated_count}条，跳过{stats.skipped_count}条"
+        if stats.failed_count > 0:
+            remark += f"，失败{stats.failed_count}条"
+
+        # 保存新版本
+        new_version = await rule_version_controller.save_version(
+            rule=rule,
+            content_json=save_content_json,
+            current_md5=current_md5,
+            remark=remark,
+        )
+
+        logger.info(
+            "CSV导入成功",
+            rule_id=rule.id,
+            version_no=new_version.version_no,
+            added=stats.added_count,
+            updated=stats.updated_count,
+            skipped=stats.skipped_count,
+            failed=stats.failed_count,
+            allow_add_new=allow_add_new
+        )
 
         return Success(data={
-            "headers": content_json["headers"],
-            "data": content_json["data"][:10],
-            "row_count": len(content_json["data"]),
-            "preview": True,
-            "full_content": content_json
+            "headers": all_headers,
+            "data": csv_data[:10],
+            "row_count": len(csv_data),
+            "full_content": save_content_json,
+            "version_no": new_version.version_no,
+            "added_count": stats.added_count,
+            "updated_count": stats.updated_count,
+            "skipped_count": stats.skipped_count,
+            "failed_count": stats.failed_count,
+            "total_count": len(merged_data),
+            "new_md5": new_version.content_md5,
         })
     except Exception as e:
         logger.error("CSV导入失败", error=str(e))
-        return Fail(code=400, msg=f"CSV解析失败: {str(e)}")
+        return Fail(code=400, msg=f"CSV导入失败: {str(e)}")
 
 
 @router.get("/rule/export", summary="导出CSV")

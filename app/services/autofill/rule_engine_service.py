@@ -10,6 +10,7 @@ from app.log import logger
 from app.models.autofill import FillDataRecord
 from app.models.enums import AIFillDataStatus
 from app.models.rule_management import RuleInfo, RuleVersion
+from app.services.autofill.prompt_builder_service import PromptBuilderService
 from app.services.autofill.system_prompt_service import system_prompt_service
 from app.services.llm.llm_config_service import llm_config_service
 from app.services.llm.llm_proxy_service import llm_proxy_service
@@ -97,6 +98,9 @@ class RuleEngineService:
                 if not rule_name or not prompt_config:
                     continue
 
+                # 从 prompt_config 中获取该规则特定的 system_prompt_name（如果存在）
+                param_system_prompt_name = prompt_config.get("system_prompt_name") or system_prompt_name
+
                 try:
                     rule_result = await self._execute_single_rule(
                         tenant_id=tenant_id,
@@ -107,7 +111,7 @@ class RuleEngineService:
                         rule_name=rule_name,
                         prompt_config=prompt_config,
                         system_prompt=system_prompt,
-                        system_prompt_name=system_prompt_name
+                        system_prompt_name=param_system_prompt_name
                     )
                     results[rule_name] = rule_result
                 except Exception as e:
@@ -437,6 +441,7 @@ class RuleEngineService:
     ) -> str:
         """
         构建多任务提示词的单个任务部分
+        使用 PromptBuilderService 统一构建
 
         Args:
             task_num: 任务序号
@@ -450,35 +455,24 @@ class RuleEngineService:
         Returns:
             任务提示词部分
         """
-        lines = [f"=== 任务{task_num}：{rule_name} ==="]
-
         if task_type == "choice":
-            lines.append("请从以下选项中选择最匹配的一个：")
-
-            # 构建选项列表
-            for i, row in enumerate(filtered_data, 1):
-                # 构建选项名称
-                option_name = self._build_name_from_fields(row, name_fields, name_separator)
-                if not option_name:
-                    option_name = f"选项{i}"
-
-                # 构建规则描述
-                rule_desc = self._build_name_from_fields(row, rule_fields, "\n")
-
-                lines.append(f" 选项名称：{option_name}")
-                if rule_desc:
-                    lines.append(f" 填写规则：\n {rule_desc} \n")
+            # 使用 PromptBuilderService 统一构建选择题 Prompt
+            return PromptBuilderService.build_multi_task_choice_prompt(
+                task_num=task_num,
+                rule_name=rule_name,
+                filtered_data=filtered_data,
+                name_fields=name_fields,
+                rule_fields=rule_fields,
+                name_separator=name_separator
+            )
         else:  # text
-            lines.append("请根据以下规则生成内容：")
-
-            # 构建规则描述
-            if filtered_data:
-                row = filtered_data[0]
-                rule_desc = self._build_name_from_fields(row, rule_fields, "\n")
-                if rule_desc:
-                    lines.append(rule_desc)
-
-        return "\n".join(lines)
+            # 使用 PromptBuilderService 统一构建填空题 Prompt
+            return PromptBuilderService.build_multi_task_text_prompt(
+                task_num=task_num,
+                rule_name=rule_name,
+                filtered_data=filtered_data,
+                rule_fields=rule_fields
+            )
 
     async def _get_rule_data(
         self,
@@ -622,21 +616,13 @@ class RuleEngineService:
         Returns:
             (system_prompt, full_prompt)
         """
-        # 构建选项列表
-        options_text = []
-        for i, row in enumerate(filtered_data, 1):
-            # 构建选项名称
-            option_name = self._build_name_from_fields(row, name_fields, name_separator)
-            if not option_name:
-                option_name = f"选项{i}"
-
-            # 构建规则描述
-            rule_desc = self._build_name_from_fields(row, rule_fields, "\n")
-
-            option_text = f"{option_name}"
-            if rule_desc:
-                option_text += f"\n{rule_desc}"
-            options_text.append(option_text)
+        # 使用 PromptBuilderService 构建 Markdown 表格
+        md_table = PromptBuilderService.build_choice_prompt_table(
+            filtered_data=filtered_data,
+            name_fields=name_fields,
+            rule_fields=rule_fields,
+            name_separator=name_separator
+        )
 
         # 获取系统提示词（支持动态配置，已包含兜底逻辑和变量替换）
         final_system_prompt = await system_prompt_service.get_system_prompt_for_execution(
@@ -645,7 +631,7 @@ class RuleEngineService:
             system_prompt_name=system_prompt_name,
             category="choice",
             variables={
-                "task_prompts": options_text,
+                "task_prompts": md_table,
                 "query": query
             }
         )

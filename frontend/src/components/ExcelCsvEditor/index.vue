@@ -126,6 +126,15 @@
                 仅勾选的字段允许被新CSV覆盖更新，未勾选字段保持系统原有数据不变（配置实时生效，无需保存）
               </div>
             </a-form-item>
+            <a-form-item>
+              <a-checkbox v-model:checked="allowAddNew">
+                允许新增数据（当主键不存在时，是否将CSV数据作为新行导入）
+              </a-checkbox>
+              <div class="form-help">
+                勾选：主键不存在的CSV数据将作为新行导入系统<br>
+                不勾选：仅更新主键已存在的数据，忽略主键不存在的数据
+              </div>
+            </a-form-item>
           </a-form>
         </div>
 
@@ -287,6 +296,7 @@ const syncFields = ref<string[]>([])
 const selectAllSyncFields = ref(false)
 const isFirstImport = ref(false)
 const allHeaders = ref<string[]>([])
+const allowAddNew = ref(true)  // 是否允许新增数据
 
 // 文件导入状态
 const csvContent = ref('')
@@ -677,6 +687,7 @@ const handleImport = async () => {
   importFileList.value = []
   allHeaders.value = []
   importActiveTab.value = 'file'
+  allowAddNew.value = true
 
   // 先加载已保存的主键配置（只加载主键，同步字段实时计算）
   if (props.ruleId) {
@@ -716,6 +727,7 @@ const handleImportModalClose = () => {
   importFile.value = null
   importFileList.value = []
   allHeaders.value = []
+  allowAddNew.value = true
 }
 
 // 处理CSV内容变化（预览时自动保存主键配置）
@@ -858,7 +870,8 @@ const confirmFileImport = async () => {
       current_md5: currentMd5.value,
       config: {
         primary_keys: primaryKeys.value,
-        sync_fields: syncFields.value
+        sync_fields: syncFields.value,
+        allow_add_new: allowAddNew.value
       }
     }
 
@@ -868,10 +881,15 @@ const confirmFileImport = async () => {
       importResult.value = res.data
       importResultVisible.value = true
 
-      // 刷新表格数据
-      loadRuleDetail()
+      // 检查是否无变化
+      if (res.data.no_change) {
+        message.info(res.data.message || '当前内容没有变化，无需保存新版本')
+      } else {
+        // 刷新表格数据
+        loadRuleDetail()
+        emit('saved')
+      }
       importModalVisible.value = false
-      emit('saved')
     } else {
       message.error(res.msg || '导入失败')
     }

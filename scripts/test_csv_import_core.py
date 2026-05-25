@@ -299,33 +299,188 @@ def test_composite_primary_key():
     print("✅ 联合主键测试通过")
 
 
-def test_validate_duplicate_keys():
-    """测试重复主键校验"""
+def test_duplicate_keys_keep_first():
+    """测试重复主键保留第一条（需求1：去除重复主键校验错误）"""
     print("\n" + "="*60)
-    print("测试9: 重复主键校验")
+    print("测试9: 重复主键保留第一条")
     print("="*60)
 
+    # 场景：CSV中有重复主键，应该保留第一条，忽略后续重复行
     csv_content = "id,name,age\n1,张三,20\n1,李四,25\n2,王五,30"
 
     csv_headers, csv_data = CsvImportCore.parse_csv(csv_content)
+
+    # 验证：validate_data 不再将重复主键视为错误
     is_valid, errors, duplicate_keys = CsvImportCore.validate_data(csv_data, ["id"])
 
     print(f"校验结果: {'通过' if is_valid else '失败'}")
     print(f"错误信息: {errors}")
-    print(f"重复主键: {duplicate_keys}")
+    print(f"重复主键统计: {duplicate_keys}")
 
-    assert not is_valid
+    # 需求1：重复主键不再导致校验失败
+    assert is_valid, "重复主键不应导致校验失败"
+    assert len(errors) == 0, "不应有错误信息"
+
+    # 但duplicate_keys应该返回用于统计
     assert len(duplicate_keys) == 1
     assert duplicate_keys[0]["key"] == "1"
     assert duplicate_keys[0]["count"] == 2
 
-    print("✅ 重复主键校验测试通过")
+    # 验证实际导入时保留第一条
+    merged_data, stats = execute_csv_import(
+        csv_content=csv_content,
+        existing_data=[],
+        existing_headers=[],
+        primary_keys=["id"],
+        sync_fields=["name", "age"],
+        is_first_import=True
+    )
+
+    print(f"导入后数据行数: {len(merged_data)}")
+    print(f"新增: {stats.added_count}")
+
+    # 应该只有2行（id=1的第一条和id=2）
+    assert len(merged_data) == 2
+    assert stats.added_count == 2
+
+    # 验证保留的是第一条（张三）
+    id1_row = next(r for r in merged_data if r["id"] == "1")
+    assert id1_row["name"] == "张三", "应该保留第一条重复数据"
+
+    print("✅ 重复主键保留第一条测试通过")
+
+
+def test_allow_add_new_true():
+    """测试允许新增数据（allow_add_new=True）"""
+    print("\n" + "="*60)
+    print("测试10: 允许新增数据")
+    print("="*60)
+
+    existing_data = [
+        {"id": "1", "name": "张三", "age": "20"},
+    ]
+    existing_headers = ["id", "name", "age"]
+
+    # CSV中有新数据id=2
+    csv_content = "id,name,age\n1,张三丰,21\n2,李四,25"
+
+    merged_data, stats = execute_csv_import(
+        csv_content=csv_content,
+        existing_data=existing_data,
+        existing_headers=existing_headers,
+        primary_keys=["id"],
+        sync_fields=["name", "age"],
+        is_first_import=False,
+        allow_add_new=True  # 允许新增
+    )
+
+    print(f"总行数: {stats.total_count}")
+    print(f"更新: {stats.updated_count}")
+    print(f"新增: {stats.added_count}")
+
+    # 应该更新id=1，新增id=2
+    assert stats.total_count == 2
+    assert stats.updated_count == 1
+    assert stats.added_count == 1
+
+    id1_row = next(r for r in merged_data if r["id"] == "1")
+    id2_row = next(r for r in merged_data if r["id"] == "2")
+    assert id1_row["name"] == "张三丰"
+    assert id2_row["name"] == "李四"
+
+    print("✅ 允许新增数据测试通过")
+
+
+def test_allow_add_new_false():
+    """测试禁止新增数据（allow_add_new=False）"""
+    print("\n" + "="*60)
+    print("测试11: 禁止新增数据")
+    print("="*60)
+
+    existing_data = [
+        {"id": "1", "name": "张三", "age": "20"},
+        {"id": "2", "name": "王五", "age": "30"},  # 这条不会被更新
+    ]
+    existing_headers = ["id", "name", "age"]
+
+    # CSV中有新数据id=3，但allow_add_new=False应该忽略
+    csv_content = "id,name,age\n1,张三丰,21\n3,李四,25"
+
+    merged_data, stats = execute_csv_import(
+        csv_content=csv_content,
+        existing_data=existing_data,
+        existing_headers=existing_headers,
+        primary_keys=["id"],
+        sync_fields=["name", "age"],
+        is_first_import=False,
+        allow_add_new=False  # 禁止新增
+    )
+
+    print(f"总行数: {stats.total_count}")
+    print(f"更新: {stats.updated_count}")
+    print(f"新增: {stats.added_count}")
+
+    # 只更新id=1，id=3被忽略，id=2保持不变
+    assert stats.total_count == 2
+    assert stats.updated_count == 1
+    assert stats.added_count == 0
+
+    # 验证id=1被更新
+    id1_row = next(r for r in merged_data if r["id"] == "1")
+    assert id1_row["name"] == "张三丰"
+
+    # 验证id=2保持不变（新CSV中没有id=2）
+    id2_row = next(r for r in merged_data if r["id"] == "2")
+    assert id2_row["name"] == "王五"
+
+    # 验证id=3不存在
+    id3_row = next((r for r in merged_data if r.get("id") == "3"), None)
+    assert id3_row is None, "id=3不应该被添加"
+
+    print("✅ 禁止新增数据测试通过")
+
+
+def test_allow_add_new_false_clear_missing_fields():
+    """测试禁止新增时，旧数据中sync_fields在新CSV不存在则清空"""
+    print("\n" + "="*60)
+    print("测试12: 禁止新增时清空缺失字段")
+    print("="*60)
+
+    existing_data = [
+        {"id": "1", "name": "张三", "age": "20", "city": "北京"},
+    ]
+    existing_headers = ["id", "name", "age", "city"]
+
+    # 新CSV中id=1没有age字段
+    csv_content = "id,name,city\n1,张三丰,上海"
+
+    merged_data, stats = execute_csv_import(
+        csv_content=csv_content,
+        existing_data=existing_data,
+        existing_headers=existing_headers,
+        primary_keys=["id"],
+        sync_fields=["name", "age", "city"],  # age在sync_fields中
+        is_first_import=False,
+        allow_add_new=False
+    )
+
+    print(f"总行数: {stats.total_count}")
+
+    id1_row = next(r for r in merged_data if r["id"] == "1")
+    print(f"id=1数据: {id1_row}")
+
+    # name和city应该更新，age应该被清空（因为新CSV中没有）
+    assert id1_row["name"] == "张三丰"
+    assert id1_row["city"] == "上海"
+    assert id1_row["age"] == "", "age应该被清空"
+
+    print("✅ 禁止新增时清空缺失字段测试通过")
 
 
 def test_preserve_existing_data():
     """测试保留未匹配的旧数据"""
     print("\n" + "="*60)
-    print("测试10: 保留未匹配的旧数据")
+    print("测试13: 保留未匹配的旧数据")
     print("="*60)
 
     existing_data = [
@@ -373,7 +528,10 @@ def run_all_tests():
         test_header_compatibility,
         test_skip_empty_primary_key,
         test_composite_primary_key,
-        test_validate_duplicate_keys,
+        test_duplicate_keys_keep_first,  # 需求1：重复主键保留第一条
+        test_allow_add_new_true,          # 需求2：允许新增数据
+        test_allow_add_new_false,         # 需求2：禁止新增数据
+        test_allow_add_new_false_clear_missing_fields,  # 需求2：清空缺失字段
         test_preserve_existing_data,
     ]
 
