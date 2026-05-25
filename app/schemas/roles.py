@@ -37,7 +37,7 @@ class RoleUpdate(BaseModel):
 class RoleUpdateMenusApis(BaseModel):
     id: int
     menu_ids: list[int] = []
-    api_infos: list[dict] = []
+    api_codes: list[str] = []
 
 
 class RoleQuery(BaseModel):

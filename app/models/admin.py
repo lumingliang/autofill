@@ -45,6 +45,7 @@ class Role(BaseModel, TimestampMixin):
 
 
 class Api(BaseModel, TimestampMixin):
+    api_code = fields.CharField(max_length=100, description="API唯一编码", unique=True, index=True)
     path = fields.CharField(max_length=100, description="API路径", index=True)
     method = fields.CharEnumField(MethodType, description="请求方法", index=True)
     summary = fields.CharField(max_length=500, default="", description="请求简介", index=True)

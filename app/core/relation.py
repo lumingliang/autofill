@@ -280,23 +280,23 @@ class RelationQuery:
         return {r["api_id"] for r in rows}
     
     @staticmethod
-    async def get_user_api_permissions(user_id: int, tenant_id: int | None) -> Set[Tuple[str, str]]:
+    async def get_user_api_permissions(user_id: int, tenant_id: int | None) -> Set[str]:
         """获取用户在指定租户下的所有 API 权限 - 优化版（单条查询）"""
         role_ids = await RelationQuery.get_role_ids_by_user_id(user_id)
         if not role_ids or not tenant_id:
             return set()
-        
-        # 直接通过关联查询获取 API method 和 path，避免多次查询
+
+        # 直接通过关联查询获取 API id
         rows = await RoleApi.filter(
             role_id__in=role_ids,
             tenant_id=tenant_id
         ).values("api_id")
-        
+
         if not rows:
             return set()
-        
+
         api_ids = [r["api_id"] for r in rows]
-        api_rows = await Api.filter(id__in=api_ids).values("method", "path")
-        
-        return {(r["method"], r["path"]) for r in api_rows}
+        api_rows = await Api.filter(id__in=api_ids).values("api_code")
+
+        return {r["api_code"] for r in api_rows}
 

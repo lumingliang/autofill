@@ -277,15 +277,14 @@ function buildApiTree(data: any[]) {
   const groupedData: any = {}
   data.forEach((item: any) => {
     const tags = item['tags']
-    const pathParts = item['path'].split('/')
-    const path = pathParts.slice(0, -1).join('/')
     const summary = tags.charAt(0).toUpperCase() + tags.slice(1)
-    const unique_id = item['method'].toLowerCase() + item['path']
-    if (!(path in groupedData)) {
-      groupedData[path] = { unique_id: path, path: path, summary: summary, children: [] }
+    const unique_id = item['api_code']
+    if (!(tags in groupedData)) {
+      groupedData[tags] = { unique_id: tags, path: tags, summary: summary, children: [] }
     }
-    groupedData[path].children.push({
+    groupedData[tags].children.push({
       id: item['id'],
+      api_code: item['api_code'],
       path: item['path'],
       method: item['method'],
       summary: item['summary'],
@@ -308,7 +307,7 @@ async function handleSetPermission(record: any) {
     apiOptions.value = buildApiTree(apisResponse.data || [])
     menuIds.value = (roleAuthorizedResponse.data?.menus || []).map((v: any) => v.id)
     apiIds.value = (roleAuthorizedResponse.data?.apis || []).map(
-      (v: any) => v.method.toLowerCase() + v.path
+      (v: any) => v.api_code
     )
 
     drawerVisible.value = true
@@ -320,12 +319,12 @@ async function handleSetPermission(record: any) {
 
 // 更新权限
 async function updateRoleAuthorized() {
-  const apiInfos: any[] = []
+  const apiCodes: string[] = []
   apiOptions.value.forEach((group: any) => {
     if (group.children) {
       group.children.forEach((item: any) => {
         if (apiIds.value.includes(item.unique_id)) {
-          apiInfos.push({ path: item.path, method: item.method })
+          apiCodes.push(item.api_code)
         }
       })
     }
@@ -335,7 +334,7 @@ async function updateRoleAuthorized() {
     const res: any = await api.updateRoleAuthorized({
       id: roleId.value,
       menu_ids: menuIds.value,
-      api_infos: apiInfos,
+      api_codes: apiCodes,
     })
     if (res.code === 200) {
       window.$message?.success('设置成功')
@@ -345,7 +344,7 @@ async function updateRoleAuthorized() {
 
     const result = await api.getRoleAuthorized({ id: roleId.value })
     menuIds.value = (result.data?.menus || []).map((v: any) => v.id)
-    apiIds.value = (result.data?.apis || []).map((v: any) => v.method.toLowerCase() + v.path)
+    apiIds.value = (result.data?.apis || []).map((v: any) => v.api_code)
   } catch (error: any) {
     window.$message?.error('设置失败: ' + error.message)
   }

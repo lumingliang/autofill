@@ -32,6 +32,46 @@ class ApiController(CRUDBase[Api, ApiCreate, ApiUpdate]):
             return False
         return True
 
+    def generate_api_code(self, path: str, method: str) -> str:
+        """
+        生成API Code - 纯算法确保全局唯一性，无需查询数据库
+        规则: {resource}:{action}:{method}
+        
+        示例:
+          - GET /api/v1/user/list -> user:list:get
+          - POST /api/v1/user/create -> user:create:post
+          - GET /api/v1/autofill/app -> autofill:app:get
+          - POST /api/v1/autofill/app -> autofill:app:post
+          - GET /api/v1/user/role/list -> user:role_list:get
+          - PUT /api/v1/user/update/1 -> user:update_id:put
+        """
+        # 移除 /api/v1/ 前缀
+        path = path.replace("/api/v1/", "").strip("/")
+        parts = path.split("/")
+
+        if len(parts) >= 2:
+            resource = parts[0]
+            # 将剩余路径部分用下划线连接作为action
+            action_parts = []
+            for p in parts[1:]:
+                # 移除路径参数标记 {id} -> id
+                p = p.replace("{", "").replace("}", "")
+                action_parts.append(p)
+            action = "_".join(action_parts)
+        elif len(parts) == 1:
+            resource = parts[0]
+            action = "default"
+        else:
+            resource = "unknown"
+            action = "default"
+
+        # 方法名统一小写
+        method_lower = method.lower()
+
+        # 格式: resource:action:method，确保唯一性
+        # 因为同一个path+method组合是唯一的，所以生成的api_code也是唯一的
+        return f"{resource}:{action}:{method_lower}"
+
     async def refresh_api(self, app):
         # 删除废弃API数据
         all_api_list = []
@@ -41,11 +81,10 @@ class ApiController(CRUDBase[Api, ApiCreate, ApiUpdate]):
         delete_api = []
         for api in await Api.all():
             if (api.method, api.path) not in all_api_list:
-                delete_api.append((api.method, api.path))
-        for item in delete_api:
-            method, path = item
-            logger.debug(f"API Deleted {method} {path}")
-            await Api.filter(method=method, path=path).delete()
+                delete_api.append(api.id)
+        for api_id in delete_api:
+            logger.debug(f"API Deleted id={api_id}")
+            await Api.filter(id=api_id).delete()
 
         for route in app.routes:
             if self._should_manage_api(route):
@@ -53,12 +92,29 @@ class ApiController(CRUDBase[Api, ApiCreate, ApiUpdate]):
                 path = route.path_format
                 summary = route.summary
                 tags = list(route.tags)[0] if route.tags else ""
+                
+                # 直接生成唯一的api_code，无需查询数据库
+                # 因为path+method组合是唯一的，所以生成的api_code也是唯一的
+                api_code = self.generate_api_code(path, method)
+
                 api_obj = await Api.filter(method=method, path=path).first()
                 if api_obj:
-                    await api_obj.update_from_dict(dict(method=method, path=path, summary=summary, tags=tags))
+                    await api_obj.update_from_dict(dict(
+                        api_code=api_code,
+                        method=method,
+                        path=path,
+                        summary=summary,
+                        tags=tags
+                    ))
                 else:
-                    logger.debug(f"API Created {method} {path}")
-                    await Api.create(**dict(method=method, path=path, summary=summary, tags=tags))
+                    logger.debug(f"API Created {api_code} {method} {path}")
+                    await Api.create(**dict(
+                        api_code=api_code,
+                        method=method,
+                        path=path,
+                        summary=summary,
+                        tags=tags
+                    ))
 
 
 api_controller = ApiController()

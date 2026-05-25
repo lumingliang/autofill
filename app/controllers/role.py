@@ -24,7 +24,7 @@ class RoleController(CRUDBase[Role, RoleCreate, RoleUpdate]):
         """获取系统级角色（不归属特定租户）"""
         return await self.model.filter(tenant_id=None).all()
 
-    async def update_roles(self, role: Role, menu_ids: List[int], api_infos: List[dict]) -> None:
+    async def update_roles(self, role: Role, menu_ids: List[int], api_codes: List[str]) -> None:
         """更新角色的菜单和API权限，采用批量操作，自动填充tenant_id"""
         # 从role获取tenant_id
         tenant_id = role.tenant_id
@@ -32,22 +32,11 @@ class RoleController(CRUDBase[Role, RoleCreate, RoleUpdate]):
         # 批量替换菜单关联
         await RelationQuery.replace_role_menus(role.id, menu_ids, tenant_id=tenant_id)
 
-        # 查询API IDs（批量查询）
+        # 通过api_code查询API IDs
         api_ids = []
-        if api_infos:
-            conditions = []
-            for item in api_infos:
-                conditions.append(
-                    {"path": item.get("path"), "method": item.get("method")}
-                )
-            # 由于tortoise不支持OR条件批量查询多个path/method组合，这里采用分批IN查询优化
-            paths = [item.get("path") for item in api_infos if item.get("path")]
-            methods = [item.get("method") for item in api_infos if item.get("method")]
-            if paths and methods:
-                api_objs = await Api.filter(path__in=paths, method__in=methods).all()
-                # 精确匹配 path+method 组合
-                target_set = {(item.get("path"), item.get("method")) for item in api_infos}
-                api_ids = [a.id for a in api_objs if (a.path, a.method) in target_set]
+        if api_codes:
+            api_objs = await Api.filter(api_code__in=api_codes).all()
+            api_ids = [a.id for a in api_objs]
 
         # 批量替换API关联
         await RelationQuery.replace_role_apis(role.id, api_ids, tenant_id=tenant_id)

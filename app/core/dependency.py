@@ -4,10 +4,10 @@ from fastapi import Depends, Header, HTTPException, Request
 
 from app.core.ctx import CTX_USER_ID
 from app.core.relation import RelationQuery
-from app.core.redis import redis_client
 from app.core.tenant import TenantContext
 from app.models import User
 from app.models.admin import Api
+from app.services.permission_cache_service import permission_cache_service
 from app.settings import settings
 
 
@@ -50,34 +50,26 @@ class PermissionControl:
         method = request.method
         path = request.url.path
         tenant_id = getattr(current_user, "current_tenant_id", 0)
-        cache_key = f"user_perms:{current_user.id}:{tenant_id}"
 
         try:
-            cached_perms = await redis_client.get_json(cache_key)
-            if cached_perms:
-                permission_apis = set(tuple(p) for p in cached_perms)
-            else:
-                role_ids = await RelationQuery.get_role_ids_by_user_id(current_user.id)
-                if not role_ids:
-                    raise HTTPException(status_code=403, detail="用户未绑定角色")
+            # 使用权限缓存服务获取用户权限
+            permission_apis = await permission_cache_service.get_user_permissions(current_user.id, tenant_id)
 
-                permission_apis = await RelationQuery.get_user_api_permissions(current_user.id, tenant_id)
+            if permission_apis is None:
+                raise HTTPException(status_code=403, detail="用户未绑定角色")
 
-                if not permission_apis:
-                    raise HTTPException(status_code=403, detail="用户未绑定角色")
+            # 获取当前请求的API code
+            current_api = await Api.filter(method=method, path=path).first()
+            if not current_api:
+                raise HTTPException(status_code=403, detail="API未注册")
 
-                await redis_client.set_json(
-                    cache_key,
-                    [list(p) for p in permission_apis],
-                    ttl=300
-                )
-
-            if (method, path) not in permission_apis:
+            if current_api.api_code not in permission_apis:
                 raise HTTPException(status_code=403, detail="无权限访问")
 
         except HTTPException:
             raise
         except Exception:
+            # 降级处理：直接从数据库获取权限
             role_ids = await RelationQuery.get_role_ids_by_user_id(current_user.id)
             if not role_ids:
                 raise HTTPException(status_code=403, detail="用户未绑定角色")
@@ -88,10 +80,15 @@ class PermissionControl:
             if not all_api_ids:
                 raise HTTPException(status_code=403, detail="用户未绑定角色")
 
-            apis = await Api.filter(id__in=all_api_ids).values("method", "path")
-            permission_apis = {(api["method"], api["path"]) for api in apis}
+            apis = await Api.filter(id__in=all_api_ids).values("api_code")
+            permission_apis = {api["api_code"] for api in apis}
 
-            if (method, path) not in permission_apis:
+            # 获取当前请求的API code
+            current_api = await Api.filter(method=method, path=path).first()
+            if not current_api:
+                raise HTTPException(status_code=403, detail="API未注册")
+
+            if current_api.api_code not in permission_apis:
                 raise HTTPException(status_code=403, detail="无权限访问")
 
 

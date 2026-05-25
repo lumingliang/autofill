@@ -8,6 +8,7 @@ from app.core.dependency import AuthControl, is_superuser, build_tenant_query, T
 from app.core.relation import RelationQuery
 from app.log import logger
 from app.models.admin import Api, Menu, Role, Tenant, User, UserRole, UserTenant
+from app.services.permission_cache_service import permission_cache_service
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.roles import *
 router = APIRouter()
@@ -181,7 +182,7 @@ async def update_role_authorized(
         ).values_list("id", flat=True)
 
         allowed_menu_ids = set()
-        allowed_api_paths = set()
+        allowed_api_codes = set()
 
         if target_role_ids:
             # 批量查询菜单权限
@@ -197,7 +198,7 @@ async def update_role_authorized(
 
             if all_api_ids:
                 api_objs = await Api.filter(id__in=all_api_ids).all()
-                allowed_api_paths = {(a.path, a.method.lower()) for a in api_objs}
+                allowed_api_codes = {a.api_code for a in api_objs}
 
         # 验证要分配的菜单权限是否都在允许范围内
         for menu_id in role_in.menu_ids:
@@ -205,12 +206,15 @@ async def update_role_authorized(
                 return Fail(code=403, msg=f"您没有权限分配菜单ID: {menu_id}")
 
         # 验证要分配的API权限是否都在允许范围内
-        for api_info in role_in.api_infos:
-            api_key = (api_info.get("path"), api_info.get("method", "").lower())
-            if api_key not in allowed_api_paths:
-                return Fail(code=403, msg=f"您没有权限分配API: {api_info.get('method')} {api_info.get('path')}")
+        for api_code in role_in.api_codes:
+            if api_code not in allowed_api_codes:
+                return Fail(code=403, msg=f"您没有权限分配API: {api_code}")
 
-    await role_controller.update_roles(role=role_obj, menu_ids=role_in.menu_ids, api_infos=role_in.api_infos)
+    await role_controller.update_roles(role=role_obj, menu_ids=role_in.menu_ids, api_codes=role_in.api_codes)
+
+    # 清除该角色下所有用户的权限缓存
+    await permission_cache_service.clear_role_users_cache(role_in.id)
+
     return Success(msg="更新成功")
 
 

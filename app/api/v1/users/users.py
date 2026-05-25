@@ -9,6 +9,7 @@ from app.core.dependency import AuthControl, is_superuser, build_tenant_query, T
 from app.core.relation import RelationQuery
 from app.log import logger
 from app.models.admin import DeptClosure, Role, Tenant, User, UserRole, UserTenant
+from app.services.permission_cache_service import permission_cache_service
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.users import *
 from app.settings import settings
@@ -282,5 +283,8 @@ async def update_user_tenant_roles(
     user_tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(data.user_id)
     if target_tenant_id not in user_tenant_ids:
         await UserTenant.create(user_id=data.user_id, tenant_id=target_tenant_id)
+
+    # 清除该用户在该租户下的权限缓存
+    await permission_cache_service.clear_user_cache(data.user_id, target_tenant_id)
 
     return Success(msg="更新成功")

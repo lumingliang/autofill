@@ -43,6 +43,10 @@ class RedisClient:
         else:
             await self.client.set(self.key(key), data)
     
+    async def delete(self, key: str):
+        """删除指定的 key"""
+        await self.client.delete(self.key(key))
+
     async def delete_pattern(self, pattern: str):
         """批量删除匹配的 key"""
         keys = await self.client.keys(self.key(pattern))

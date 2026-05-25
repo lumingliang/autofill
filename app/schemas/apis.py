@@ -4,6 +4,7 @@ from app.models.enums import MethodType
 
 
 class BaseApi(BaseModel):
+    api_code: str = Field(..., description="API唯一编码", example="user:list")
     path: str = Field(..., description="API路径", example="/api/v1/user/list")
     summary: str = Field("", description="API简介", example="查看用户列表")
     method: MethodType = Field(..., description="API方法", example="GET")
