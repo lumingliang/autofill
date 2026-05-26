@@ -452,15 +452,16 @@ async def import_csv(
     tenant_id: int = Query(0, description="租户ID"),
     token: str = Header(..., description="token验证"),
 ):
-    """导入CSV文件，执行增量导入并保存为新版本
+    """导入CSV文件，执行增量导入并保存为新版本（直接落库到seekdb）
 
     权限：
     - 超管：可传 tenant_id 指定租户
     - 普通用户：使用当前租户（从build_tenant_query获取）
     """
-    from app.services.rule_management.csv_import_core import (
-        CsvImportCore, ImportConfig, ImportStats
+    from app.services.rule_management.csv_import_seekdb import (
+        CsvImportSeekdbService
     )
+    from app.services.storage.seekdb_service import seekdb_service
 
     current_user = await AuthControl.is_authed(token)
 
@@ -486,72 +487,71 @@ async def import_csv(
         content = await file.read()
         csv_content = content.decode('utf-8')
 
-        # 获取现有数据
-        existing_data: List[Dict[str, Any]] = []
-        existing_headers: List[str] = []
-        is_first_import = True
+        # 判断是否首次导入
+        is_first_import = rule.latest_version_id is None
 
+        # 计算新版本号
+        version_no = 1
         if rule.latest_version_id:
             version_obj = await RuleVersion.filter(
                 id=rule.latest_version_id,
                 deleted=0
             ).first()
             if version_obj:
-                content_json = await rule_service._get_content_json(version_obj)
-                if content_json:
-                    existing_headers = content_json.get("headers", [])
-                    data = content_json.get("data", [])
-                    # 转换为字典列表
-                    for row in data:
-                        row_dict = {
-                            header: row[i] if i < len(row) else ""
-                            for i, header in enumerate(existing_headers)
-                        }
-                        existing_data.append(row_dict)
-                    is_first_import = False
+                version_no = version_obj.version_no + 1
+
+        # 构建集合名称
+        collection_name = f"rule_{rule.id}_{rule.rule_code}_v{version_no}"
 
         # 解析导入配置
         config_dict = json.loads(rule.config) if rule.config else {}
         primary_keys = config_dict.get("primary_keys", [])
 
-        # 从CSV表头获取同步字段（排除主键）
-        csv_headers, _ = CsvImportCore.parse_csv(csv_content)
+        # 解析CSV获取表头和同步字段
+        import csv
+        import io
+        reader = csv.DictReader(io.StringIO(csv_content.strip()))
+        csv_headers = [h.strip() for h in (reader.fieldnames or [])]
         sync_fields = [h for h in csv_headers if h not in primary_keys]
 
-        # 执行导入
-        import_config = ImportConfig(
-            primary_keys=primary_keys,
-            sync_fields=sync_fields
-        )
-
-        merged_data, stats = CsvImportCore.execute_import(
+        # 执行导入（直接落库到seekdb）
+        result = await CsvImportSeekdbService.execute_import(
+            collection_name=collection_name,
             csv_content=csv_content,
-            existing_data=existing_data,
-            existing_headers=existing_headers,
-            config=import_config,
+            rule_id=rule.id,
+            version_no=version_no,
+            tenant_id=rule.tenant_id,
+            app_name=rule.app_name,
+            rule_code=rule.rule_code,
+            primary_keys=primary_keys,
+            sync_fields=sync_fields,
             is_first_import=is_first_import,
             allow_add_new=allow_add_new
         )
 
-        # 转换为CSV格式保存
-        if merged_data:
-            all_headers = list(merged_data[0].keys())
-            csv_data = [
-                [str(row.get(h, "")) for h in all_headers] for row in merged_data
-            ]
-        else:
-            all_headers = []
-            csv_data = []
+        if "error" in result:
+            return Fail(code=400, msg=result["error"])
+
+        # 从seekdb读取数据保存到版本
+        collection = seekdb_service.get_or_create_collection(collection_name)
+        seekdb_results = collection.get()
+
+        all_headers = result.get("headers", [])
+        csv_data = []
+
+        if seekdb_results and seekdb_results.get("metadatas"):
+            for metadata in seekdb_results["metadatas"]:
+                row_data = metadata.get("data", {})
+                row_list = [row_data.get(h, "") for h in all_headers]
+                csv_data.append(row_list)
 
         save_content_json = {"headers": all_headers, "data": csv_data}
 
         # 构建备注
-        if stats.added_count > 0 and stats.updated_count == 0:
-            remark = f"CSV导入：新增{stats.added_count}条，跳过{stats.skipped_count}条"
+        if result["added_count"] > 0 and result["updated_count"] == 0:
+            remark = f"CSV导入：新增{result['added_count']}条，跳过{result['skipped_count']}条"
         else:
-            remark = f"CSV导入：新增{stats.added_count}条，更新{stats.updated_count}条，跳过{stats.skipped_count}条"
-        if stats.failed_count > 0:
-            remark += f"，失败{stats.failed_count}条"
+            remark = f"CSV导入：新增{result['added_count']}条，更新{result['updated_count']}条，跳过{result['skipped_count']}条"
 
         # 保存新版本
         new_version = await rule_version_controller.save_version(
@@ -565,10 +565,9 @@ async def import_csv(
             "CSV导入成功",
             rule_id=rule.id,
             version_no=new_version.version_no,
-            added=stats.added_count,
-            updated=stats.updated_count,
-            skipped=stats.skipped_count,
-            failed=stats.failed_count,
+            added=result["added_count"],
+            updated=result["updated_count"],
+            skipped=result["skipped_count"],
             allow_add_new=allow_add_new
         )
 
@@ -578,11 +577,10 @@ async def import_csv(
             "row_count": len(csv_data),
             "full_content": save_content_json,
             "version_no": new_version.version_no,
-            "added_count": stats.added_count,
-            "updated_count": stats.updated_count,
-            "skipped_count": stats.skipped_count,
-            "failed_count": stats.failed_count,
-            "total_count": len(merged_data),
+            "added_count": result["added_count"],
+            "updated_count": result["updated_count"],
+            "skipped_count": result["skipped_count"],
+            "total_count": result["total_count"],
             "new_md5": new_version.content_md5,
         })
     except Exception as e:

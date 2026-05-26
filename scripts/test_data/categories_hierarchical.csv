@@ -1,0 +1,7 @@
+level1_code,level1_name,level2_code,level2_name,level3_code,level3_name,description
+ELEC,电子产品,PHONE,手机,SMART,智能手机,高端智能手机系列
+ELEC,电子产品,PHONE,手机,FEATURE,功能手机,基础功能手机
+ELEC,电子产品,COMP,电脑,LAPTOP,笔记本电脑,便携笔记本系列
+ELEC,电子产品,COMP,电脑,DESKTOP,台式电脑,台式工作站
+HOME,家居用品,FURN,家具,SOFA,沙发,客厅沙发系列
+HOME,家居用品,FURN,家具,TABLE,餐桌,餐厅家具系列

@@ -1,0 +1,4 @@
+product_code,product_name,category,price,stock,supplier,warehouse_location,last_updated
+P001,iPhone 15 Pro,手机,6999,150,Apple,北京仓,2024-01-15
+P002,MacBook Pro M3,电脑,15999,45,Apple,上海仓,2024-01-15
+P006,iPad Air,平板,4799,120,Apple,广州仓,2024-01-15

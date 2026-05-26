@@ -1,0 +1,6 @@
+employee_id,name,department,position,salary,email,phone
+E001,张三,技术部,工程师,15000,zhangsan@company.com,13800138001
+E002,李四,技术部,高级工程师,20000,lisi@company.com,13800138002
+E003,王五,产品部,产品经理,18000,wangwu@company.com,13800138003
+E004,赵六,销售部,销售经理,22000,zhaoliu@company.com,13800138004
+E005,孙七,人事部,HR专员,12000,sunqi@company.com,13800138005

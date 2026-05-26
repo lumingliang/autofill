@@ -1,0 +1,6 @@
+product_code,product_name,category,price,stock,supplier
+P001,iPhone 15,手机,5999,100,Apple
+P002,MacBook Pro,电脑,14999,50,Apple
+P003,AirPods Pro,耳机,1999,200,Apple
+P004,Galaxy S24,手机,5499,80,Samsung
+P005,ThinkPad X1,电脑,12999,30,Lenovo
