@@ -1,210 +1,115 @@
 """
-CSV 导入 seekdb 服务
-支持全量导入、增量导入、表头变更处理
+CSV 导入 seekdb 服务 - 优化版
+
+设计原则：
+1. 使用最小遍历次数的优化算法
+2. 支持首次全量导入和增量导入
+3. 支持联合主键和选择性字段同步
+4. 支持 allow_add_new 开关控制是否新增数据
+5. 直接落库到 seekdb
 """
+
 import csv
 import io
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set, Tuple, Iterator
 
 from app.log import logger
 from app.services.storage.seekdb_service import seekdb_service
 
 
+@dataclass
+class ImportStats:
+    """导入统计信息"""
+    added_count: int = 0
+    updated_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    total_count: int = 0
+    failed_reasons: List[Dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "added_count": self.added_count,
+            "updated_count": self.updated_count,
+            "skipped_count": self.skipped_count,
+            "failed_count": self.failed_count,
+            "total_count": self.total_count,
+            "failed_reasons": self.failed_reasons
+        }
+
+
 class CsvImportSeekdbService:
-    """CSV 导入 seekdb 服务"""
+    """CSV 导入 seekdb 服务 - 优化版"""
 
     @staticmethod
-    def parse_csv(csv_content: str) -> Tuple[List[str], List[Dict[str, str]]]:
+    def parse_csv_streaming(csv_content: str) -> Tuple[List[str], Iterator[Dict[str, str]]]:
         """
-        解析 CSV 内容
+        流式解析CSV，返回表头和行迭代器
 
         Args:
             csv_content: CSV 字符串内容
 
         Returns:
-            (headers, data) - 表头列表和数据字典列表
+            (headers, row_generator)
         """
-        reader = csv.DictReader(io.StringIO(csv_content))
-        headers = reader.fieldnames or []
-        data = list(reader)
-        return headers, data
+        if not csv_content or not csv_content.strip():
+            return [], iter([])
+
+        reader = csv.DictReader(io.StringIO(csv_content.strip()))
+        raw_headers = reader.fieldnames or []
+        headers = [h.strip() for h in raw_headers]
+
+        header_mapping = {raw: stripped for raw, stripped in zip(raw_headers, headers)}
+
+        def row_generator():
+            for row in reader:
+                yield {header_mapping.get(k, k): v for k, v in row.items()}
+
+        return headers, row_generator()
 
     @staticmethod
-    def merge_headers(
-        existing_headers: List[str],
-        new_headers: List[str]
-    ) -> Tuple[List[str], Dict[str, str]]:
+    def build_primary_key(row: Dict[str, Any], primary_keys: List[str]) -> Optional[str]:
         """
-        合并表头，处理字段增删
+        构建主键值
 
-        Args:
-            existing_headers: 现有表头列表
-            new_headers: 新表头列表
-
-        Returns:
-            (merged_headers, field_mapping)
-            - merged_headers: 合并后的表头列表（保留所有字段）
-            - field_mapping: 字段映射关系 {新字段名: 原字段名}
+        规则：
+        - 无主键配置时返回特殊标记
+        - 全部主键字段同时为空，返回None（跳过该行）
         """
-        # 保留现有表头顺序
-        merged_headers = existing_headers.copy()
+        if not primary_keys:
+            return "__no_pk__"
 
-        # 添加新字段到末尾
-        for header in new_headers:
-            if header not in merged_headers:
-                merged_headers.append(header)
+        key_parts = []
+        all_empty = True
 
-        # 构建字段映射（用于处理字段重命名，后续可扩展）
-        field_mapping = {}
-        for header in new_headers:
-            if header in existing_headers:
-                field_mapping[header] = header
+        for key in primary_keys:
+            val = row.get(key, "")
+            if val is not None and str(val).strip() != "":
+                all_empty = False
+            key_parts.append(str(val) if val is not None else "")
 
-        return merged_headers, field_mapping
+        if all_empty:
+            return None
+
+        return "|".join(key_parts)
 
     @staticmethod
-    def migrate_row_data(
-        row: Dict[str, str],
-        merged_headers: List[str],
-        existing_headers: List[str]
-    ) -> Dict[str, str]:
+    def merge_headers(existing: List[str], new: List[str]) -> List[str]:
         """
-        迁移行数据到新的表头结构
-
-        Args:
-            row: 原始行数据
-            merged_headers: 合并后的表头列表
-            existing_headers: 现有表头列表
-
-        Returns:
-            迁移后的行数据（包含所有字段，缺失字段为空字符串）
+        合并表头：保留旧表头顺序，追加新字段
         """
-        migrated_data = {}
+        existing_set = set(existing)
+        merged = list(existing)
 
-        for header in merged_headers:
-            if header in row:
-                # 新 CSV 中有该字段
-                migrated_data[header] = row[header]
-            elif header in existing_headers:
-                # 该字段在现有表头中但不在新 CSV 中（被删除的字段）
-                # 保留空值
-                migrated_data[header] = ""
-            else:
-                # 新增字段，设为空值
-                migrated_data[header] = ""
+        for h in new:
+            if h not in existing_set:
+                merged.append(h)
 
-        return migrated_data
+        return merged
 
     @staticmethod
-    def detect_header_compatibility(
-        existing_headers: List[str],
-        new_headers: List[str]
-    ) -> Dict[str, Any]:
-        """
-        检测表头兼容性
-
-        Args:
-            existing_headers: 现有表头
-            new_headers: 新表头
-
-        Returns:
-            兼容性分析结果
-        """
-        existing_set = set(existing_headers)
-        new_set = set(new_headers)
-
-        added = new_set - existing_set
-        removed = existing_set - new_set
-        common = existing_set & new_set
-
-        # 判断兼容性级别
-        if not added and not removed:
-            level = "compatible"  # 完全兼容（仅顺序变化）
-        elif not removed and added:
-            level = "additive"  # 向后兼容（仅新增字段）
-        elif removed and not added:
-            level = "destructive"  # 破坏性变更（删除字段）
-        else:
-            level = "mixed"  # 混合变更（增删都有）
-
-        return {
-            "level": level,
-            "added_fields": list(added),
-            "removed_fields": list(removed),
-            "common_fields": list(common),
-            "is_safe": level in ["compatible", "additive"],
-            "warning": None if level in ["compatible", "additive"] else
-                      f"检测到表头变更：新增 {len(added)} 个字段，删除 {len(removed)} 个字段"
-        }
-
-    @staticmethod
-    async def full_import(
-        collection_name: str,
-        csv_content: str,
-        rule_id: int,
-        version_no: int,
-        tenant_id: int,
-        app_name: str,
-        rule_code: str
-    ) -> Dict[str, Any]:
-        """
-        全量导入 CSV 到 seekdb
-
-        Args:
-            collection_name: seekdb 集合名称
-            csv_content: CSV 字符串内容
-            rule_id: 规则ID
-            version_no: 版本号
-            tenant_id: 租户ID
-            app_name: 应用名称
-            rule_code: 规则编码
-
-        Returns:
-            导入结果统计
-        """
-        # 1. 解析 CSV
-        headers, data = CsvImportSeekdbService.parse_csv(csv_content)
-
-        if not headers:
-            return {
-                "error": "CSV 表头为空",
-                "added_count": 0,
-                "updated_count": 0,
-                "headers_changed": False
-            }
-
-        # 2. 删除旧集合（如果存在）
-        seekdb_service.delete_collection(collection_name)
-
-        # 3. 保存到 seekdb
-        doc_count = await seekdb_service.save_rule_data(
-            collection_name=collection_name,
-            headers=headers,
-            data=data,
-            rule_id=rule_id,
-            version_no=version_no,
-            tenant_id=tenant_id,
-            app_name=app_name,
-            rule_code=rule_code
-        )
-
-        logger.info(
-            "全量导入 CSV 到 seekdb",
-            collection_name=collection_name,
-            doc_count=doc_count,
-            headers=headers
-        )
-
-        return {
-            "added_count": doc_count,
-            "updated_count": 0,
-            "total_count": doc_count,
-            "headers": headers,
-            "collection_name": collection_name
-        }
-
-    @staticmethod
-    async def incremental_import(
+    async def execute_import(
         collection_name: str,
         csv_content: str,
         rule_id: int,
@@ -212,13 +117,17 @@ class CsvImportSeekdbService:
         tenant_id: int,
         app_name: str,
         rule_code: str,
-        primary_keys: List[str]
+        primary_keys: List[str],
+        sync_fields: List[str],
+        is_first_import: bool = False,
+        allow_add_new: bool = True,
+        source_collection_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        增量导入 CSV 到 seekdb
+        执行 CSV 导入到 seekdb
 
         Args:
-            collection_name: seekdb 集合名称
+            collection_name: seekdb 集合名称（目标集合）
             csv_content: CSV 字符串内容
             rule_id: 规则ID
             version_no: 版本号
@@ -226,265 +135,282 @@ class CsvImportSeekdbService:
             app_name: 应用名称
             rule_code: 规则编码
             primary_keys: 主键字段列表
+            sync_fields: 需要同步更新的字段列表
+            is_first_import: 是否首次导入
+            allow_add_new: 是否允许新增数据
+            source_collection_name: 源集合名称（用于读取旧数据，增量导入时使用）
 
         Returns:
             导入结果统计
         """
-        # 1. 解析新 CSV
-        new_headers, new_data = CsvImportSeekdbService.parse_csv(csv_content)
+        primary_keys = primary_keys or []
+        sync_fields_set = set(sync_fields or [])
+        stats = ImportStats()
 
-        if not new_headers:
+        csv_headers, csv_rows = CsvImportSeekdbService.parse_csv_streaming(csv_content)
+
+        if not csv_headers:
             return {
                 "error": "CSV 表头为空",
                 "added_count": 0,
                 "updated_count": 0,
-                "headers_changed": False
+                "skipped_count": 0
             }
 
-        # 2. 获取现有数据
-        collection = seekdb_service.get_or_create_collection(collection_name)
-        existing_results = collection.get()
-
-        existing_headers = []
-        existing_dict = {}
-
-        if existing_results and existing_results.get("metadatas"):
-            # 从第一条记录获取现有表头
-            existing_headers = existing_results["metadatas"][0].get("headers", [])
-
-            # 构建主键索引
-            for metadata in existing_results["metadatas"]:
-                row_data = metadata.get("data", {})
-                pk_values = [str(row_data.get(pk, "")) for pk in primary_keys]
-                if all(pk_values):  # 主键字段都有值
-                    pk_key = "|".join(pk_values)
-                    existing_dict[pk_key] = metadata
-
-        # 3. 合并表头
-        merged_headers, _ = CsvImportSeekdbService.merge_headers(
-            existing_headers, new_headers
-        )
-
-        # 4. 检测表头变更
-        headers_changed = {
-            "added": [h for h in new_headers if h not in existing_headers],
-            "removed": [h for h in existing_headers if h not in new_headers],
-            "unchanged": [h for h in new_headers if h in existing_headers],
-            "total_before": len(existing_headers),
-            "total_after": len(merged_headers)
-        }
-
-        # 5. 处理新增和更新
-        ids_to_add = []
-        metadatas_to_add = []
-        ids_to_update = []
-        metadatas_to_update = []
-        added_count = 0
-        updated_count = 0
-
-        for row_index, row in enumerate(new_data):
-            # 构建主键
-            pk_values = [str(row.get(pk, "")) for pk in primary_keys]
-            pk_key = "|".join(pk_values)
-
-            # 构建完整行数据（包含所有字段）
-            row_data = CsvImportSeekdbService.migrate_row_data(
-                row, merged_headers, existing_headers
+        if is_first_import:
+            return await CsvImportSeekdbService._first_import(
+                collection_name, csv_rows, csv_headers,
+                rule_id, version_no, tenant_id, app_name, rule_code,
+                primary_keys, stats
             )
 
-            if pk_key in existing_dict:
-                # 更新现有记录
-                existing_id = existing_dict[pk_key]["id"]
-                ids_to_update.append(existing_id)
-                metadatas_to_update.append({
-                    "rule_id": rule_id,
-                    "version_no": version_no,
-                    "row_index": row_index,
-                    "tenant_id": tenant_id,
-                    "app_name": app_name,
-                    "rule_code": rule_code,
-                    "data": row_data,
-                    "headers": merged_headers
-                })
-                updated_count += 1
-            else:
-                # 新增记录
-                doc_id = f"{rule_id}_v{version_no}_{row_index}"
-                ids_to_add.append(doc_id)
-                metadatas_to_add.append({
-                    "rule_id": rule_id,
-                    "version_no": version_no,
-                    "row_index": row_index,
-                    "tenant_id": tenant_id,
-                    "app_name": app_name,
-                    "rule_code": rule_code,
-                    "data": row_data,
-                    "headers": merged_headers
-                })
-                added_count += 1
+        return await CsvImportSeekdbService._incremental_import(
+            collection_name, csv_rows, csv_headers,
+            rule_id, version_no, tenant_id, app_name, rule_code,
+            primary_keys, sync_fields_set, allow_add_new, stats,
+            source_collection_name
+        )
 
-        # 6. 批量写入 seekdb
-        if ids_to_update:
-            # seekdb 不支持直接更新，先删除再添加
-            collection.delete(ids=ids_to_update)
-            collection.add(ids=ids_to_update, metadatas=metadatas_to_update)
+    @staticmethod
+    async def _first_import(
+        collection_name: str,
+        csv_rows: Iterator[Dict[str, str]],
+        csv_headers: List[str],
+        rule_id: int,
+        version_no: int,
+        tenant_id: int,
+        app_name: str,
+        rule_code: str,
+        primary_keys: List[str],
+        stats: ImportStats
+    ) -> Dict[str, Any]:
+        """
+        首次导入 - 全量导入
+        """
+        collection = seekdb_service.get_or_create_collection(collection_name)
+        seekdb_service.delete_collection(collection_name)
+        collection = seekdb_service.get_or_create_collection(collection_name)
 
-        if ids_to_add:
-            collection.add(ids=ids_to_add, metadatas=metadatas_to_add)
+        ids = []
+        metadatas = []
+        seen_keys: Set[str] = set()
+        has_primary_key = bool(primary_keys)
+        row_index = 0
+
+        for row in csv_rows:
+            key = CsvImportSeekdbService.build_primary_key(row, primary_keys)
+            if key is None:
+                stats.skipped_count += 1
+                continue
+
+            if has_primary_key and key in seen_keys:
+                stats.skipped_count += 1
+                continue
+            if has_primary_key:
+                seen_keys.add(key)
+
+            row_data = {h: row.get(h, "") for h in csv_headers}
+
+            doc_id = f"{rule_id}_v{version_no}_{row_index}"
+            ids.append(doc_id)
+            metadatas.append({
+                "rule_id": rule_id,
+                "version_no": version_no,
+                "row_index": row_index,
+                "tenant_id": tenant_id,
+                "app_name": app_name,
+                "rule_code": rule_code,
+                "data": row_data,
+                "headers": csv_headers
+            })
+
+            stats.added_count += 1
+            row_index += 1
+
+        if ids:
+            documents = [" | ".join([f"{h}: {row.get(h, '')}" for h in csv_headers]) for row in [m["data"] for m in metadatas]]
+            collection.add(ids=ids, metadatas=metadatas, documents=documents)
+
+        stats.total_count = len(ids)
 
         logger.info(
-            "增量导入 CSV 到 seekdb",
+            "首次全量导入 CSV 到 seekdb",
             collection_name=collection_name,
-            added_count=added_count,
-            updated_count=updated_count,
-            headers=merged_headers
+            added_count=stats.added_count,
+            skipped_count=stats.skipped_count
         )
 
         return {
-            "added_count": added_count,
-            "updated_count": updated_count,
-            "total_count": added_count + updated_count,
-            "headers": merged_headers,
-            "headers_changed": headers_changed["added"] or headers_changed["removed"],
-            "headers_change_detail": headers_changed,
+            "added_count": stats.added_count,
+            "updated_count": 0,
+            "skipped_count": stats.skipped_count,
+            "total_count": stats.total_count,
+            "headers": csv_headers,
             "collection_name": collection_name
         }
 
     @staticmethod
-    async def import_with_header_change(
+    async def _incremental_import(
         collection_name: str,
-        csv_content: str,
+        csv_rows: Iterator[Dict[str, str]],
+        csv_headers: List[str],
         rule_id: int,
         version_no: int,
         tenant_id: int,
         app_name: str,
         rule_code: str,
-        is_incremental: bool = False,
-        primary_keys: Optional[List[str]] = None
+        primary_keys: List[str],
+        sync_fields_set: Set[str],
+        allow_add_new: bool,
+        stats: ImportStats,
+        source_collection_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        处理表头变更的 CSV 导入
-
-        Args:
-            collection_name: seekdb 集合名称
-            csv_content: CSV 字符串内容
-            rule_id: 规则ID
-            version_no: 版本号
-            tenant_id: 租户ID
-            app_name: 应用名称
-            rule_code: 规则编码
-            is_incremental: 是否为增量导入
-            primary_keys: 主键字段列表（增量导入时必需）
-
-        Returns:
-            导入结果统计，包含表头变更信息
+        增量导入 - 按主键匹配更新/新增
+        修复说明：
+        1. 保留所有旧数据，不删除未匹配的行
+        2. 正确区分更新和新增操作
+        3. 正确统计更新行数和新增行数
+        4. 支持从源集合读取旧数据（用于新版本导入时）
         """
-        if is_incremental:
-            if not primary_keys:
-                return {
-                    "error": "增量导入必须指定主键字段",
-                    "added_count": 0,
-                    "updated_count": 0,
-                    "headers_changed": False
-                }
-            return await CsvImportSeekdbService.incremental_import(
-                collection_name=collection_name,
-                csv_content=csv_content,
-                rule_id=rule_id,
-                version_no=version_no,
-                tenant_id=tenant_id,
-                app_name=app_name,
-                rule_code=rule_code,
-                primary_keys=primary_keys
-            )
-        else:
-            return await CsvImportSeekdbService.full_import(
-                collection_name=collection_name,
-                csv_content=csv_content,
-                rule_id=rule_id,
-                version_no=version_no,
-                tenant_id=tenant_id,
-                app_name=app_name,
-                rule_code=rule_code
-            )
+        # 从seekdb获取当前数据
+        # 如果有指定源集合，则从源集合读取旧数据；否则从目标集合读取
+        collection = seekdb_service.get_or_create_collection(collection_name)
+        source_collection = seekdb_service.get_or_create_collection(
+            source_collection_name if source_collection_name else collection_name
+        )
+        existing_results = source_collection.get()
 
-    @staticmethod
-    async def safe_import_with_header_check(
-        collection_name: str,
-        csv_content: str,
-        rule_id: int,
-        version_no: int,
-        tenant_id: int,
-        app_name: str,
-        rule_code: str,
-        allow_header_change: bool = True,
-        is_incremental: bool = False,
-        primary_keys: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
-        """
-        带表头检查的安全导入
-
-        Args:
-            allow_header_change: 是否允许表头变更（默认允许）
-            ...其他参数同上
-
-        Returns:
-            导入结果，包含兼容性警告
-        """
-        # 解析新 CSV
-        new_headers, _ = CsvImportSeekdbService.parse_csv(csv_content)
-
-        # 获取现有表头
         existing_headers = []
-        if is_incremental:
-            collection = seekdb_service.get_or_create_collection(collection_name)
-            existing_results = collection.get()
-            if existing_results and existing_results.get("metadatas"):
-                existing_headers = existing_results["metadatas"][0].get("headers", [])
+        existing_data = []
 
-        # 检测兼容性
-        compatibility = CsvImportSeekdbService.detect_header_compatibility(
-            existing_headers, new_headers
-        )
+        if existing_results and existing_results.get("metadatas"):
+            existing_headers = existing_results["metadatas"][0].get("headers", [])
+            for metadata in existing_results["metadatas"]:
+                existing_data.append(metadata.get("data", {}))
 
-        # 如果不允许表头变更且检测到变更，返回错误
-        if not allow_header_change and (compatibility["added_fields"] or compatibility["removed_fields"]):
-            return {
-                "error": "表头变更被拒绝",
-                "compatibility": compatibility,
-                "message": compatibility.get("warning", "表头结构发生变化")
-            }
+        # 合并表头
+        all_headers = CsvImportSeekdbService.merge_headers(existing_headers, csv_headers)
 
-        # 执行导入
-        result = await CsvImportSeekdbService.import_with_header_change(
+        # 构建主键到旧数据的映射
+        old_key_to_row: Dict[str, Dict] = {}
+        has_primary_key = bool(primary_keys)
+
+        for row in existing_data:
+            key = CsvImportSeekdbService.build_primary_key(row, primary_keys)
+            if key:
+                old_key_to_row[key] = dict(row)  # 复制数据，避免修改原始数据
+
+        # 处理新增字段：为所有旧数据添加新字段（空值）
+        new_fields = set(csv_headers) - set(existing_headers)
+        for key in old_key_to_row:
+            for field in new_fields:
+                if field not in old_key_to_row[key]:
+                    old_key_to_row[key][field] = ""
+
+        # 处理CSV数据
+        seen_csv_keys: Set[str] = set()
+        updated_keys: Set[str] = set()
+        new_rows: List[Dict] = []
+
+        for row in csv_rows:
+            stats.total_count += 1
+            key = CsvImportSeekdbService.build_primary_key(row, primary_keys)
+
+            if key is None:
+                stats.skipped_count += 1
+                continue
+
+            # 检查CSV内重复
+            if has_primary_key and key in seen_csv_keys:
+                stats.skipped_count += 1
+                continue
+            if has_primary_key:
+                seen_csv_keys.add(key)
+
+            if has_primary_key and key in old_key_to_row:
+                # 主键存在，执行更新
+                target_row = old_key_to_row[key]
+
+                # 更新同步字段
+                for field in sync_fields_set:
+                    if field in row:
+                        target_row[field] = row[field]
+
+                # 更新新增字段
+                for field in new_fields:
+                    target_row[field] = row.get(field, "")
+
+                updated_keys.add(key)
+                stats.updated_count += 1
+            elif allow_add_new:
+                # 主键不存在且允许新增，创建新行
+                new_row: Dict[str, Any] = {h: "" for h in all_headers}
+                for field in csv_headers:
+                    new_row[field] = row.get(field, "")
+                new_rows.append(new_row)
+                stats.added_count += 1
+            else:
+                # 主键不存在且不允许新增，跳过
+                stats.skipped_count += 1
+
+        # 构建最终结果：保留所有旧数据（包括未更新的），加上新数据
+        result = []
+
+        # 添加所有旧数据（已更新的会被更新后的数据替换）
+        for key, row in old_key_to_row.items():
+            # 确保所有字段都存在
+            for h in all_headers:
+                if h not in row:
+                    row[h] = ""
+            result.append(row)
+
+        # 添加新数据
+        result.extend(new_rows)
+
+        # 删除旧数据，重新插入（仅在存在旧数据时删除）
+        existing_ids = existing_results.get("ids", []) if existing_results else []
+        if existing_ids:
+            collection.delete(ids=existing_ids)
+
+        # 保存所有数据
+        ids = []
+        metadatas = []
+        for idx, row_data in enumerate(result):
+            doc_id = f"{rule_id}_v{version_no}_{idx}"
+            ids.append(doc_id)
+            metadatas.append({
+                "rule_id": rule_id,
+                "version_no": version_no,
+                "row_index": idx,
+                "tenant_id": tenant_id,
+                "app_name": app_name,
+                "rule_code": rule_code,
+                "data": row_data,
+                "headers": all_headers
+            })
+
+        if ids:
+            documents = [" | ".join([f"{h}: {row.get(h, '')}" for h in all_headers]) for row in result]
+            collection.add(ids=ids, metadatas=metadatas, documents=documents)
+
+        logger.info(
+            "增量导入 CSV 到 seekdb",
             collection_name=collection_name,
-            csv_content=csv_content,
-            rule_id=rule_id,
-            version_no=version_no,
-            tenant_id=tenant_id,
-            app_name=app_name,
-            rule_code=rule_code,
-            is_incremental=is_incremental,
-            primary_keys=primary_keys
+            added_count=stats.added_count,
+            updated_count=stats.updated_count,
+            skipped_count=stats.skipped_count,
+            total_count=len(result)
         )
 
-        # 添加兼容性信息
-        result["compatibility"] = compatibility
-
-        return result
-
-    @staticmethod
-    async def export_to_csv(collection_name: str) -> Tuple[str, List[str], List[Dict[str, str]]]:
-        """
-        从 seekdb 导出为 CSV 格式
-
-        Args:
-            collection_name: seekdb 集合名称
-
-        Returns:
-            (csv_content, headers, data)
-        """
-        return await seekdb_service.export_to_csv(collection_name)
+        return {
+            "added_count": stats.added_count,
+            "updated_count": stats.updated_count,
+            "skipped_count": stats.skipped_count,
+            "total_count": len(result),
+            "headers": all_headers,
+            "collection_name": collection_name
+        }
 
 
 csv_import_seekdb_service = CsvImportSeekdbService()

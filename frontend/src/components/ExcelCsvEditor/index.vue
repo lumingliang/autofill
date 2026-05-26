@@ -868,10 +868,10 @@ const confirmFileImport = async () => {
       tenant_id: props.tenantId,
       content: csvContent.value,
       current_md5: currentMd5.value,
+      allow_add_new: allowAddNew.value,
       config: {
         primary_keys: primaryKeys.value,
-        sync_fields: syncFields.value,
-        allow_add_new: allowAddNew.value
+        sync_fields: syncFields.value
       }
     }
 
