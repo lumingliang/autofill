@@ -9,8 +9,16 @@ database = "autofill"
 # seekdb 配置
 [seekdb]
 enabled = true
+mode = "embedded"  # embedded 或 remote
+# 嵌入式模式配置（mode = "embedded" 时使用）
 db_path = "./data/seekdb.db"
 default_database = "autofill"
+# 远程模式配置（mode = "remote" 时使用）
+host = "127.0.0.1"
+port = 2881
+user = "root"
+password = ""
+database = "autofill"
 
 # Redis 配置
 [redis]

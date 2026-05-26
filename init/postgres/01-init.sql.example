@@ -1,0 +1,12 @@
+-- PostgreSQL 初始化脚本示例
+-- 如需使用，复制为 01-init.sql
+
+-- 创建额外的数据库（如果需要）
+-- CREATE DATABASE autofill;
+
+-- 创建用户（如果需要）
+-- CREATE USER autofill WITH PASSWORD 'autofill123456';
+-- GRANT ALL PRIVILEGES ON DATABASE autofill TO autofill;
+
+-- LiteLLM 相关的表会在首次启动时自动创建
+-- 可以在这里添加其他初始化操作

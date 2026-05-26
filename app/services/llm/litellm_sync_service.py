@@ -142,6 +142,18 @@ class LiteLLMSyncService:
             if e.response.status_code == 404:
                 logger.warning(f"Model '{config.name}' not found in LiteLLM, trying to add instead")
                 return await self.add_model(config)
+            # 如果模型在 config 文件中（400），需要先通过 /model/new 存储到数据库
+            elif e.response.status_code == 400:
+                error_text = e.response.text
+                if "Model in config" in error_text or "Can't edit model" in error_text:
+                    logger.warning(f"Model '{config.name}' is in config file, trying to add to DB instead")
+                    return await self.add_model(config)
+                elif "model not found" in error_text:
+                    logger.warning(f"Model '{config.name}' not found in LiteLLM, trying to add instead")
+                    return await self.add_model(config)
+                else:
+                    logger.error(f"Failed to update model '{config.name}' in LiteLLM: HTTP {e.response.status_code} - {error_text}")
+                    return False
             logger.error(f"Failed to update model '{config.name}' in LiteLLM: HTTP {e.response.status_code} - {e.response.text}")
             return False
         except Exception as e:

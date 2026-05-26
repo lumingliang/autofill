@@ -1,0 +1,15 @@
+# SeekDB 配置文件示例
+# 如需使用，复制为 seekdb.cnf 并修改配置
+
+# 数据文件大小
+datafile_size=2G
+datafile_next=2G
+datafile_maxsize=50G
+
+# CPU 和内存配置
+cpu_count=4
+memory_limit=2G
+log_disk_size=2G
+
+# 其他配置项
+# 详细配置请参考: https://www.oceanbase.ai/docs/zh-CN/seekdb-overview

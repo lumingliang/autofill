@@ -1,0 +1,18 @@
+-- SeekDB 初始化 SQL 脚本示例
+-- 如需使用，复制为 01-init-database.sql
+-- 此脚本将在容器启动时自动执行
+
+-- 创建应用数据库（如果不存在）
+CREATE DATABASE IF NOT EXISTS autofill;
+
+-- 切换到应用数据库
+USE autofill;
+
+-- 可以在这里创建初始表结构或插入初始数据
+-- 注意：SeekDB 主要用于向量存储，表结构由 pyseekdb 自动管理
+
+-- 示例：创建一个测试表
+-- CREATE TABLE IF NOT EXISTS test_table (
+--     id INT PRIMARY KEY,
+--     name VARCHAR(255)
+-- );

@@ -79,6 +79,17 @@ def create_app() -> FastAPI:
     if os.path.exists(swagger_ui_dir):
         app.mount("/static/swagger-ui", StaticFiles(directory=swagger_ui_dir), name="swagger-ui-static")
 
+    # 注册前端静态文件服务（Docker 部署使用）
+    web_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web")
+    if os.path.exists(web_dir):
+        from fastapi.responses import FileResponse
+        # 挂载 /web 路径（前端构建的资源引用路径，包含所有静态资源）
+        app.mount("/web", StaticFiles(directory=web_dir, html=True), name="web")
+        # 根路径重定向到 /web
+        @app.get("/", include_in_schema=False)
+        async def root_redirect():
+            return FileResponse(os.path.join(web_dir, "index.html"))
+
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui_html():
         return get_swagger_ui_html(

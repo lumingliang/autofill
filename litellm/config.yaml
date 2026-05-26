@@ -2,37 +2,40 @@ general_settings:
   master_key: sk-litellm-master-key
   port: 4000
   host: 0.0.0.0
+  # 数据库连接从环境变量 DATABASE_URL 读取
   store_model_in_db: true
-  database_url: postgresql://litellm:litellm123456@localhost:5432/litellm
   # 启用 prompts 存储以查看完整请求和响应
   store_prompts_in_spend_logs: true
 
-model_list:
-- model_name: C4AI-Command-R-Plus
-  litellm_params:
-    model: openai/LLM-Research/c4ai-command-r-plus-08-2024
-    api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
-    timeout: 300
-    api_base: https://api-inference.modelscope.cn/v1/
-- model_name: Qwen/QwQ-32B
-  litellm_params:
-    model: openai/Qwen/QwQ-32B
-    api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
-    timeout: 300
-    api_base: https://api-inference.modelscope.cn/v1/
-  model_info:
-    mode: chat
-    max_tokens: 8192
-    supports_vision: false
-    supports_function_calling: true
-- model_name: DeepSeek-R1-0528
-  litellm_params:
-    model: openai/deepseek-ai/DeepSeek-R1-0528
-    api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
-    timeout: 300
-    api_base: https://api-inference.modelscope.cn/v1/
-  model_info:
-    mode: chat
-    max_tokens: 8192
-    supports_vision: false
-    supports_function_calling: true
+# model_list 已注释掉 - 所有模型配置现在通过后端服务 API 同步到数据库
+# 这样可以实现统一的大模型管理，所有模型都通过后端的 LLM 配置管理界面进行配置
+# 如需添加模型，请在后端管理界面添加后点击"同步到网关"按钮
+# model_list:
+# - model_name: C4AI-Command-R-Plus
+#   litellm_params:
+#     model: openai/LLM-Research/c4ai-command-r-plus-08-2024
+#     api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
+#     timeout: 300
+#     api_base: https://api-inference.modelscope.cn/v1/
+# - model_name: Qwen/QwQ-32B
+#   litellm_params:
+#     model: openai/Qwen/QwQ-32B
+#     api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
+#     timeout: 300
+#     api_base: https://api-inference.modelscope.cn/v1/
+#   model_info:
+#     mode: chat
+#     max_tokens: 8192
+#     supports_vision: false
+#     supports_function_calling: true
+# - model_name: DeepSeek-R1-0528
+#   litellm_params:
+#     model: openai/deepseek-ai/DeepSeek-R1-0528
+#     api_key: ms-919b1188-52f3-4654-b3bd-c46ab3bcf738
+#     timeout: 300
+#     api_base: https://api-inference.modelscope.cn/v1/
+#   model_info:
+#     mode: chat
+#     max_tokens: 8192
+#     supports_vision: false
+#     supports_function_calling: true

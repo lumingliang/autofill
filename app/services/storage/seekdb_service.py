@@ -3,8 +3,9 @@ seekdb 存储服务 - CSV 规则数据存储
 
 设计原则：
 1. 封装 pyseekdb 客户端，提供统一接口
-2. JSON 结构存储，支持按字段查询
-3. 不使用向量搜索
+2. 支持嵌入式模式和远程服务器模式
+3. JSON 结构存储，支持按字段查询
+4. 不使用向量搜索
 """
 
 import csv
@@ -25,44 +26,79 @@ class SeekDBService:
         初始化 seekdb 客户端
 
         Args:
-            db_path: seekdb 数据库文件路径，默认从配置读取
+            db_path: seekdb 数据库文件路径（仅在嵌入式模式下使用），默认从配置读取
         """
+        self._mode = settings.SEEKDB_MODE
         self.db_path = db_path or settings.SEEKDB_PATH
         self._admin_client = None
         self._client = None
-        self._database = settings.SEEKDB_DEFAULT_DATABASE
+        self._database = settings.SEEKDB_DATABASE if self._mode == "remote" else settings.SEEKDB_DEFAULT_DATABASE
+
+        # 远程模式配置
+        self._host = settings.SEEKDB_HOST
+        self._port = settings.SEEKDB_PORT
+        self._user = settings.SEEKDB_USER
+        self._password = settings.SEEKDB_PASSWORD
 
         # 确保数据库存在
         self._init_database()
 
     def _init_database(self):
         """初始化数据库"""
-        try:
-            admin = self._get_admin_client()
-            # 检查数据库是否存在，不存在则创建
+        if self._mode == "remote":
+            # 远程模式下，数据库应该在服务器端已创建
+            # 这里只做连接测试
             try:
-                admin.create_database(self._database)
-                logger.info(f"创建 seekdb 数据库: {self._database}")
-            except Exception:
-                # 数据库已存在
-                pass
-        except Exception as e:
-            logger.error(f"初始化 seekdb 数据库失败: {e}")
-            raise
+                client = self._get_client()
+                logger.info(f"seekdb 远程连接成功: {self._host}:{self._port}/{self._database}")
+            except Exception as e:
+                logger.error(f"seekdb 远程连接失败: {e}")
+                raise
+        else:
+            # 嵌入式模式：确保本地数据库存在
+            try:
+                admin = self._get_admin_client()
+                # 检查数据库是否存在，不存在则创建
+                try:
+                    admin.create_database(self._database)
+                    logger.info(f"创建 seekdb 数据库: {self._database}")
+                except Exception:
+                    # 数据库已存在
+                    pass
+            except Exception as e:
+                logger.error(f"初始化 seekdb 数据库失败: {e}")
+                raise
 
     def _get_admin_client(self) -> pyseekdb.AdminClient:
         """获取 AdminClient"""
         if not self._admin_client:
-            self._admin_client = pyseekdb.AdminClient(path=self.db_path)
+            if self._mode == "remote":
+                self._admin_client = pyseekdb.AdminClient(
+                    host=self._host,
+                    port=self._port,
+                    user=self._user,
+                    password=self._password
+                )
+            else:
+                self._admin_client = pyseekdb.AdminClient(path=self.db_path)
         return self._admin_client
 
     def _get_client(self) -> pyseekdb.Client:
         """获取 Client"""
         if not self._client:
-            self._client = pyseekdb.Client(
-                path=self.db_path,
-                database=self._database
-            )
+            if self._mode == "remote":
+                self._client = pyseekdb.Client(
+                    host=self._host,
+                    port=self._port,
+                    database=self._database,
+                    user=self._user,
+                    password=self._password
+                )
+            else:
+                self._client = pyseekdb.Client(
+                    path=self.db_path,
+                    database=self._database
+                )
         return self._client
 
     def get_or_create_collection(self, name: str):

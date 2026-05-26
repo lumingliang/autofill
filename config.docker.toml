@@ -1,0 +1,107 @@
+# =============================================================================
+# Docker 环境配置文件
+# 注意：此配置文件配合 docker-compose.yml 使用
+# 大部分配置通过环境变量从 .env 文件传入
+# =============================================================================
+
+[database]
+# MySQL 数据库配置
+# 这些值会被环境变量覆盖（docker-compose.yml 中设置）
+[database.mysql]
+host = "host.docker.internal"
+port = 3306
+user = "root"
+password = "root123456"
+database = "autofill"
+
+[seekdb]
+# SeekDB 配置 - Docker 环境使用远程模式
+enabled = true
+mode = "remote"
+# 远程模式配置（连接 SeekDB 容器）
+host = "seekdb"
+port = 2881
+user = "root"
+password = "seekdb123456"
+database = "autofill"
+# 嵌入式模式配置（仅在 mode = "embedded" 时使用）
+db_path = "./data/seekdb.db"
+default_database = "autofill"
+
+[redis]
+# Redis 配置
+host = "host.docker.internal"
+port = 6379
+password = "redis123456"
+db = 3
+key_prefix = "auto_fill"
+
+[dify]
+# Dify AI 服务配置
+dify_timeout = 180
+
+[kafka]
+# Kafka 连接配置
+bootstrap_servers = "host.docker.internal:9092"
+client_id = "autofill-python-client"
+
+# 生产者配置
+[kafka.producer]
+acks = "all"
+retries = 3
+batch_size = 16384
+linger_ms = 10
+
+# 消费者配置
+[kafka.consumer]
+group_id = "autofill-consumer-group"
+auto_offset_reset = "earliest"
+enable_auto_commit = true
+auto_commit_interval_ms = 5000
+
+# 主题配置
+[kafka.topic]
+name = "autofill.ai.requests"
+partitions = 3
+replication_factor = 1
+
+[logging]
+# 日志配置
+level = "INFO"
+log_file = "./logs/app.log"
+max_bytes = 10
+backup_count = 5
+console_output = true
+file_output = true
+format = "json"
+enable_request_id = true
+
+[litellm]
+# LiteLLM 网关配置
+base_url = "http://litellm:4000"
+master_key = "sk-litellm-master-key"
+timeout = 60
+
+[structured_output]
+# 结构化输出配置
+failed_threshold = 2
+
+[app]
+# 应用配置
+debug = false
+secret_key = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"
+jwt_access_token_expire_minutes = 10080
+
+[app.cors]
+origins = ["*"]
+allow_credentials = true
+allow_methods = ["*"]
+allow_headers = ["*"]
+
+[upload]
+# 上传配置
+upload_dir = "./uploads"
+avatar_dir = "./uploads/avatars"
+allowed_extensions = ["jpg", "jpeg", "png", "gif", "webp"]
+max_file_size = 5
+file_url_prefix = "/uploads"

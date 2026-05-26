@@ -54,8 +54,16 @@ class Settings(BaseSettings):
 
     # seekdb 配置
     SEEKDB_ENABLED: bool = True
+    SEEKDB_MODE: str = "embedded"  # embedded 或 remote
+    # 嵌入式模式配置
     SEEKDB_PATH: str = "./data/seekdb.db"
     SEEKDB_DEFAULT_DATABASE: str = "autofill"
+    # 远程模式配置
+    SEEKDB_HOST: str = "127.0.0.1"
+    SEEKDB_PORT: int = 2881
+    SEEKDB_USER: str = "root"
+    SEEKDB_PASSWORD: str = ""
+    SEEKDB_DATABASE: str = "autofill"
 
     # Dify 配置
     DIFY_TIMEOUT: float = 60.0
@@ -142,8 +150,16 @@ class Settings(BaseSettings):
                 if "seekdb" in config:
                     seekdb_config = config["seekdb"]
                     instance.SEEKDB_ENABLED = seekdb_config.get("enabled", instance.SEEKDB_ENABLED)
+                    instance.SEEKDB_MODE = seekdb_config.get("mode", instance.SEEKDB_MODE)
+                    # 嵌入式模式配置
                     instance.SEEKDB_PATH = seekdb_config.get("db_path", instance.SEEKDB_PATH)
                     instance.SEEKDB_DEFAULT_DATABASE = seekdb_config.get("default_database", instance.SEEKDB_DEFAULT_DATABASE)
+                    # 远程模式配置
+                    instance.SEEKDB_HOST = seekdb_config.get("host", instance.SEEKDB_HOST)
+                    instance.SEEKDB_PORT = seekdb_config.get("port", instance.SEEKDB_PORT)
+                    instance.SEEKDB_USER = seekdb_config.get("user", instance.SEEKDB_USER)
+                    instance.SEEKDB_PASSWORD = seekdb_config.get("password", instance.SEEKDB_PASSWORD)
+                    instance.SEEKDB_DATABASE = seekdb_config.get("database", instance.SEEKDB_DATABASE)
 
                 # 加载 Dify 配置
                 if "dify" in config:

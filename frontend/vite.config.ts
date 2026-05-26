@@ -7,6 +7,9 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // 设置基础路径，所有资源都会带上此前缀
+  // 在容器部署时需要设置为 '/web/'，本地开发时设置为 '/'
+  base: process.env.DOCKER_BUILD === 'true' ? '/web/' : '/',
   plugins: [
     vue(),
     UnoCSS({
