@@ -151,18 +151,18 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     async def _get_request_tenant_id(self, request: Request, user) -> int:
         """
         从请求中获取租户ID
-        
+
         优先级：
         1. 查询参数 tenant_id
         2. JSON 请求体 tenant_id
-        3. 用户当前的租户ID
-        
+        3. 用户当前的租户ID（仅普通用户）
+
         Args:
             request: 请求对象
             user: 当前用户
-            
+
         Returns:
-            int: 租户ID
+            int: 租户ID，0表示不限制（超级管理员未指定租户时）
         """
         # 超级管理员可以指定租户
         if user.is_superuser:
@@ -183,6 +183,9 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                         return int(tenant_id)
                 except Exception:
                     pass
+
+            # 超级管理员未指定租户，返回0（表示不限制）
+            return 0
 
         # 普通用户使用自己的租户ID
         return getattr(user, "current_tenant_id", 0)
