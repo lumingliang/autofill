@@ -1,7 +1,6 @@
-import asyncio
-import shutil
 
-from aerich import Command
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +49,7 @@ from .middlewares import (
     HttpAuditLogMiddleware,
     RequestIdMiddleware,
     RequestLoggingMiddleware,
+    TenantContextMiddleware,
 )
 
 
@@ -65,6 +65,18 @@ def make_middlewares():
         Middleware(RequestIdMiddleware),  # 请求追踪 ID 中间件（最先执行）
         Middleware(RequestLoggingMiddleware),  # 请求日志记录中间件
         Middleware(BackGroundTaskMiddleware),
+        Middleware(
+            TenantContextMiddleware,
+            exclude_paths=[
+                "/docs",
+                "/openapi.json",
+                "/redoc",
+                "/health",
+                "/uploads/",
+                "/api/autofill/llm/rule/execute",
+                "/api/autofill/llm/rule/execute/result",
+            ],
+        ),
         Middleware(
             HttpAuditLogMiddleware,
             methods=["GET", "POST", "PUT", "DELETE"],
@@ -149,21 +161,17 @@ async def init_apis(app: FastAPI):
 
 
 async def init_db():
-    command = Command(tortoise_config=settings.TORTOISE_ORM)
-    try:
-        await command.init_db(safe=True)
-    except FileExistsError:
-        pass
-
-    await command.init()
-    try:
-        await command.migrate()
-    except AttributeError:
-        logger.warning("unable to retrieve model history from database, model history will be created from scratch")
-        shutil.rmtree("migrations")
-        await command.init_db(safe=True)
-
-    await command.upgrade(run_in_transaction=True)
+    """
+    初始化数据库连接
+    
+    注意：此函数仅初始化数据库连接，不执行任何迁移操作。
+    数据库迁移必须手动执行：aerich upgrade
+    
+    参见文档：docs/DATABASE_MIGRATION.md
+    """
+    from tortoise import Tortoise
+    await Tortoise.init(config=settings.TORTOISE_ORM)
+    logger.info("Database initialized (migrations must be run manually)")
 
 
 async def init_roles():

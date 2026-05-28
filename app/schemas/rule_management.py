@@ -105,6 +105,7 @@ class CsvImportConfig(BaseModel):
     """CSV导入配置"""
     primary_keys: List[str] = Field(default_factory=list, description="主键字段列表（联合唯一）")
     sync_fields: List[str] = Field(default_factory=list, description="需要同步更新的字段列表")
+    allow_add_new: bool = Field(True, description="是否允许新增数据（当主键不存在时，是否将CSV数据作为新行导入）")
 
 
 class FilePreviewRequest(BaseModel):
@@ -137,10 +138,8 @@ class ImportApplyRequest(BaseModel):
     rule_id: int = Field(..., description="规则ID")
     tenant_id: int = Field(0, description="租户ID")
     content: str = Field(..., description="CSV内容")
-    current_md5: str = Field("", max_length=32, description="当前版本MD5，用于乐观锁")
     remark: str = Field("", max_length=512, description="版本备注")
     config: CsvImportConfig = Field(..., description="导入配置")
-    allow_add_new: bool = Field(True, description="是否允许新增数据")
 
 
 class ImportApplyResponse(BaseModel):
@@ -163,27 +162,31 @@ class ImportValidateResult(BaseModel):
 
 
 # ============ CURL 导入配置相关 Schema ============
+# 配置格式与 scripts/curl_import_unified.py 完全一致
 
 class CurlLevelField(BaseModel):
     """CURL层级字段配置"""
-    csv_header: str = Field(..., description="CSV表头名称")
+    header: str = Field(..., description="CSV表头名称")
     jsonpath: str = Field(..., description="JSONPath表达式")
 
 
 class CurlLevelConfig(BaseModel):
     """CURL层级配置"""
-    source: Dict[str, Any] = Field(default_factory=dict, description="数据源配置")
+    name: str = Field(..., description="层级名称")
+    source: str = Field("request", description="数据来源: request 或 children")
+    request_index: Optional[int] = Field(None, description="请求索引，source=request时使用")
     fields: List[CurlLevelField] = Field(default_factory=list, description="字段列表")
-    children_jsonpath: Optional[str] = Field(None, description="子节点JSONPath")
+    children_path: Optional[str] = Field(None, description="子节点JSONPath")
     params: Dict[str, str] = Field(default_factory=dict, description="请求参数映射")
+    data_root: Optional[str] = Field(None, description="数据根路径覆盖")
 
 
 class CurlImportConfig(BaseModel):
-    """CURL导入配置"""
+    """CURL导入配置 - 与脚本配置格式完全一致"""
     description: str = Field("", description="配置描述")
     global_vars: Dict[str, str] = Field(default_factory=dict, description="全局变量")
-    data_root_path: str = Field("$.data", description="数据根路径")
-    level_config: Dict[str, CurlLevelConfig] = Field(default_factory=dict, description="层级配置")
+    data_root: str = Field("$.data", description="数据根路径")
+    levels: List[CurlLevelConfig] = Field(default_factory=list, description="层级配置数组")
     curl_commands: List[str] = Field(default_factory=list, description="CURL命令列表")
 
 
@@ -191,7 +194,7 @@ class CurlImportPreviewRequest(BaseModel):
     """CURL导入预览请求"""
     rule_id: int = Field(..., description="规则ID")
     tenant_id: int = Field(0, description="租户ID")
-    curl_config: Dict[str, Any] = Field(..., description="CURL导入配置")
+    curl_config: CurlImportConfig = Field(..., description="CURL导入配置")
 
 
 class CurlImportPreviewResponse(BaseModel):
@@ -207,18 +210,17 @@ class CurlImportSaveConfigRequest(BaseModel):
     """保存CURL导入配置请求 - 只保存curl_config，主键和同步字段在公共配置中管理"""
     rule_id: int = Field(..., description="规则ID")
     tenant_id: int = Field(0, description="租户ID")
-    curl_config: Dict[str, Any] = Field(..., description="CURL导入配置")
+    curl_config: CurlImportConfig = Field(..., description="CURL导入配置")
 
 
 class CurlImportApplyRequest(BaseModel):
     """执行CURL导入请求"""
     rule_id: int = Field(..., description="规则ID")
     tenant_id: int = Field(0, description="租户ID")
-    current_md5: str = Field("", max_length=32, description="当前版本MD5，用于乐观锁")
     remark: str = Field("", max_length=512, description="版本备注")
     primary_keys: List[str] = Field(default_factory=list, description="主键字段列表")
     sync_fields: List[str] = Field(default_factory=list, description="同步字段列表")
-    curl_config: Dict[str, Any] = Field(default_factory=dict, description="CURL导入配置")
+    curl_config: CurlImportConfig = Field(default_factory=dict, description="CURL导入配置")
 
 
 

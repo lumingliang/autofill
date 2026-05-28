@@ -6,16 +6,15 @@ import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.core.tenant import TenantContext
 from app.log import logger
 from app.models.autofill import FillDataRecord
 from app.models.enums import AIFillDataStatus
-from app.models.rule_management import RuleInfo, RuleVersion
 from app.services.autofill.prompt_builder_service import PromptBuilderService
 from app.services.autofill.system_prompt_service import system_prompt_service
 from app.services.llm.llm_config_service import llm_config_service
 from app.services.llm.llm_proxy_service import llm_proxy_service
 from app.services.rule_management.rule_service import rule_service
-from app.services.storage.seekdb_service import seekdb_service
 
 
 class RuleEngineService:
@@ -23,7 +22,6 @@ class RuleEngineService:
 
     async def execute_rule(
         self,
-        tenant_id: int,
         app_name: str,
         session_id: str,
         query: str,
@@ -39,7 +37,6 @@ class RuleEngineService:
         执行规则引擎
 
         Args:
-            tenant_id: 租户ID
             app_name: 应用名称
             session_id: 会话ID
             query: 用户输入文本
@@ -61,7 +58,6 @@ class RuleEngineService:
         if step == 1:
             await self._save_step_request(
                 session_id=session_id,
-                tenant_id=tenant_id,
                 app_name=app_name,
                 query=query,
                 method=method,
@@ -74,7 +70,6 @@ class RuleEngineService:
             # json_parser 多任务场景：一次性调用LLM，生成包含所有任务的提示词
             try:
                 results = await self._execute_multi_task_json_parser(
-                    tenant_id=tenant_id,
                     app_name=app_name,
                     query=query,
                     method=method,
@@ -104,7 +99,6 @@ class RuleEngineService:
 
                 try:
                     rule_result = await self._execute_single_rule(
-                        tenant_id=tenant_id,
                         app_name=app_name,
                         query=query,
                         method=method,
@@ -127,7 +121,6 @@ class RuleEngineService:
         # 保存步骤结果
         await self._save_step_result(
             session_id=session_id,
-            tenant_id=tenant_id,
             app_name=app_name,
             step=step,
             results=results,
@@ -146,7 +139,6 @@ class RuleEngineService:
 
     async def _execute_single_rule(
         self,
-        tenant_id: int,
         app_name: str,
         query: str,
         method: str,
@@ -160,7 +152,6 @@ class RuleEngineService:
         执行单个规则
 
         Args:
-            tenant_id: 租户ID
             app_name: 应用名称
             query: 用户输入
             method: LLM方法
@@ -180,9 +171,8 @@ class RuleEngineService:
         rule_fields = prompt_config.get("rule_fields", [])
         name_separator = prompt_config.get("name_separator", " - ")
 
-        # 2. 获取规则版本
+        # 2. 获取规则版本（租户过滤在 Service 层自动处理）
         version = await self._get_rule_version(
-            tenant_id=tenant_id,
             app_name=app_name,
             rule_name=rule_name
         )
@@ -203,7 +193,6 @@ class RuleEngineService:
         # 4. 生成Prompt
         if task_type == "choice":
             system_prompt, full_prompt = await self._build_choice_prompt(
-                tenant_id=tenant_id,
                 query=query,
                 filtered_data=filtered_data,
                 name_fields=name_fields,
@@ -215,7 +204,6 @@ class RuleEngineService:
             )
         else:  # text
             system_prompt, full_prompt = await self._build_text_prompt(
-                tenant_id=tenant_id,
                 query=query,
                 filtered_data=filtered_data,
                 rule_fields=rule_fields,
@@ -260,7 +248,6 @@ class RuleEngineService:
 
     async def _execute_multi_task_json_parser(
         self,
-        tenant_id: int,
         app_name: str,
         query: str,
         method: str,
@@ -274,7 +261,6 @@ class RuleEngineService:
         一次性调用LLM，生成包含所有任务的提示词，解析返回的JSON结果
 
         Args:
-            tenant_id: 租户ID
             app_name: 应用名称
             query: 用户输入
             method: LLM方法（json_parser）
@@ -305,9 +291,8 @@ class RuleEngineService:
             rule_fields = prompt_config.get("rule_fields", [])
             name_separator = prompt_config.get("name_separator", " - ")
 
-            # 获取规则版本
+            # 获取规则版本（租户过滤在 Service 层自动处理）
             version = await self._get_rule_version(
-                tenant_id=tenant_id,
                 app_name=app_name,
                 rule_name=rule_name
             )
@@ -357,7 +342,6 @@ class RuleEngineService:
 
         # 3. 获取系统提示词（支持动态配置，已包含兜底逻辑和变量替换）
         final_system_prompt = await system_prompt_service.get_system_prompt_for_execution(
-            tenant_id=tenant_id,
             system_prompt=system_prompt,
             system_prompt_name=system_prompt_name,
             category="multi_task",
@@ -477,40 +461,24 @@ class RuleEngineService:
 
     async def _get_rule_version(
         self,
-        tenant_id: int,
         app_name: str,
         rule_name: str
-    ) -> Optional[RuleVersion]:
+    ) -> Optional[Any]:
         """
-        获取规则的最新版本
+        获取规则的最新版本（不包含已删除的）
 
         Args:
-            tenant_id: 租户ID
             app_name: 应用名称
             rule_name: 规则名称（即rule_code）
 
         Returns:
             RuleVersion 对象或 None
         """
-        # 查询规则
-        rule = await RuleInfo.filter(
-            tenant_id=tenant_id,
-            app_name=app_name,
+        # 使用 Service 层获取规则版本（自动处理租户过滤和软删除过滤）
+        return await rule_service.get_version_by_rule_code(
             rule_code=rule_name,
-            deleted=0,
-            status=1
-        ).first()
-
-        if not rule or not rule.latest_version_id:
-            return None
-
-        # 获取最新版本
-        version = await RuleVersion.filter(
-            id=rule.latest_version_id,
-            deleted=0
-        ).first()
-
-        return version
+            app_name=app_name
+        )
 
     async def _get_filtered_rule_data(
         self,
@@ -530,14 +498,16 @@ class RuleEngineService:
             筛选并去重后的数据列表
         """
         try:
-            # 使用 seekdb 的 query_with_filter 直接查询
+            # 使用 Service 层查询 seekdb
             if filter_config:
-                # 构建 seekdb 过滤条件
-                seekdb_filter = {f"data.{key}": value for key, value in filter_config.items()}
-                result_data = await seekdb_service.query_with_filter(collection_name, seekdb_filter)
+                # 有过滤条件，使用过滤查询
+                result_data = await rule_service.query_rule_data_with_filter(
+                    collection_name=collection_name,
+                    filter_config=filter_config
+                )
             else:
                 # 没有过滤条件，获取全部数据
-                result = await seekdb_service.get_rule_data(collection_name)
+                result = await rule_service.get_rule_data_from_collection(collection_name)
                 if not result:
                     return []
 
@@ -582,111 +552,8 @@ class RuleEngineService:
             logger.error(f"从 seekdb 查询过滤数据失败: {collection_name}, error: {e}")
             return []
 
-    async def _get_rule_data(
-        self,
-        tenant_id: int,
-        app_name: str,
-        rule_name: str
-    ) -> Optional[List[Dict[str, Any]]]:
-        """
-        获取规则数据（从 seekdb）- 保留此方法用于兼容性
-
-        Args:
-            tenant_id: 租户ID
-            app_name: 应用名称
-            rule_name: 规则名称（即rule_code）
-
-        Returns:
-            规则数据列表
-        """
-        version = await self._get_rule_version(tenant_id, app_name, rule_name)
-
-        if not version or not version.seekdb_collection_name:
-            return None
-
-        try:
-            result = await seekdb_service.get_rule_data(version.seekdb_collection_name)
-            if not result:
-                return None
-
-            # 转换为字典列表
-            headers = result.get("headers", [])
-            data = result.get("data", [])
-
-            dict_list = []
-            for row in data:
-                row_dict = {}
-                for i, header in enumerate(headers):
-                    if i < len(row):
-                        row_dict[header] = row[i]
-                    else:
-                        row_dict[header] = ""
-                dict_list.append(row_dict)
-
-            return dict_list
-
-        except Exception as e:
-            logger.error(f"从 seekdb 获取规则数据失败: {rule_name}, error: {e}")
-            return None
-
-    def _apply_filter(
-        self,
-        rule_data: List[Dict[str, Any]],
-        filter_config: Dict[str, Any],
-        name_fields: List[str] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        应用filter筛选数据，并根据name_fields去重
-        注意：此方法仅在内存中过滤，新代码应使用 _get_filtered_rule_data
-
-        Args:
-            rule_data: 规则数据
-            filter_config: 筛选配置
-            name_fields: 名称字段列表，用于去重
-
-        Returns:
-            筛选并去重后的数据
-        """
-        # 先进行filter筛选
-        if filter_config:
-            result = []
-            for row in rule_data:
-                match = True
-                for key, value in filter_config.items():
-                    if row.get(key) != value:
-                        match = False
-                        break
-                if match:
-                    result.append(row)
-        else:
-            result = rule_data
-
-        # 根据name_fields去重
-        if name_fields:
-            seen = set()
-            deduplicated = []
-            for row in result:
-                # 构建唯一键：根据name_fields的值组合
-                key_parts = []
-                for field in name_fields:
-                    value = row.get(field)
-                    if value is not None:
-                        key_parts.append(str(value))
-                key = tuple(key_parts) if key_parts else None
-
-                if key and key not in seen:
-                    seen.add(key)
-                    deduplicated.append(row)
-                elif not key:
-                    # 如果无法构建key，保留数据
-                    deduplicated.append(row)
-            return deduplicated
-
-        return result
-
     async def _build_choice_prompt(
         self,
-        tenant_id: int,
         query: str,
         filtered_data: List[Dict[str, Any]],
         name_fields: List[str],
@@ -700,7 +567,6 @@ class RuleEngineService:
         构建选择题Prompt
 
         Args:
-            tenant_id: 租户ID
             query: 用户输入
             filtered_data: 筛选后的数据
             name_fields: 名称字段列表
@@ -723,7 +589,6 @@ class RuleEngineService:
 
         # 获取系统提示词（支持动态配置，已包含兜底逻辑和变量替换）
         final_system_prompt = await system_prompt_service.get_system_prompt_for_execution(
-            tenant_id=tenant_id,
             system_prompt=system_prompt,
             system_prompt_name=system_prompt_name,
             category="choice",
@@ -738,7 +603,6 @@ class RuleEngineService:
 
     async def _build_text_prompt(
         self,
-        tenant_id: int,
         query: str,
         filtered_data: List[Dict[str, Any]],
         rule_fields: List[str],
@@ -751,7 +615,6 @@ class RuleEngineService:
         构建填空题Prompt
 
         Args:
-            tenant_id: 租户ID
             query: 用户输入
             filtered_data: 筛选后的数据（应该只有一条）
             rule_fields: 规则字段列表
@@ -773,7 +636,6 @@ class RuleEngineService:
 
         # 获取系统提示词（支持动态配置，已包含兜底逻辑和变量替换）
         final_system_prompt = await system_prompt_service.get_system_prompt_for_execution(
-            tenant_id=tenant_id,
             system_prompt=system_prompt,
             system_prompt_name=system_prompt_name,
             category="text",
@@ -949,7 +811,6 @@ class RuleEngineService:
     async def _save_step_request(
         self,
         session_id: str,
-        tenant_id: int,
         app_name: str,
         query: str,
         method: str,
@@ -957,6 +818,7 @@ class RuleEngineService:
         step: int
     ) -> None:
         """保存步骤请求数据"""
+        tenant_id = TenantContext.get_tenant_id()
         try:
             record = await FillDataRecord.filter(
                 session_id=session_id,
@@ -1003,7 +865,6 @@ class RuleEngineService:
     async def _save_step_result(
         self,
         session_id: str,
-        tenant_id: int,
         app_name: str,
         step: int,
         results: Dict[str, Any],
@@ -1011,6 +872,7 @@ class RuleEngineService:
         is_last: bool
     ) -> None:
         """保存步骤结果"""
+        tenant_id = TenantContext.get_tenant_id()
         try:
             record = await FillDataRecord.filter(
                 session_id=session_id,
@@ -1043,7 +905,6 @@ class RuleEngineService:
     async def get_step_result(
         self,
         session_id: str,
-        tenant_id: int,
         app_name: str
     ) -> Optional[Dict[str, Any]]:
         """
@@ -1051,12 +912,12 @@ class RuleEngineService:
 
         Args:
             session_id: 会话ID
-            tenant_id: 租户ID
             app_name: 应用名称
 
         Returns:
             填单结果
         """
+        tenant_id = TenantContext.get_tenant_id()
         record = await FillDataRecord.filter(
             session_id=session_id,
             tenant_id=tenant_id,

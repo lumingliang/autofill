@@ -178,8 +178,11 @@ async def get_tree_data(request: Request):
     单请求树形结构接口
     返回完整的三级树形数据
     """
-    body = await request.json()
-    print(f"[TREE] 收到请求: {body}")
+    try:
+        body = await request.json()
+        print(f"[TREE] 收到请求: {body}")
+    except Exception:
+        print("[TREE] 收到请求 (无body)")
     
     return {
         "code": 200,
@@ -196,8 +199,11 @@ async def get_first_level(request: Request):
     级联请求第一级接口
     返回一级菜单列表
     """
-    body = await request.json()
-    print(f"[FIRST_LEVEL] 收到请求: {body}")
+    try:
+        body = await request.json()
+        print(f"[FIRST_LEVEL] 收到请求: {body}")
+    except Exception:
+        print("[FIRST_LEVEL] 收到请求 (无body)")
     
     return {
         "code": 200,
@@ -214,8 +220,12 @@ async def get_submenus(request: Request):
     级联请求第二级接口
     根据 first_level_value 返回子菜单树
     """
-    body = await request.json()
-    print(f"[SUBMENUS] 收到请求: {body}")
+    try:
+        body = await request.json()
+        print(f"[SUBMENUS] 收到请求: {body}")
+    except Exception:
+        body = {}
+        print("[SUBMENUS] 收到请求 (无body)")
     
     first_level_value = body.get("first_level_value", "")
     

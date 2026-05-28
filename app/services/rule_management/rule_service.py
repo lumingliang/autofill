@@ -10,10 +10,16 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from pypinyin import lazy_pinyin
+except ImportError:
+    lazy_pinyin = None
+
 from app.log import logger
 from app.models.rule_management import RuleInfo, RuleVersion
+from app.repositories import rule_info_repository, rule_version_repository, rule_data_repository
 from app.services.storage.seekdb_service import seekdb_service
-from tortoise.expressions import Q
+from app.core.tenant import TenantContext
 
 
 class VersionConflictException(Exception):
@@ -46,11 +52,9 @@ class RuleService:
     @staticmethod
     def _to_pinyin(text: str) -> str:
         """中文转拼音"""
-        try:
-            from pypinyin import lazy_pinyin
-            return '_'.join(lazy_pinyin(text))
-        except ImportError:
+        if lazy_pinyin is None:
             return "rule"
+        return '_'.join(lazy_pinyin(text))
 
     @staticmethod
     def _sanitize_code(text: str) -> str:
@@ -75,22 +79,45 @@ class RuleService:
         rule_name: str,
         desc: str = "",
         rule_code: str = None,
-        tenant_id: int = 0,
-        app_name: str = ""
+        app_name: str = "",
+        tenant_id: Optional[int] = None
     ) -> RuleInfo:
         """创建新规则"""
         if not rule_code:
             rule_code = self.generate_rule_code(rule_name)
 
-        existing = await RuleInfo.filter(
+        if tenant_id is None:
+            tenant_id = TenantContext.get_tenant_id()
+
+        # 使用 Repository 检查编码是否已存在（只检查未删除的）
+        if await rule_info_repository.check_code_exists(
+            rule_code=rule_code,
+            app_name=app_name
+        ):
+            raise ValueError(f"规则编码已存在: {rule_code}")
+
+        # 检查规则名称是否已存在（只检查未删除的）
+        if await rule_info_repository.check_name_exists(
+            rule_name=rule_name,
+            app_name=app_name
+        ):
+            raise ValueError(f"规则名称已存在: {rule_name}")
+
+        # 检查是否有已删除的相同编码记录，如果有则物理删除（避免唯一键冲突）
+        deleted_rule = await RuleInfo.filter(
             tenant_id=tenant_id,
             app_name=app_name,
             rule_code=rule_code,
-            deleted=0
+            deleted=1
         ).first()
-
-        if existing:
-            raise ValueError(f"规则编码已存在: {rule_code}")
+        
+        if deleted_rule:
+            logger.info("发现已删除的相同编码规则，执行物理删除", 
+                       rule_id=deleted_rule.id, rule_code=rule_code)
+            # 先删除关联的版本记录
+            await RuleVersion.filter(rule_id=deleted_rule.id).delete()
+            # 再物理删除规则
+            await deleted_rule.delete()
 
         rule = await RuleInfo.create(
             tenant_id=tenant_id,
@@ -107,60 +134,50 @@ class RuleService:
     async def get_rule_by_code(
         self,
         rule_code: str,
-        tenant_id: int = 0,
         app_name: str = ""
     ) -> Optional[RuleInfo]:
-        """根据编码获取规则"""
-        query = RuleInfo.filter(
-            tenant_id=tenant_id,
+        """根据编码获取规则（不包含已删除的）"""
+        return await rule_info_repository.get_by_code(
             rule_code=rule_code,
-            deleted=0
+            app_name=app_name,
+            include_deleted=False
         )
-        if app_name:
-            query = query.filter(app_name=app_name)
-        return await query.first()
+
+    async def get_rule_by_id(
+        self,
+        rule_id: int
+    ) -> Optional[RuleInfo]:
+        """根据ID获取规则（不包含已删除的）"""
+        return await rule_info_repository.get_by_id(
+            rule_id=rule_id,
+            include_deleted=False
+        )
 
     async def list_rules(
         self,
-        tenant_id: int = 0,
         app_name: str = "",
         keyword: str = "",
         status: Optional[int] = None,
         page: int = 1,
         page_size: int = 20
     ) -> Tuple[int, List[RuleInfo]]:
-        """获取规则列表"""
-        query = RuleInfo.filter(deleted=0)
-
-        if tenant_id > 0:
-            query = query.filter(tenant_id=tenant_id)
-
-        if app_name:
-            query = query.filter(app_name=app_name)
-
-        if keyword:
-            query = query.filter(
-                Q(rule_code__contains=keyword) | Q(rule_name__contains=keyword)
-            )
-
-        if status is not None:
-            query = query.filter(status=status)
-
-        total = await query.count()
-        rules = await query.order_by("-updated_at").offset(
-            (page - 1) * page_size
-        ).limit(page_size).all()
-
-        return total, rules
+        """获取规则列表（不包含已删除的）"""
+        return await rule_info_repository.list(
+            app_name=app_name,
+            keyword=keyword,
+            status=status,
+            include_deleted=False,
+            page=page,
+            page_size=page_size
+        )
 
     async def get_rule_detail(
         self,
         rule_code: str,
-        tenant_id: int = 0,
         app_name: str = ""
     ) -> Optional[Dict[str, Any]]:
         """获取规则详情（包含最新版本）"""
-        rule = await self.get_rule_by_code(rule_code, tenant_id, app_name)
+        rule = await self.get_rule_by_code(rule_code, app_name)
         if not rule:
             return None
 
@@ -170,18 +187,19 @@ class RuleService:
         }
 
         if rule.latest_version_id:
-            version = await RuleVersion.filter(
-                id=rule.latest_version_id,
-                deleted=0
-            ).first()
+            # 使用 Repository 获取版本
+            version = await rule_version_repository.get_by_id(
+                version_id=rule.latest_version_id,
+                include_deleted=False
+            )
             if version:
-                result["current_version"] = await self._version_to_dict(version)
+                result["current_version"] = await self.version_to_dict(version)
 
         return result
 
-    async def _version_to_dict(self, version: RuleVersion) -> Dict[str, Any]:
+    async def version_to_dict(self, version: RuleVersion) -> Dict[str, Any]:
         """转换版本对象为字典"""
-        content_json = await self._get_content_json(version)
+        content_json = await self.get_content_json(version)
 
         return {
             "id": version.id,
@@ -200,17 +218,13 @@ class RuleService:
             "created_at": version.created_at.strftime("%Y-%m-%d %H:%M:%S") if version.created_at else ""
         }
 
-    async def _get_content_json(self, version: RuleVersion) -> Optional[Dict[str, Any]]:
+    async def get_content_json(self, version: RuleVersion) -> Optional[Dict[str, Any]]:
         """从 seekdb 获取版本内容"""
         if not version.seekdb_collection_name:
             return None
 
-        try:
-            result = await seekdb_service.get_rule_data(version.seekdb_collection_name)
-            return result
-        except Exception as e:
-            logger.error("获取内容失败", collection=version.seekdb_collection_name, error=str(e))
-            return None
+        # 使用 Repository 层获取数据
+        return await rule_data_repository.get_by_collection(version.seekdb_collection_name)
 
     async def _save_content(
         self,
@@ -263,10 +277,11 @@ class RuleService:
         if not rule:
             raise ValueError("规则不存在")
 
-        latest_version = await RuleVersion.filter(
+        # 使用 Repository 获取最新版本（不包含已删除的）
+        latest_version = await rule_version_repository.get_latest(
             rule_id=rule.id,
-            deleted=0
-        ).order_by("-version_no").first()
+            include_deleted=False
+        )
 
         logger.info(
             "save_version debug",
@@ -348,33 +363,93 @@ class RuleService:
         )
         return new_version
 
+    async def create_version_record(
+        self,
+        rule: RuleInfo,
+        collection_name: str,
+        headers: List[str],
+        doc_count: int,
+        remark: str = ""
+    ) -> RuleVersion:
+        """
+        直接创建版本记录（用于CSV导入场景）
+
+        注意：此方法不保存数据到seekdb，因为数据已经通过CSV导入保存过了。
+        这是为了避免重复保存到seekdb。
+
+        Args:
+            rule: 规则对象
+            collection_name: seekdb集合名称
+            headers: 表头列表
+            doc_count: 文档数量
+            remark: 版本备注
+
+        Returns:
+            创建的版本记录
+        """
+        if not rule:
+            raise ValueError("规则不存在")
+
+        # 使用 Repository 获取最新版本
+        latest_version = await rule_version_repository.get_latest(
+            rule_id=rule.id,
+            include_deleted=False
+        )
+
+        version_no = (latest_version.version_no + 1) if latest_version else 1
+        content_json = {"headers": headers, "data": []}
+        new_md5 = self.calculate_md5(content_json)
+
+        new_version = await RuleVersion.create(
+            tenant_id=rule.tenant_id,
+            app_name=rule.app_name,
+            rule_id=rule.id,
+            rule_code=rule.rule_code,
+            version_no=version_no,
+            content_md5=new_md5,
+            seekdb_collection_name=collection_name,
+            doc_count=doc_count,
+            headers=headers,
+            remark=remark or "",
+            status=1,
+            deleted=0
+        )
+
+        rule.latest_version_id = new_version.id
+        await rule.save()
+
+        logger.info(
+            "创建版本记录成功（CSV导入）",
+            rule_id=rule.id,
+            version_no=version_no,
+            collection_name=collection_name,
+            doc_count=doc_count
+        )
+
+        return new_version
+
     async def get_version_history(
         self,
         rule_code: str,
-        tenant_id: int = 0,
         page: int = 1,
         page_size: int = 20
     ) -> Tuple[int, List[Dict[str, Any]]]:
         """获取版本历史"""
-        query = RuleInfo.filter(
+        # 使用 Repository 获取规则
+        rule = await rule_info_repository.get_by_code(
             rule_code=rule_code,
-            deleted=0
+            include_deleted=False
         )
-        if tenant_id > 0:
-            query = query.filter(tenant_id=tenant_id)
-        rule = await query.first()
         if not rule:
             raise ValueError(f"规则不存在: {rule_code}")
 
-        query = RuleVersion.filter(
+        # 使用 Repository 获取版本列表
+        total, versions = await rule_version_repository.list(
             rule_id=rule.id,
-            deleted=0
+            include_deleted=False,
+            page=page,
+            page_size=page_size
         )
-
-        total = await query.count()
-        versions = await query.order_by("-version_no").offset(
-            (page - 1) * page_size
-        ).limit(page_size).all()
 
         version_list = []
         for v in versions:
@@ -395,60 +470,58 @@ class RuleService:
     async def get_version_by_no(
         self,
         rule_code: str,
-        version_no: int,
-        tenant_id: int = 0
+        version_no: int
     ) -> Optional[Dict[str, Any]]:
         """获取指定版本"""
-        query = RuleInfo.filter(
+        # 使用 Repository 获取规则
+        rule = await rule_info_repository.get_by_code(
             rule_code=rule_code,
-            deleted=0
+            include_deleted=False
         )
-        if tenant_id > 0:
-            query = query.filter(tenant_id=tenant_id)
-        rule = await query.first()
         if not rule:
             return None
 
-        version = await RuleVersion.filter(
+        # 直接根据 rule_id 和 version_no 查询版本
+        version = await rule_version_repository.get_by_rule_id_and_version_no(
             rule_id=rule.id,
             version_no=version_no,
-            deleted=0
-        ).first()
+            include_deleted=False
+        )
 
         if not version:
             return None
 
-        return await self._version_to_dict(version)
+        return await self.version_to_dict(version)
 
     async def rollback_version(
         self,
         rule_code: str,
-        version_no: int,
-        tenant_id: int = 0,
-        app_name: str = ""
+        version_no: int
     ) -> RuleVersion:
         """回滚到指定版本"""
-        rule = await self.get_rule_by_code(rule_code, tenant_id, app_name)
+        rule = await self.get_rule_by_code(rule_code)
         if not rule:
             raise ValueError(f"规则不存在: {rule_code}")
 
-        target_version = await RuleVersion.filter(
+        # 直接根据 rule_id 和 version_no 查询版本
+        target_version = await rule_version_repository.get_by_rule_id_and_version_no(
             rule_id=rule.id,
             version_no=version_no,
-            deleted=0
-        ).first()
+            include_deleted=False
+        )
 
         if not target_version:
             raise ValueError(f"版本不存在: {version_no}")
 
-        content_json = await self._get_content_json(target_version)
+        content_json = await self.get_content_json(target_version)
         if not content_json:
             raise ValueError("无法获取版本内容")
 
-        latest_version = await RuleVersion.filter(
+        # 使用 Repository 获取最新版本
+        latest_version = await rule_version_repository.get_latest(
             rule_id=rule.id,
-            deleted=0
-        ).order_by("-version_no").first()
+            include_deleted=False
+        )
 
         current_md5 = latest_version.content_md5 if latest_version else ""
 
@@ -464,20 +537,27 @@ class RuleService:
         rule_id: int,
         rule_name: str = None,
         desc: str = None,
-        status: int = None,
-        tenant_id: int = 0
+        status: int = None
     ) -> RuleInfo:
         """更新规则信息"""
-        rule = await RuleInfo.filter(
-            id=rule_id,
-            tenant_id=tenant_id,
-            deleted=0
-        ).first()
+        # 使用 Repository 获取规则（tenant_id在repo层自动从上下文获取）
+        rule = await rule_info_repository.get_by_id(
+            rule_id=rule_id,
+            include_deleted=False
+        )
         if not rule:
             raise ValueError(f"规则不存在: {rule_id}")
 
-        if rule_name is not None:
+        # 检查新名称是否与其他规则冲突（排除自身）
+        if rule_name is not None and rule_name != rule.rule_name:
+            if await rule_info_repository.check_name_exists(
+                rule_name=rule_name,
+                app_name=rule.app_name,
+                exclude_id=rule_id
+            ):
+                raise ValueError(f"规则名称已存在: {rule_name}")
             rule.rule_name = rule_name
+
         if desc is not None:
             rule.desc = desc
         if status is not None:
@@ -491,11 +571,10 @@ class RuleService:
     async def delete_rule(
         self,
         rule_code: str,
-        tenant_id: int = 0,
         app_name: str = ""
     ) -> None:
         """删除规则（软删除）"""
-        rule = await self.get_rule_by_code(rule_code, tenant_id, app_name)
+        rule = await self.get_rule_by_code(rule_code, app_name)
         if not rule:
             raise ValueError(f"规则不存在: {rule_code}")
 
@@ -504,7 +583,13 @@ class RuleService:
         await rule.save()
 
         # 软删除所有版本，同时删除 seekdb 集合
-        versions = await RuleVersion.filter(rule_id=rule.id).all()
+        # 注意：这里需要获取所有版本（包括已删除的），因为可能有之前已删除的版本
+        _, versions = await rule_version_repository.list(
+            rule_id=rule.id,
+            include_deleted=True,  # 获取所有版本
+            page=1,
+            page_size=10000
+        )
         for version in versions:
             version.deleted = 1
             await version.save()
@@ -514,6 +599,33 @@ class RuleService:
                 seekdb_service.delete_collection(version.seekdb_collection_name)
 
         logger.info("删除规则成功", rule_id=rule.id, rule_code=rule_code)
+
+    async def update_rule_config(
+        self,
+        rule_id: int,
+        config: Dict[str, Any]
+    ) -> RuleInfo:
+        """更新规则配置
+
+        Args:
+            rule_id: 规则ID
+            config: 配置字典
+
+        Returns:
+            更新后的规则对象
+        """
+        rule = await rule_info_repository.get_by_id(
+            rule_id=rule_id,
+            include_deleted=False
+        )
+        if not rule:
+            raise ValueError(f"规则不存在: {rule_id}")
+
+        rule.config = json.dumps(config, indent=2, ensure_ascii=False)
+        await rule.save()
+
+        logger.info("更新规则配置成功", rule_id=rule.id, rule_code=rule.rule_code)
+        return rule
 
     async def parse_csv_to_json(self, csv_content: str) -> Dict[str, Any]:
         """解析CSV内容为JSON格式"""
@@ -547,11 +659,10 @@ class RuleService:
     async def export_version_csv(
         self,
         rule_code: str,
-        version_no: int,
-        tenant_id: int = 0
+        version_no: int
     ) -> str:
         """导出版本为 CSV 格式"""
-        version = await self.get_version_by_no(rule_code, version_no, tenant_id)
+        version = await self.get_version_by_no(rule_code, version_no)
         if not version:
             raise ValueError(f"版本不存在: {rule_code} v{version_no}")
 
@@ -561,6 +672,72 @@ class RuleService:
 
         csv_content, headers, data = await seekdb_service.export_to_csv(collection_name)
         return csv_content
+
+    async def get_version_by_id(
+        self,
+        version_id: int
+    ) -> Optional[RuleVersion]:
+        """根据版本ID获取版本对象"""
+        return await rule_version_repository.get_by_id(
+            version_id=version_id,
+            include_deleted=False
+        )
+
+    async def get_version_by_rule_code(
+        self,
+        rule_code: str,
+        app_name: str = ""
+    ) -> Optional[RuleVersion]:
+        """
+        根据规则编码获取最新版本（用于规则引擎执行）
+
+        Args:
+            rule_code: 规则编码
+            app_name: 应用名称
+
+        Returns:
+            RuleVersion 对象或 None
+        """
+        return await rule_version_repository.get_by_rule_code(
+            rule_code=rule_code,
+            app_name=app_name,
+            include_deleted=False
+        )
+
+    async def get_rule_data_from_collection(
+        self,
+        collection_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        从 seekdb 获取规则数据
+
+        Args:
+            collection_name: seekdb 集合名称
+
+        Returns:
+            规则数据或 None
+        """
+        return await rule_data_repository.get_by_collection(collection_name)
+
+    async def query_rule_data_with_filter(
+        self,
+        collection_name: str,
+        filter_config: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        使用过滤条件查询 seekdb
+
+        Args:
+            collection_name: seekdb 集合名称
+            filter_config: 过滤配置 {字段名: 值}
+
+        Returns:
+            数据列表
+        """
+        return await rule_data_repository.query_with_filter(
+            collection_name=collection_name,
+            filter_config=filter_config
+        )
 
 
 rule_service = RuleService()

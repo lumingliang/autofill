@@ -24,8 +24,6 @@ class AppManagement(BaseModel, TimestampMixin):
     app_name = fields.CharField(max_length=64, default="", description="应用名称(英文)", index=True)
     tenant_id = fields.BigIntField(default=0, description="租户ID", index=True)
     api_key = fields.CharField(max_length=64, default=generate_api_key, description="API密钥", unique=True)
-    dify_url = fields.CharField(max_length=255, default="", description="Dify服务地址")
-    dify_api_key = fields.CharField(max_length=128, default="", description="Dify API密钥")
     description = fields.CharField(max_length=255, default="", description="应用描述")
     is_active = fields.BooleanField(default=True, description="是否启用", index=True)
 

@@ -1,3 +1,4 @@
+
 from typing import Optional
 import jwt
 from fastapi import Depends, Header, HTTPException, Request
@@ -9,6 +10,46 @@ from app.models import User
 from app.models.admin import Api
 from app.services.permission_cache_service import permission_cache_service
 from app.settings import settings
+
+
+async def get_current_user_from_request(request: Request) -> Optional["User"]:
+    """
+    从请求状态中获取当前用户（由 TenantContextMiddleware 设置）
+    
+    这是推荐的获取当前用户的方式，避免重复认证。
+    如果中间件未设置，则返回 None。
+    """
+    if hasattr(request.state, 'current_user'):
+        return request.state.current_user
+    return None
+
+
+async def get_current_user_dep(request: Request) -> "User":
+    """
+    依赖注入：获取当前用户
+    
+    从 request.state 获取当前用户（由 TenantContextMiddleware 设置）
+    如果用户未认证，抛出 401 异常
+    
+    Raises:
+        HTTPException: 用户未认证时抛出 401 异常
+    """
+    user = await get_current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
+
+
+def get_tenant_id_from_request(request: Request) -> int:
+    """
+    从请求状态中获取租户ID
+    
+    Returns:
+        int: 租户ID（0 表示未设置或超级管理员未指定租户）
+    """
+    if hasattr(request.state, 'tenant_id'):
+        return request.state.tenant_id
+    return 0
 
 
 class AuthControl:

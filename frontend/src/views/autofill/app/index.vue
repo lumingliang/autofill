@@ -69,12 +69,6 @@
                 <a-form-item v-if="userStore.isSuperUser" label="租户" name="tenant_id">
                     <a-select v-model:value="form.tenant_id" placeholder="请选择租户" :options="tenantOptions" />
                 </a-form-item>
-                <a-form-item label="Dify服务地址" name="dify_url">
-                    <a-input v-model:value="form.dify_url" placeholder="请输入Dify服务地址，如：https://dify.example.com/v1" />
-                </a-form-item>
-                <a-form-item label="Dify API Key" name="dify_api_key">
-                    <a-input-password v-model:value="form.dify_api_key" placeholder="请输入Dify API Key" />
-                </a-form-item>
                 <a-form-item label="应用描述" name="description">
                     <a-textarea v-model:value="form.description" placeholder="请输入应用描述" :rows="3" />
                 </a-form-item>
@@ -123,8 +117,6 @@ const modalForm = reactive({
     id: undefined as number | undefined,
     app_name: '',
     tenant_id: undefined as number | undefined,
-    dify_url: '',
-    dify_api_key: '',
     description: '',
     is_active: true,
 })
@@ -137,7 +129,6 @@ const columns = computed(() => [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
     { title: '应用名称', dataIndex: 'app_name', key: 'app_name' },
     { title: 'API Key', key: 'api_key', width: 280 },
-    { title: 'Dify地址', dataIndex: 'dify_url', key: 'dify_url', ellipsis: true },
     { title: '状态', key: 'is_active', width: 100 },
     { title: '创建时间', key: 'created_at', width: 180 },
     { title: '操作', key: 'action', width: 150, fixed: 'right' },
@@ -232,8 +223,6 @@ const handleAdd = () => {
         id: undefined,
         app_name: '',
         tenant_id: userStore.isSuperUser ? undefined : userStore.userInfo?.current_tenant_id,
-        dify_url: '',
-        dify_api_key: '',
         description: '',
         is_active: true,
     })

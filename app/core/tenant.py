@@ -21,6 +21,16 @@ class TenantContext:
         CTX_USER.set(user)
 
     @classmethod
+    def set_tenant_id(cls, tenant_id: int) -> None:
+        """
+        直接设置租户ID（用于API Key认证等没有用户对象的场景）
+        
+        Args:
+            tenant_id: 租户ID
+        """
+        CTX_TENANT_ID.set(tenant_id)
+
+    @classmethod
     def get_user(cls) -> Optional[User]:
         """获取当前用户"""
         return CTX_USER.get()
@@ -43,6 +53,7 @@ class TenantContext:
         获取有效的租户ID
 
         规则:
+        - 如果直接设置了 tenant_id，优先使用
         - 超级管理员：优先使用请求中传入的 tenant_id，否则返回 0（表示无限制）
         - 普通用户：使用用户自己的租户 ID
 
@@ -52,6 +63,11 @@ class TenantContext:
         Returns:
             int: 有效的租户ID，0表示无限制
         """
+        # 优先检查是否直接设置了 tenant_id
+        direct_tenant_id = CTX_TENANT_ID.get()
+        if direct_tenant_id > 0:
+            return direct_tenant_id
+
         user = CTX_USER.get()
 
         if not user:

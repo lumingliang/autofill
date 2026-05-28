@@ -5,7 +5,7 @@ venv/
 .vscode
 .ruff_cache/
 .pytest_cache/
-migrations/
+# migrations/  # 注释掉，因为我们现在需要提交迁移文件
 
 db.sqlite3
 db.sqlite3-journal

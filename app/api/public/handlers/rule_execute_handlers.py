@@ -79,7 +79,6 @@ async def execute_rule(
     }
     ```
     """
-    tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
 
     # 参数验证
@@ -120,7 +119,6 @@ async def execute_rule(
 
     try:
         result = await rule_engine_service.execute_rule(
-            tenant_id=tenant_id,
             app_name=app_name,
             session_id=session_id,
             query=query,
@@ -158,7 +156,6 @@ async def get_rule_execute_result(
     }
     ```
     """
-    tenant_id = auth_info["tenant_id"]
     app_name = auth_info["app_name"]
     session_id = request_data.get("session_id")
 
@@ -167,7 +164,6 @@ async def get_rule_execute_result(
 
     result = await rule_engine_service.get_step_result(
         session_id=session_id,
-        tenant_id=tenant_id,
         app_name=app_name
     )
 

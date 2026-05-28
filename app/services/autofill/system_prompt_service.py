@@ -328,11 +328,11 @@ class SystemPromptService:
 
     async def get_system_prompt_for_execution(
         self,
-        tenant_id: int,
         system_prompt: Optional[str] = None,
         system_prompt_name: Optional[str] = None,
         category: str = "general",
-        variables: Optional[Dict[str, Any]] = None
+        variables: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[int] = None
     ) -> str:
         """
         获取用于执行的系统提示词
@@ -345,15 +345,19 @@ class SystemPromptService:
         5. 返回空字符串
 
         Args:
-            tenant_id: 租户ID
             system_prompt: 直接传入的提示词
             system_prompt_name: 提示词名称
             category: 分类
             variables: 变量字典，用于替换提示词中的占位符
+            tenant_id: 租户ID（可选，默认从 TenantContext 获取）
 
         Returns:
             系统提示词内容（已替换变量）
         """
+        # 从 TenantContext 获取 tenant_id（如果没有传入）
+        if tenant_id is None:
+            tenant_id = TenantContext.get_tenant_id()
+
         # 1. 优先使用传入的 system_prompt
         if system_prompt:
             return self._render_template(system_prompt, variables)

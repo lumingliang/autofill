@@ -57,81 +57,81 @@ services:
       start_period: 60s
 
   # 主应用服务（前后端统一）
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ${APP_CONTAINER_NAME:-autofill-app}
-    restart: unless-stopped
-    ports:
-      - "${APP_PORT:-9998}:9999"
-    environment:
-      # 应用基础配置
-      DEBUG: ${APP_DEBUG:-false}
-      BASE_URL: ${APP_BASE_URL:-http://localhost:9999}
-      SECRET_KEY: ${APP_SECRET_KEY:-3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf}
-      JWT_ACCESS_TOKEN_EXPI_MINUTES: ${APP_JWT_EXPIRE_MINUTES:-10080}
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: ${APP_CONTAINER_NAME:-autofill-app}
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${APP_PORT:-9998}:9999"
+  #   environment:
+  #     # 应用基础配置
+  #     DEBUG: ${APP_DEBUG:-false}
+  #     BASE_URL: ${APP_BASE_URL:-http://localhost:9999}
+  #     SECRET_KEY: ${APP_SECRET_KEY:-3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf}
+  #     JWT_ACCESS_TOKEN_EXPI_MINUTES: ${APP_JWT_EXPIRE_MINUTES:-10080}
       
-      # MySQL 数据库配置
-      MYSQL_HOST: ${MYSQL_HOST:-host.docker.internal}
-      MYSQL_PORT: ${MYSQL_PORT:-3306}
-      MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root123456}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-autofill}
+  #     # MySQL 数据库配置
+  #     MYSQL_HOST: ${MYSQL_HOST:-host.docker.internal}
+  #     MYSQL_PORT: ${MYSQL_PORT:-3306}
+  #     MYSQL_USER: ${MYSQL_USER:-root}
+  #     MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root123456}
+  #     MYSQL_DATABASE: ${MYSQL_DATABASE:-autofill}
       
-      # SeekDB 配置 - 使用远程模式
-      SEEKDB_ENABLED: ${SEEKDB_ENABLED:-true}
-      SEEKDB_MODE: ${SEEKDB_MODE:-remote}
-      SEEKDB_HOST: ${SEEKDB_HOST:-seekdb}
-      SEEKDB_PORT: ${SEEKDB_PORT:-2881}
-      SEEKDB_USER: ${SEEKDB_USER:-root}
-      SEEKDB_PASSWORD: ${SEEKDB_ROOT_PASSWORD:-seekdb123456}
-      SEEKDB_DATABASE: ${SEEKDB_DATABASE:-autofill}
+  #     # SeekDB 配置 - 使用远程模式
+  #     SEEKDB_ENABLED: ${SEEKDB_ENABLED:-true}
+  #     SEEKDB_MODE: ${SEEKDB_MODE:-remote}
+  #     SEEKDB_HOST: ${SEEKDB_HOST:-seekdb}
+  #     SEEKDB_PORT: ${SEEKDB_PORT:-2881}
+  #     SEEKDB_USER: ${SEEKDB_USER:-root}
+  #     SEEKDB_PASSWORD: ${SEEKDB_ROOT_PASSWORD:-seekdb123456}
+  #     SEEKDB_DATABASE: ${SEEKDB_DATABASE:-autofill}
       
-      # Redis 配置
-      REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123456}
-      REDIS_DB: ${REDIS_DB:-3}
-      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-auto_fill}
+  #     # Redis 配置
+  #     REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+  #     REDIS_PORT: ${REDIS_PORT:-6379}
+  #     REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123456}
+  #     REDIS_DB: ${REDIS_DB:-3}
+  #     REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-auto_fill}
       
-      # LiteLLM 配置
-      LITELLM_HOST: ${LITELLM_HOST:-litellm}
-      LITELLM_PORT: ${LITELLM_PORT:-4000}
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-master-key}
+  #     # LiteLLM 配置
+  #     LITELLM_HOST: ${LITELLM_HOST:-litellm}
+  #     LITELLM_PORT: ${LITELLM_PORT:-4000}
+  #     LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-master-key}
       
-      # Kafka 配置
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-host.docker.internal:9092}
+  #     # Kafka 配置
+  #     KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-host.docker.internal:9092}
       
-      # 日志配置
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LOG_FILE: ${LOG_FILE:-./logs/app.log}
+  #     # 日志配置
+  #     LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  #     LOG_FILE: ${LOG_FILE:-./logs/app.log}
       
-      # 上传配置
-      UPLOAD_DIR: ${UPLOAD_DIR:-./uploads}
-      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-5}
-    volumes:
-      # 上传文件目录
-      - ${UPLOADS_HOST_PATH:-./uploads}:/app/uploads
-      # 日志目录
-      - ${LOGS_HOST_PATH:-./logs}:/app/logs
-      # 配置文件
-      - ${CONFIG_HOST_PATH:-./config.docker.toml}:/app/config.toml:ro
-      # 可选：挂载额外的数据目录
-      - ${DATA_HOST_PATH:-./data}:/app/data
-    networks:
-      - autofill-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      seekdb:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+  #     # 上传配置
+  #     UPLOAD_DIR: ${UPLOAD_DIR:-./uploads}
+  #     MAX_FILE_SIZE: ${MAX_FILE_SIZE:-5}
+  #   volumes:
+  #     # 上传文件目录
+  #     - ${UPLOADS_HOST_PATH:-./uploads}:/app/uploads
+  #     # 日志目录
+  #     - ${LOGS_HOST_PATH:-./logs}:/app/logs
+  #     # 配置文件
+  #     - ${CONFIG_HOST_PATH:-./config.docker.toml}:/app/config.toml:ro
+  #     # 可选：挂载额外的数据目录
+  #     - ${DATA_HOST_PATH:-./data}:/app/data
+  #   networks:
+  #     - autofill-network
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     seekdb:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 60s
 
   # LiteLLM 服务 - 使用官方镜像
   litellm:

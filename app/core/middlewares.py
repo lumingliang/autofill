@@ -1,3 +1,4 @@
+
 import json
 import re
 import uuid
@@ -12,6 +13,7 @@ from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
 from app.core.dependency import AuthControl
+from app.core.tenant import TenantContext
 from app.log import logger, set_request_id, set_tenant_domain
 from app.models.admin import AuditLog, User
 
@@ -68,6 +70,122 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         response.headers["X-Request-ID"] = request_id
 
         return response
+
+
+class TenantContextMiddleware(BaseHTTPMiddleware):
+    """
+    租户上下文中间件
+    
+    功能：
+    1. 在请求开始时从 Header 获取 token 进行认证
+    2. 设置 TenantContext（用户和租户ID）
+    3. 将用户信息和租户ID存储到请求状态中
+    4. 请求结束后清理租户上下文
+    
+    使用方式：
+    - API Handler 直接从 request.state 获取 current_user 和 tenant_id
+    - Service/Repository 层从 TenantContext 获取租户信息
+    - 不需要在 API 层重复调用 AuthControl.is_authed()
+    """
+
+    def __init__(self, app, exclude_paths: list[str] = None):
+        super().__init__(app)
+        self.exclude_paths = exclude_paths or [
+            "/docs",
+            "/openapi.json",
+            "/redoc",
+            "/health",
+            "/uploads/",
+            "/api/autofill/llm/rule/execute",
+            "/api/autofill/llm/rule/execute/result",
+        ]
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        path = request.url.path
+        
+        # 跳过不需要认证的路径
+        if any(path.startswith(p) for p in self.exclude_paths):
+            return await call_next(request)
+
+        # 初始化请求状态
+        request.state.current_user = None
+        request.state.tenant_id = 0
+        request.state.is_authenticated = False
+
+        # 获取 token
+        token = request.headers.get("token")
+
+        if token:
+            try:
+                # 调用认证逻辑
+                user = await AuthControl.is_authed(token)
+                
+                # 设置租户上下文（已经在 AuthControl.is_authed 中设置）
+                # 这里再设置一次确保上下文已设置
+                TenantContext.set_user(user)
+                
+                # 从请求参数或查询参数获取租户ID（用于超管指定租户）
+                tenant_id = await self._get_request_tenant_id(request, user)
+                
+                # 如果超管指定了租户，设置到上下文中
+                if user.is_superuser and tenant_id > 0:
+                    TenantContext.set_tenant_id(tenant_id)
+                
+                # 存储到请求状态，供 API Handler 直接使用
+                request.state.current_user = user
+                request.state.tenant_id = tenant_id
+                request.state.is_authenticated = True
+
+            except Exception as e:
+                # 认证失败时继续处理，但不设置上下文
+                logger.warning(f"TenantContextMiddleware: Authentication failed for path {path}: {e}")
+
+        # 处理请求
+        response = await call_next(request)
+
+        # 请求结束后清理租户上下文
+        TenantContext.clear()
+
+        return response
+
+    async def _get_request_tenant_id(self, request: Request, user) -> int:
+        """
+        从请求中获取租户ID
+        
+        优先级：
+        1. 查询参数 tenant_id
+        2. JSON 请求体 tenant_id
+        3. 用户当前的租户ID
+        
+        Args:
+            request: 请求对象
+            user: 当前用户
+            
+        Returns:
+            int: 租户ID
+        """
+        # 超级管理员可以指定租户
+        if user.is_superuser:
+            # 从查询参数获取
+            tenant_id = request.query_params.get("tenant_id")
+            if tenant_id:
+                try:
+                    return int(tenant_id)
+                except ValueError:
+                    pass
+
+            # 从请求体获取（需要在调用前预加载）
+            if request.method in ["POST", "PUT", "PATCH"]:
+                try:
+                    body = await request.json()
+                    tenant_id = body.get("tenant_id")
+                    if tenant_id:
+                        return int(tenant_id)
+                except Exception:
+                    pass
+
+        # 普通用户使用自己的租户ID
+        return getattr(user, "current_tenant_id", 0)
 
 
 class RequestLoggingMiddleware:
@@ -362,18 +480,24 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         except Exception:
             pass
         
-        # 获取当前用户信息（API Key 认证无用户信息）
+        # 获取当前用户信息（优先从请求状态获取，其次重新认证）
         user_id = None
         username = None
-        try:
-            token = request.headers.get("token")
-            if token:
-                user_obj: User = await AuthControl.is_authed(token)
-                if user_obj:
-                    user_id = user_obj.id
-                    username = user_obj.username
-        except Exception:
-            pass
+        if hasattr(request.state, 'current_user') and request.state.current_user:
+            user_obj = request.state.current_user
+            user_id = user_obj.id
+            username = user_obj.username
+        else:
+            # 降级处理：重新认证
+            try:
+                token = request.headers.get("token")
+                if token:
+                    user_obj: User = await AuthControl.is_authed(token)
+                    if user_obj:
+                        user_id = user_obj.id
+                        username = user_obj.username
+            except Exception:
+                pass
         
         # 没有用户信息时不记录审计日志（如 API Key 认证）
         if user_id is None:

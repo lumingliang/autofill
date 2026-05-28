@@ -32,15 +32,17 @@
             <h4>配置结构说明：</h4>
             <ul>
               <li><code>global_vars</code>: 全局变量，用于替换CURL命令中的占位符</li>
-              <li><code>data_root_path</code>: 数据根路径，如 $.data</li>
+              <li><code>data_root</code>: 数据根路径，如 $.data</li>
               <li><code>curl_commands</code>: CURL命令列表（支持多个级联请求）</li>
-              <li><code>level_config</code>: 层级配置，定义每个层级的字段映射</li>
+              <li><code>levels</code>: 层级配置数组，定义每个层级的字段映射</li>
             </ul>
             <h4>层级配置说明：</h4>
             <ul>
-              <li><code>source</code>: 数据源配置 (type: request/children)</li>
-              <li><code>fields</code>: 字段映射列表 (csv_header, jsonpath)</li>
-              <li><code>children_jsonpath</code>: 子节点JSONPath</li>
+              <li><code>name</code>: 层级名称（如 level1, level2）</li>
+              <li><code>source</code>: 数据来源 (request 或 children)</li>
+              <li><code>request_index</code>: 请求索引，source=request时使用</li>
+              <li><code>fields</code>: 字段映射列表 (header, jsonpath)</li>
+              <li><code>children_path</code>: 子节点JSONPath</li>
               <li><code>params</code>: 请求参数映射</li>
             </ul>
           </div>
@@ -133,50 +135,45 @@ const emit = defineEmits<{
   imported: [data: any]
 }>()
 
-// 默认配置示例
+// 默认配置示例 - 与脚本配置格式完全一致
 const defaultConfig = {
-  description: '事件类型单请求树形结构导入',
+  description: '单请求树形结构展平 - 测试接口',
   global_vars: {
-    API_KEY: 'your_api_key',
-    BASE_URL: 'http://localhost:9999',
-    CLASS_NAME: '事件类型',
-    TOKEN: 'your_token'
+    BASE_URL: 'http://localhost:6666'
   },
-  data_root_path: '$.data',
-  level_config: {
-    level1: {
-      source: { type: 'request', index: 0 },
+  data_root: '$.data',
+  levels: [
+    {
+      name: 'level1',
+      source: 'request',
+      request_index: 0,
       fields: [
-        { csv_header: 'level1', jsonpath: '$.option_value' },
-        { csv_header: 'level1_summary', jsonpath: '$.summary' },
-        { csv_header: 'level1_id', jsonpath: '$.id' },
-        { csv_header: 'level1_code', jsonpath: '$.code' }
+        { header: 'name_level1', jsonpath: '$.option_value' },
+        { header: 'id_level1', jsonpath: '$.id' },
+        { header: 'code_level1', jsonpath: '$.code' }
       ],
-      children_jsonpath: '$.children',
-      params: {}
+      children_path: '$.children'
     },
-    level2: {
-      source: { type: 'children', from_level: 'level1' },
+    {
+      name: 'level2',
+      source: 'children',
       fields: [
-        { csv_header: 'level2', jsonpath: '$.option_value' },
-        { csv_header: 'level2_summary', jsonpath: '$.summary' },
-        { csv_header: 'level2_id', jsonpath: '$.id' }
+        { header: 'name_level2', jsonpath: '$.option_value' },
+        { header: 'id_level2', jsonpath: '$.id' }
       ],
-      children_jsonpath: '$.children',
-      params: {}
+      children_path: '$.children'
     },
-    level3: {
-      source: { type: 'children', from_level: 'level2' },
+    {
+      name: 'level3',
+      source: 'children',
       fields: [
-        { csv_header: 'level3', jsonpath: '$.option_value' },
-        { csv_header: 'level3_summary', jsonpath: '$.summary' }
+        { header: 'name_level3', jsonpath: '$.option_value' }
       ],
-      children_jsonpath: null,
-      params: {}
+      children_path: null
     }
-  },
+  ],
   curl_commands: [
-    "curl 'http://localhost:3200/api/v1/autofill/dropdown/tree?app_name=test_app&class_name=%E4%BA%8B%E4%BB%B6%E7%B1%BB%E5%9E%8B' \\n   -H 'Accept: application/json, text/plain, */*' \\n   -H 'token: {TOKEN}'"
+    'curl -X POST "{BASE_URL}/api/test/tree" -H "Content-Type: application/json"'
   ]
 }
 

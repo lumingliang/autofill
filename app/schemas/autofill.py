@@ -9,16 +9,12 @@ class AppCreate(BaseModel):
     app_name: str = Field(..., max_length=128, pattern=r"^[a-zA-Z0-9_]+$")
     tenant_id: int = Field(0, description="租户ID")
     description: str = Field("", description="应用描述")
-    dify_url: str = Field("", description="Dify服务地址")
-    dify_api_key: str = Field("", description="Dify API密钥")
 
 
 class AppUpdate(BaseModel):
     id: int
     app_name: str = Field("", max_length=128, pattern=r"^[a-zA-Z0-9_]+$")
     description: str = Field("", description="应用描述")
-    dify_url: str = Field("", description="Dify服务地址")
-    dify_api_key: str = Field("", description="Dify API密钥")
     is_active: bool = Field(True, description="是否启用")
 
 
@@ -27,8 +23,6 @@ class AppOut(BaseModel):
     app_name: str = ""
     tenant_id: int = 0
     api_key: str = ""
-    dify_url: str = ""
-    dify_api_key: str = ""
     description: str = ""
     is_active: bool = True
     created_at: str = ""

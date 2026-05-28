@@ -17,6 +17,9 @@ import pyseekdb
 from app.log import logger
 from app.settings.config import settings
 
+# 查询结果数量限制（pyseekdb 默认只返回 100 条）
+DEFAULT_QUERY_LIMIT = 100000
+
 
 class SeekDBService:
     """seekdb 存储服务"""
@@ -101,18 +104,19 @@ class SeekDBService:
                 )
         return self._client
 
-    def get_or_create_collection(self, name: str):
+    def get_or_create_collection(self, name: str, embedding_function=None):
         """
         获取或创建集合
 
         Args:
             name: 集合名称
+            embedding_function: 嵌入函数，默认None表示不使用嵌入（提高性能）
 
         Returns:
             Collection 对象
         """
         client = self._get_client()
-        return client.get_or_create_collection(name)
+        return client.get_or_create_collection(name, embedding_function=embedding_function)
 
     def delete_collection(self, name: str) -> bool:
         """
@@ -186,17 +190,12 @@ class SeekDBService:
             }
             metadatas.append(metadata)
 
-        # 批量写入 seekdb
-        collection = self.get_or_create_collection(collection_name)
-
-        # 构建 documents（用于生成 embeddings）
-        documents = []
-        for row in data:
-            # 将行数据转换为文本格式
-            doc_text = " | ".join([f"{header}: {row.get(header, '')}" for header in headers])
-            documents.append(doc_text)
-
-        collection.add(ids=ids, metadatas=metadatas, documents=documents)
+        # 批量写入 seekdb（不使用向量嵌入）
+        collection = self.get_or_create_collection(collection_name, embedding_function=None)
+        # 数据存储在 metadatas 中，不使用嵌入向量以节省空间
+        # 使用标准384维零向量作为占位符
+        embeddings = [[0.0] * 384 for _ in range(len(ids))]
+        collection.add(ids=ids, metadatas=metadatas, embeddings=embeddings)
 
         logger.info(
             f"保存规则数据到 seekdb",
@@ -223,7 +222,7 @@ class SeekDBService:
         """
         try:
             collection = self.get_or_create_collection(collection_name)
-            results = collection.get()
+            results = collection.get(limit=DEFAULT_QUERY_LIMIT)
 
             if not results or not results.get("metadatas"):
                 return None
@@ -269,7 +268,7 @@ class SeekDBService:
         """
         try:
             collection = self.get_or_create_collection(collection_name)
-            results = collection.get(where={f"data.{field}": value})
+            results = collection.get(where={f"data.{field}": value}, limit=DEFAULT_QUERY_LIMIT)
 
             data = []
             for metadata in results.get("metadatas", []):
@@ -299,7 +298,7 @@ class SeekDBService:
         """
         try:
             collection = self.get_or_create_collection(collection_name)
-            results = collection.get(where=filter_dict)
+            results = collection.get(where=filter_dict, limit=DEFAULT_QUERY_LIMIT)
 
             data = []
             for metadata in results.get("metadatas", []):
@@ -327,7 +326,7 @@ class SeekDBService:
         """
         try:
             collection = self.get_or_create_collection(collection_name)
-            results = collection.get()
+            results = collection.get(limit=DEFAULT_QUERY_LIMIT)
 
             if not results or not results.get("metadatas"):
                 return "", [], []
@@ -369,7 +368,7 @@ class SeekDBService:
         """
         try:
             collection = self.get_or_create_collection(collection_name)
-            results = collection.get()
+            results = collection.get(limit=DEFAULT_QUERY_LIMIT)
             return len(results.get("ids", []))
         except Exception as e:
             logger.error(f"获取文档数量失败: {collection_name}, error: {e}")
