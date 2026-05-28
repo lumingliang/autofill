@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 反馈内容总结接口测试脚本
-支持测试规则引擎链路和原有链路
+使用规则引擎模式
 """
 import requests
 import json
@@ -18,24 +18,18 @@ headers = {
 }
 
 
-def test_summary_feedback(use_rule_engine=True):
-    """测试反馈内容总结接口
-    
-    Args:
-        use_rule_engine: 是否使用规则引擎，默认为True
-    """
+def test_summary_feedback():
+    """测试反馈内容总结接口"""
     # 生成测试数据
     test_data = {
         "order_id": f"ORDER_{uuid.uuid4().hex[:8].upper()}",
         "brand": "测试品牌",
         "feedback_content": "客户反馈：产品使用过程中遇到了几个问题，首先是APP连接不稳定，经常断连；其次是说明书描述不清楚，很多功能找不到在哪里设置；另外希望能够增加一个定时功能，这样使用起来会更方便。",
-        "callback": "回调测试数据",
-        "use_rule_engine": use_rule_engine
+        "callback": "回调测试数据"
     }
 
-    mode = "规则引擎模式" if use_rule_engine else "原有链路模式"
     print("=" * 60)
-    print(f"反馈内容总结接口测试 - {mode}")
+    print("反馈内容总结接口测试 - 规则引擎模式")
     print("=" * 60)
     print(f"\n请求URL: {API_BASE_URL}/autofill/summary-feedback")
     print(f"\n请求参数:")
@@ -115,8 +109,7 @@ def test_multiple_cases():
         test_data = {
             "order_id": f"ORDER_{uuid.uuid4().hex[:8].upper()}",
             "brand": "测试品牌",
-            "feedback_content": case['content'],
-            "use_rule_engine": True
+            "feedback_content": case['content']
         }
         
         try:
@@ -148,12 +141,7 @@ if __name__ == "__main__":
     print("开始测试")
     print("=" * 60)
     
-    success1, summary1 = test_summary_feedback(use_rule_engine=True)
-    
-    print("\n" + "-" * 60)
-    
-    # 测试原有链路模式
-    success2, summary2 = test_summary_feedback(use_rule_engine=False)
+    success, summary = test_summary_feedback()
     
     # 批量测试
     test_multiple_cases()

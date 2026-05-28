@@ -3,35 +3,13 @@ Public API schemas
 用于公开接口的请求/响应模型
 """
 from .base import BasePublicRequest
-from .field_group import (
-    FieldGroupRequest,
-    LLMFillRequest,
-    StepLLMFillRequest,
-    StepLLMFillResultRequest,
-    ChatSessionRequest,
-    TestFillRequest,
-    StepLLMFillResponse,
-    StepLLMFillResponseData,
-)
 from .schemas import (
     # 基础请求类
     BasePublicRequest as BaseRequest,
     AppBaseRequest,
     TenantAppBaseRequest,
-    # 字段明细相关
-    FieldSpecListRequest,
-    FieldSpecCreateRequest,
-    FieldItem,
-    UpsertFieldGroupRequest,
-    # 字段组相关
-    FieldGroupRequest as SchemasFieldGroupRequest,
-    FieldGroupDetailRequest,
     # 填单数据相关
     RecordFillDataRequest,
-    # LLM/AI填单相关
-    AIFillDataRequest,
-    AIFillDataResultRequest,
-    LLMFillRequest as SchemasLLMFillRequest,
 )
 
 __all__ = [
@@ -40,24 +18,6 @@ __all__ = [
     "BaseRequest",
     "AppBaseRequest",
     "TenantAppBaseRequest",
-    # 字段明细相关
-    "FieldSpecListRequest",
-    "FieldSpecCreateRequest",
-    "FieldItem",
-    "UpsertFieldGroupRequest",
-    # 字段组相关
-    "FieldGroupRequest",
-    "FieldGroupDetailRequest",
-    "LLMFillRequest",
-    "StepLLMFillRequest",
-    "StepLLMFillResponse",
-    "StepLLMFillResponseData",
     # 填单数据相关
     "RecordFillDataRequest",
-    # LLM/AI填单相关
-    "AIFillDataRequest",
-    "AIFillDataResultRequest",
-    # Agent相关
-    "AgentRunRequest",
-    "DataQueryRequest",
 ]

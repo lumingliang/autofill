@@ -17,8 +17,7 @@ if __name__ == "__main__":
         "app:app",
         host="0.0.0.0",
         port=9999,
-        reload=True,
-        reload_dirs=["app"],  # 只监视 app 目录，排除其他非本应用目录
+        reload=False,
         access_log=False,  # 禁用默认访问日志，由我们的中间件处理
         log_level="info",
     )

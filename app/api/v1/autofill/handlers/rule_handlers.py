@@ -38,8 +38,10 @@ async def list_rules(
     app_name: str = Query("", description="应用名称"),
 ):
     """获取规则列表
-    
-    注意：租户上下文由 Repository 层通过 TenantContext 自动处理
+
+    注意：租户上下文由 TenantContextMiddleware 中间件统一处理
+    - 超管账号：可通过 tenant_id 查询参数筛选特定租户
+    - 普通账号：自动使用当前租户ID
     """
     total, rules = await rule_service.list_rules(
         app_name=app_name,
