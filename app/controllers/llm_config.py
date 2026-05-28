@@ -73,15 +73,12 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
         # 准备更新数据
         update_data = obj_in.model_dump(exclude_unset=True, exclude={"id"})
 
-        # 检查 litellm_params 中的 api_key 是否被脱敏
-        litellm_params = update_data.get("litellm_params", {})
-        if litellm_params and "api_key" in litellm_params:
-            new_api_key = litellm_params["api_key"]
+        # 检查 api_key 是否被脱敏
+        if "api_key" in update_data:
+            new_api_key = update_data["api_key"]
             if self._is_masked_api_key(new_api_key):
                 # 如果 api_key 被脱敏，保留原来的值
-                old_litellm_params = config.litellm_params or {}
-                litellm_params["api_key"] = old_litellm_params.get("api_key", "")
-                update_data["litellm_params"] = litellm_params
+                update_data["api_key"] = config.api_key
 
         # 更新配置
         updated = await self.update(id=id, obj_in=update_data)
@@ -182,15 +179,14 @@ class LLMConfigController(CRUDBase[LLMConfig, LLMConfigCreate, LLMConfigUpdate])
 
     async def test_config(self, config: LLMConfig) -> Dict[str, Any]:
         """测试配置连通性"""
-        litellm_params = config.litellm_params or {}
-        api_key = litellm_params.get("api_key", "")
-        api_base = litellm_params.get("api_base", None)
+        api_key = config.api_key
+        api_base = config.api_base
 
         # 使用配置名称作为模型名称（对应 LiteLLM 网关的 model_list 中的 model_name）
         model = config.name
 
         if not model or not api_key:
-            raise HTTPException(status_code=400, detail="模型配置缺少 model 或 api_key")
+            raise HTTPException(status_code=400, detail="模型配置缺少 name 或 api_key")
 
         try:
             start_time = time.time()

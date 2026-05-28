@@ -87,43 +87,6 @@ class RecordFillDataRequest(BasePublicRequest):
     user_name: Optional[str] = Field(default=None, description="用户名称")
 
 
-# ==================== 下拉选项相关请求 ====================
-
-class DropdownOptionListRequest(BasePublicRequest):
-    """查询下拉选项列表请求"""
-    class_name: Optional[str] = Field(default=None, description="分类名称")
-    parent_id: int = Field(default=0, description="父选项ID（0表示查询一级选项）")
-    tree: bool = Field(default=False, description="是否返回树形结构")
-
-
-class DropdownOptionDetailRequest(BasePublicRequest):
-    """查询下拉选项详情请求"""
-    id: int = Field(..., description="选项ID")
-
-
-class FirstLevelMenusRequest(BasePublicRequest):
-    """获取一级菜单请求"""
-    class_name: Optional[str] = Field(default=None, description="分类名称")
-
-
-class SubmenusTreeRequest(BasePublicRequest):
-    """获取子菜单树形结构请求"""
-    first_level_value: str = Field(..., description="一级菜单选项值")
-    class_name: Optional[str] = Field(default=None, description="分类名称")
-
-
-# ==================== 模板相关请求 ====================
-
-class SummaryTemplateListRequest(BasePublicRequest):
-    """查询模板列表请求"""
-    class_name: Optional[str] = Field(default=None, description="分类名称")
-
-
-class SummaryTemplateDetailRequest(BasePublicRequest):
-    """查询模板详情请求"""
-    id: int = Field(..., description="模板ID")
-
-
 # ==================== LLM/AI 填单相关请求 ====================
 
 class AIFillDataRequest(BasePublicRequest):
@@ -165,14 +128,6 @@ __all__ = [
     "FieldGroupDetailRequest",
     # 填单数据相关
     "RecordFillDataRequest",
-    # 下拉选项相关
-    "DropdownOptionListRequest",
-    "DropdownOptionDetailRequest",
-    "FirstLevelMenusRequest",
-    "SubmenusTreeRequest",
-    # 模板相关
-    "SummaryTemplateListRequest",
-    "SummaryTemplateDetailRequest",
     # LLM/AI填单相关
     "AIFillDataRequest",
     "AIFillDataResultRequest",

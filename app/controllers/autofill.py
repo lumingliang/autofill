@@ -7,13 +7,11 @@ from tortoise.expressions import Q
 from app.core.crud import CRUDBase
 
 logger = logging.getLogger(__name__)
-from app.models.autofill import (AppManagement, DropdownOption, FieldGroupConfig,
+from app.models.autofill import (AppManagement, FieldGroupConfig,
                                  FieldGroupFieldSpec, FieldSpec, FillDataRecord,
-                                 generate_field_group_code, SummaryTemplate)
-from app.schemas.autofill import (AppCreate, AppUpdate, DropdownOptionCreate,
-                                  DropdownOptionUpdate, FillDataRecordCreate,
-                                  FillDataRecordUpdate, SummaryTemplateCreate,
-                                  SummaryTemplateUpdate)
+                                 generate_field_group_code)
+from app.schemas.autofill import (AppCreate, AppUpdate, FillDataRecordCreate,
+                                  FillDataRecordUpdate)
 from app.schemas.fill_page import (FieldGroupConfigCreate, FieldGroupConfigUpdate,
                                    FieldSpecCreate, FieldSpecUpdate, FieldOptions)
 from app.services.autofill.field_spec_service import upsert_field_spec
@@ -44,109 +42,6 @@ class AppManagementController(CRUDBase[AppManagement, AppCreate, AppUpdate]):
             if existing:
                 raise HTTPException(status_code=400, detail="该租户下已存在同名应用")
         return await self.update(id=id, obj_in=obj_in)
-
-
-class SummaryTemplateController(CRUDBase[SummaryTemplate, SummaryTemplateCreate, SummaryTemplateUpdate]):
-    def __init__(self):
-        super().__init__(model=SummaryTemplate)
-
-    async def create_template(self, obj_in: SummaryTemplateCreate) -> SummaryTemplate:
-        # 检查唯一性
-        existing = await self.model.filter(
-            tenant_id=obj_in.tenant_id,
-            app_name=obj_in.app_name,
-            class_name=obj_in.class_name,
-            name=obj_in.name
-        ).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="该分类下已存在同名模板")
-        return await self.create(obj_in)
-
-    async def update_template(self, id: int, obj_in: SummaryTemplateUpdate) -> SummaryTemplate:
-        template = await self.get(id=id)
-        # 如果修改了关键字段，需要检查唯一性
-        if (obj_in.name or obj_in.app_name or obj_in.class_name):
-            new_name = obj_in.name or template.name
-            new_app_name = obj_in.app_name or template.app_name
-            new_class_name = obj_in.class_name or template.class_name
-
-            existing = await self.model.filter(
-                tenant_id=template.tenant_id,
-                app_name=new_app_name,
-                class_name=new_class_name,
-                name=new_name
-            ).exclude(id=id).first()
-            if existing:
-                raise HTTPException(status_code=400, detail="该分类下已存在同名模板")
-        return await self.update(id=id, obj_in=obj_in)
-
-
-class DropdownOptionController(CRUDBase[DropdownOption, DropdownOptionCreate, DropdownOptionUpdate]):
-    def __init__(self):
-        super().__init__(model=DropdownOption)
-
-    async def create_option(self, obj_in: DropdownOptionCreate) -> DropdownOption:
-        # 检查唯一性
-        existing = await self.model.filter(
-            tenant_id=obj_in.tenant_id,
-            app_name=obj_in.app_name,
-            class_name=obj_in.class_name,
-            parent_id=obj_in.parent_id,
-            option_value=obj_in.option_value
-        ).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="该父选项下已存在同名选项值")
-        return await self.create(obj_in)
-
-    async def update_option(self, id: int, obj_in: DropdownOptionUpdate) -> DropdownOption:
-        option = await self.get(id=id)
-        # 如果修改了关键字段，需要检查唯一性
-        if (obj_in.option_value or obj_in.app_name or obj_in.class_name or obj_in.parent_id is not None):
-            new_option_value = obj_in.option_value or option.option_value
-            new_app_name = obj_in.app_name or option.app_name
-            new_class_name = obj_in.class_name or option.class_name
-            new_parent_id = obj_in.parent_id if obj_in.parent_id is not None else option.parent_id
-
-            existing = await self.model.filter(
-                tenant_id=option.tenant_id,
-                app_name=new_app_name,
-                class_name=new_class_name,
-                parent_id=new_parent_id,
-                option_value=new_option_value
-            ).exclude(id=id).first()
-            if existing:
-                raise HTTPException(status_code=400, detail="该父选项下已存在同名选项值")
-        return await self.update(id=id, obj_in=obj_in)
-
-    async def get_tree(self, tenant_id: int, app_name: str, parent_id: int = 0, class_name: str = "", is_superuser: bool = False) -> List[Dict[str, Any]]:
-        """获取树形结构的下拉选项"""
-        query = Q(
-            app_name=app_name,
-            parent_id=parent_id
-        )
-        # 非超级用户只能查看指定租户的数据
-        if not is_superuser:
-            query &= Q(tenant_id=tenant_id)
-        elif tenant_id > 0:
-            # 超级用户指定了租户ID，优先使用该租户
-            query &= Q(tenant_id=tenant_id)
-        # 超级用户未指定租户ID，查询所有租户
-
-        if class_name:
-            query &= Q(class_name=class_name)
-
-        options = await self.model.filter(query).all()
-
-        result = []
-        for opt in options:
-            opt_dict = await opt.to_dict()
-            # 递归获取子选项
-            children = await self.get_tree(tenant_id, app_name, opt.id, class_name, is_superuser)
-            if children:
-                opt_dict["children"] = children
-            result.append(opt_dict)
-        return result
-
 
 class FillDataRecordController(CRUDBase[FillDataRecord, FillDataRecordCreate, FillDataRecordUpdate]):
     def __init__(self):
@@ -423,8 +318,6 @@ class FieldSpecController(CRUDBase[FieldSpec, FieldSpecCreate, FieldSpecUpdate])
 
 # 实例化控制器
 app_management_controller = AppManagementController()
-summary_template_controller = SummaryTemplateController()
-dropdown_option_controller = DropdownOptionController()
 fill_data_record_controller = FillDataRecordController()
 field_group_config_controller = FieldGroupConfigController()
 field_spec_controller = FieldSpecController()

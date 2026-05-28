@@ -83,7 +83,7 @@
           {{ getProviderLabel(record.model_provider) }}
         </template>
         <template v-if="column.key === 'model'">
-          {{ record.litellm_params?.model || '-' }}
+          {{ record.model || '-' }}
         </template>
         <template v-if="column.key === 'created_at'">
           {{ formatDateTime(record.created_at) }}
@@ -104,87 +104,37 @@
 
       <!-- 弹窗表单 -->
       <template #modal-form="{ form }">
-        <a-tabs v-model:activeKey="activeTab">
-          <a-tab-pane key="basic" tab="基本信息">
-            <a-form-item label="配置名称" name="name">
-              <a-input v-model:value="form.name" placeholder="请输入配置名称，如：GPT-4" />
-            </a-form-item>
-            <a-form-item label="模型提供商" name="model_provider">
-              <a-select v-model:value="form.model_provider" placeholder="请选择模型提供商">
-                <a-select-option v-for="provider in providers" :key="provider.value" :value="provider.value">
-                  {{ provider.label }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-            <a-form-item label="模型名称" name="litellm_params.model">
-              <a-input v-model:value="form.litellm_params.model"
-                placeholder="请输入模型名称，如：openai/gpt-4 或 gpt-4" />
-            </a-form-item>
-            <a-form-item label="API Key" name="litellm_params.api_key">
-              <a-input-password v-model:value="form.litellm_params.api_key" placeholder="请输入 API Key" />
-            </a-form-item>
-            <a-form-item label="API Base URL" name="litellm_params.api_base">
-              <a-input v-model:value="form.litellm_params.api_base"
-                placeholder="可选，如：https://api.openai.com/v1" />
-            </a-form-item>
-            <a-form-item label="超时时间(秒)" name="litellm_params.timeout">
-              <a-input-number v-model:value="form.litellm_params.timeout" :min="10" :max="300" style="width: 100%" />
-            </a-form-item>
-            <a-form-item label="描述" name="description">
-              <a-textarea v-model:value="form.description" placeholder="请输入配置描述" :rows="2" />
-            </a-form-item>
-            <a-form-item label="默认配置" name="is_default">
-              <a-switch v-model:checked="form.is_default" />
-            </a-form-item>
-            <a-form-item label="启用" name="is_active">
-              <a-switch v-model:checked="form.is_active" />
-            </a-form-item>
-          </a-tab-pane>
-          <a-tab-pane key="advanced" tab="高级配置">
-            <a-form-item label="最大重试次数" name="litellm_params.max_retries">
-              <a-input-number v-model:value="form.litellm_params.max_retries" :min="0" :max="5" style="width: 100%" />
-            </a-form-item>
-            <a-form-item label="RPM 限制" name="litellm_params.rpm_limit">
-              <a-input-number v-model:value="form.litellm_params.rpm_limit" :min="0" style="width: 100%"
-                placeholder="每分钟请求限制" />
-            </a-form-item>
-            <a-form-item label="TPM 限制" name="litellm_params.tpm_limit">
-              <a-input-number v-model:value="form.litellm_params.tpm_limit" :min="0" style="width: 100%"
-                placeholder="每分钟 Token 限制" />
-            </a-form-item>
-            <a-form-item label="冷却时间(秒)" name="litellm_params.cooldown_time">
-              <a-input-number v-model:value="form.litellm_params.cooldown_time" :min="0" style="width: 100%"
-                placeholder="失败后冷却时间" />
-            </a-form-item>
-          </a-tab-pane>
-          <a-tab-pane key="model_info" tab="模型信息">
-            <a-form-item label="模式" name="model_info.mode">
-              <a-select v-model:value="form.model_info.mode" placeholder="请选择模式">
-                <a-select-option value="chat">Chat</a-select-option>
-                <a-select-option value="completion">Completion</a-select-option>
-                <a-select-option value="embedding">Embedding</a-select-option>
-                <a-select-option value="image">Image</a-select-option>
-              </a-select>
-            </a-form-item>
-            <a-form-item label="最大 Token" name="model_info.max_tokens">
-              <a-input-number v-model:value="form.model_info.max_tokens" :min="1" style="width: 100%" />
-            </a-form-item>
-            <a-form-item label="支持 Function Calling">
-              <a-switch v-model:checked="form.model_info.supports_function_calling" />
-            </a-form-item>
-            <a-form-item label="支持 Vision">
-              <a-switch v-model:checked="form.model_info.supports_vision" />
-            </a-form-item>
-            <a-form-item label="输入 Token 单价" name="model_info.input_cost_per_token">
-              <a-input-number v-model:value="form.model_info.input_cost_per_token" :min="0" :step="0.000001"
-                style="width: 100%" />
-            </a-form-item>
-            <a-form-item label="输出 Token 单价" name="model_info.output_cost_per_token">
-              <a-input-number v-model:value="form.model_info.output_cost_per_token" :min="0" :step="0.000001"
-                style="width: 100%" />
-            </a-form-item>
-          </a-tab-pane>
-        </a-tabs>
+        <a-form-item label="配置名称" name="name">
+          <a-input v-model:value="form.name" placeholder="请输入配置名称，如：GPT-4" />
+        </a-form-item>
+        <a-form-item label="模型提供商" name="model_provider">
+          <a-select v-model:value="form.model_provider" placeholder="请选择模型提供商">
+            <a-select-option v-for="provider in providers" :key="provider.value" :value="provider.value">
+              {{ provider.label }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="模型名称" name="model">
+          <a-input v-model:value="form.model" placeholder="请输入模型名称，如：openai/gpt-4 或 gpt-4" />
+        </a-form-item>
+        <a-form-item label="API Key" name="api_key">
+          <a-input-password v-model:value="form.api_key" placeholder="请输入 API Key" />
+        </a-form-item>
+        <a-form-item label="API Base URL" name="api_base">
+          <a-input v-model:value="form.api_base" placeholder="可选，如：https://api.openai.com/v1" />
+        </a-form-item>
+        <a-form-item label="超时时间(秒)" name="timeout">
+          <a-input-number v-model:value="form.timeout" :min="10" :max="300" style="width: 100%" />
+        </a-form-item>
+        <a-form-item label="描述" name="description">
+          <a-textarea v-model:value="form.description" placeholder="请输入配置描述" :rows="2" />
+        </a-form-item>
+        <a-form-item label="默认配置" name="is_default">
+          <a-switch v-model:checked="form.is_default" />
+        </a-form-item>
+        <a-form-item label="启用" name="is_active">
+          <a-switch v-model:checked="form.is_active" />
+        </a-form-item>
       </template>
     </CrudTable>
 
@@ -213,12 +163,8 @@
       <a-spin :spinning="syncToGatewayLoading">
         <div class="sync-actions">
           <a-space direction="vertical" style="width: 100%">
-            <a-alert
-              message="同步说明"
-              description="将本地数据库中的模型配置同步到 LiteLLM 网关。可以选择同步单个配置或同步所有活跃配置。"
-              type="info"
-              show-icon
-            />
+            <a-alert message="同步说明" description="将本地数据库中的模型配置同步到 LiteLLM 网关。可以选择同步单个配置或同步所有活跃配置。" type="info"
+              show-icon />
             <a-divider />
             <a-space>
               <a-button type="primary" :loading="syncToGatewayLoading" @click="handleSyncAllToGateway">
@@ -230,11 +176,8 @@
         </div>
         <div v-if="syncToGatewayResult" class="sync-result">
           <a-divider />
-          <a-result
-            :status="syncToGatewayResult.success ? 'success' : 'error'"
-            :title="syncToGatewayResult.success ? '同步成功' : '同步失败'"
-            :sub-title="syncToGatewayResult.message"
-          />
+          <a-result :status="syncToGatewayResult.success ? 'success' : 'error'"
+            :title="syncToGatewayResult.success ? '同步成功' : '同步失败'" :sub-title="syncToGatewayResult.message" />
         </div>
       </a-spin>
     </a-modal>
@@ -244,12 +187,8 @@
       <a-spin :spinning="syncFromGatewayLoading">
         <div class="sync-actions">
           <a-space direction="vertical" style="width: 100%">
-            <a-alert
-              message="同步说明"
-              description="从 LiteLLM 网关获取模型配置并导入到本地数据库。已存在的配置将被更新，不存在的配置将被创建。"
-              type="info"
-              show-icon
-            />
+            <a-alert message="同步说明" description="从 LiteLLM 网关获取模型配置并导入到本地数据库。已存在的配置将被更新，不存在的配置将被创建。" type="info"
+              show-icon />
             <a-divider />
             <a-space>
               <a-button type="primary" :loading="syncFromGatewayLoading" @click="handleConfirmSyncFromGateway">
@@ -270,16 +209,9 @@
           </a-descriptions>
           <div v-if="syncFromGatewayResult.errors && syncFromGatewayResult.errors.length > 0" class="sync-errors">
             <a-divider />
-            <a-alert
-              message="错误信息"
-              type="error"
-              show-icon
-            />
-            <a-list
-              size="small"
-              :data-source="syncFromGatewayResult.errors"
-              style="margin-top: 8px; max-height: 200px; overflow-y: auto;"
-            >
+            <a-alert message="错误信息" type="error" show-icon />
+            <a-list size="small" :data-source="syncFromGatewayResult.errors"
+              style="margin-top: 8px; max-height: 200px; overflow-y: auto;">
               <template #renderItem="{ item }">
                 <a-list-item>
                   <span style="color: #ff4d4f">{{ item }}</span>
@@ -295,19 +227,9 @@
     <a-modal v-model:open="gatewayModelsModalVisible" title="LiteLLM 网关模型列表" :footer="null" width="800px">
       <a-spin :spinning="gatewayModelsLoading">
         <div v-if="gatewayModelsData" class="gateway-models">
-          <a-alert
-            :message="`共 ${gatewayModelsData.total} 个模型`"
-            type="info"
-            show-icon
-            style="margin-bottom: 16px"
-          />
-          <a-table
-            :columns="gatewayModelsColumns"
-            :data-source="gatewayModelsData.models"
-            :pagination="false"
-            size="small"
-            bordered
-          >
+          <a-alert :message="`共 ${gatewayModelsData.total} 个模型`" type="info" show-icon style="margin-bottom: 16px" />
+          <a-table :columns="gatewayModelsColumns" :data-source="gatewayModelsData.models" :pagination="false"
+            size="small" bordered>
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'model_name'">
                 <strong>{{ record.model_name }}</strong>
@@ -362,7 +284,8 @@
                 </a-tag>
               </template>
               <template v-if="column.key === 'failed_count'">
-                <a-badge :count="record.failed_count" :number-style="{ backgroundColor: record.failed_count > 0 ? '#ff4d4f' : '#52c41a' }" />
+                <a-badge :count="record.failed_count"
+                  :number-style="{ backgroundColor: record.failed_count > 0 ? '#ff4d4f' : '#52c41a' }" />
               </template>
               <template v-if="column.key === 'last_error'">
                 <a-tooltip v-if="record.last_error" :title="record.last_error">
@@ -385,7 +308,7 @@
 import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { formatDateTime } from '@/utils'
-import { PlusOutlined, ApiOutlined, SyncOutlined, DownOutlined, CloudUploadOutlined, CloudDownloadOutlined, EyeOutlined } from '@ant-design/icons-vue'
+import { ApiOutlined, CloudDownloadOutlined, CloudUploadOutlined, DownOutlined, EyeOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 defineOptions({ name: 'LLMConfigPage' })
@@ -411,29 +334,14 @@ const pagination = reactive({
 // 弹窗数据
 const modalTitle = ref('')
 const modalLoading = ref(false)
-const activeTab = ref('basic')
 const modalForm = reactive({
   id: undefined as number | undefined,
   name: '',
   model_provider: '',
-  litellm_params: {
-    model: '',
-    api_key: '',
-    api_base: '',
-    timeout: 60,
-    max_retries: 2,
-    rpm_limit: undefined as number | undefined,
-    tpm_limit: undefined as number | undefined,
-    cooldown_time: undefined as number | undefined,
-  },
-  model_info: {
-    mode: 'chat',
-    max_tokens: 8192,
-    supports_function_calling: true,
-    supports_vision: false,
-    input_cost_per_token: undefined as number | undefined,
-    output_cost_per_token: undefined as number | undefined,
-  },
+  model: '',
+  api_key: '',
+  api_base: '',
+  timeout: 60,
   is_active: true,
   is_default: false,
   description: '',
@@ -583,29 +491,14 @@ function handleTableChange(p: any) {
 
 function handleAdd() {
   modalTitle.value = '新增 LLM 配置'
-  activeTab.value = 'basic'
   Object.assign(modalForm, {
     id: undefined,
     name: '',
     model_provider: '',
-    litellm_params: {
-      model: '',
-      api_key: '',
-      api_base: '',
-      timeout: 60,
-      max_retries: 2,
-      rpm_limit: undefined,
-      tpm_limit: undefined,
-      cooldown_time: undefined,
-    },
-    model_info: {
-      mode: 'chat',
-      max_tokens: 8192,
-      supports_function_calling: true,
-      supports_vision: false,
-      input_cost_per_token: undefined,
-      output_cost_per_token: undefined,
-    },
+    model: '',
+    api_key: '',
+    api_base: '',
+    timeout: 60,
     is_active: true,
     is_default: false,
     description: '',
@@ -615,17 +508,8 @@ function handleAdd() {
 
 function handleEdit(record: any) {
   modalTitle.value = '编辑 LLM 配置'
-  activeTab.value = 'basic'
   Object.assign(modalForm, {
     ...record,
-    litellm_params: {
-      ...modalForm.litellm_params,
-      ...record.litellm_params,
-    },
-    model_info: {
-      ...modalForm.model_info,
-      ...record.model_info,
-    },
   })
   crudTableRef.value?.openEditModal(record)
 }
@@ -822,8 +706,7 @@ onMounted(loadData)
 </script>
 
 <style scoped lang="less">
-.llm-config-page {
-}
+.llm-config-page {}
 
 .methods-actions {
   margin-top: 16px;

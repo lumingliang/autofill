@@ -35,8 +35,10 @@ class LLMConfig(BaseModel, TimestampMixin):
     """LLM 模型配置表（全局配置）"""
     name = fields.CharField(max_length=128, default="", description="配置名称", index=True)
     model_provider = fields.CharField(max_length=64, default="", description="模型提供商", index=True)
-    litellm_params = fields.JSONField(default=dict, description="LiteLLM 参数配置")
-    model_info = fields.JSONField(default=dict, description="模型元信息")
+    model = fields.CharField(max_length=128, default="", description="模型名称")
+    api_key = fields.CharField(max_length=255, default="", description="API Key")
+    api_base = fields.CharField(max_length=255, default="", description="API Base URL")
+    timeout = fields.IntField(default=60, description="超时时间(秒)")
     capabilities = fields.JSONField(default=dict, description="结构化输出方法能力配置")
     is_active = fields.BooleanField(default=True, description="是否启用", index=True)
     is_default = fields.BooleanField(default=False, description="是否为默认配置", index=True)
@@ -95,8 +97,10 @@ class LLMConfig(BaseModel, TimestampMixin):
             "id": self.id,
             "name": self.name,
             "model_provider": self.model_provider,
-            "litellm_params": self.litellm_params,
-            "model_info": self.model_info,
+            "model": self.model,
+            "api_key": self.api_key,
+            "api_base": self.api_base,
+            "timeout": self.timeout,
             "capabilities": self.capabilities,
             "is_active": self.is_active,
             "is_default": self.is_default,

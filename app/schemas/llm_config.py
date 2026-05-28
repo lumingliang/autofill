@@ -11,8 +11,10 @@ from pydantic import BaseModel, Field
 class LLMConfigCreate(BaseModel):
     name: str = Field(..., max_length=128, description="配置名称")
     model_provider: str = Field(..., max_length=64, description="模型提供商")
-    litellm_params: Dict[str, Any] = Field(default_factory=dict, description="LiteLLM 参数配置")
-    model_info: Dict[str, Any] = Field(default_factory=dict, description="模型元信息")
+    model: str = Field(..., max_length=128, description="模型名称")
+    api_key: str = Field(..., max_length=255, description="API Key")
+    api_base: str = Field("", max_length=255, description="API Base URL")
+    timeout: int = Field(60, description="超时时间(秒)")
     is_active: bool = Field(True, description="是否启用")
     is_default: bool = Field(False, description="是否为默认配置")
     description: str = Field("", description="配置描述")
@@ -22,8 +24,10 @@ class LLMConfigUpdate(BaseModel):
     id: int
     name: str = Field("", max_length=128, description="配置名称")
     model_provider: str = Field("", max_length=64, description="模型提供商")
-    litellm_params: Dict[str, Any] = Field(default_factory=dict, description="LiteLLM 参数配置")
-    model_info: Dict[str, Any] = Field(default_factory=dict, description="模型元信息")
+    model: str = Field("", max_length=128, description="模型名称")
+    api_key: str = Field("", max_length=255, description="API Key")
+    api_base: str = Field("", max_length=255, description="API Base URL")
+    timeout: int = Field(60, description="超时时间(秒)")
     is_active: bool = Field(True, description="是否启用")
     is_default: bool = Field(False, description="是否为默认配置")
     description: str = Field("", description="配置描述")
@@ -33,8 +37,10 @@ class LLMConfigOut(BaseModel):
     id: int
     name: str = ""
     model_provider: str = ""
-    litellm_params: Dict[str, Any] = {}
-    model_info: Dict[str, Any] = {}
+    model: str = ""
+    api_key: str = ""
+    api_base: str = ""
+    timeout: int = 60
     capabilities: Dict[str, Any] = {}
     is_active: bool = True
     is_default: bool = False

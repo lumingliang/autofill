@@ -43,40 +43,31 @@ class LiteLLMSyncService:
         Returns:
             API 请求体字典
         """
-        litellm_params = config.litellm_params or {}
-
         # 处理模型名称
-        model_name = litellm_params.get("model", "")
+        model_name = config.model
         if config.model_provider == "openai" and model_name and not model_name.startswith("openai/"):
             model_name = f"openai/{model_name}"
 
         # 构建 litellm_params
         params = {
             "model": model_name,
-            "timeout": litellm_params.get("timeout", 300)
+            "timeout": config.timeout or 300
         }
 
         # 添加 API key（如果不是脱敏的）
-        api_key = litellm_params.get("api_key", "")
+        api_key = config.api_key
         if api_key and not self._is_masked_api_key(api_key):
             params["api_key"] = api_key
 
         # 添加可选参数
-        if litellm_params.get("api_base"):
-            params["api_base"] = litellm_params["api_base"]
-        if litellm_params.get("api_version"):
-            params["api_version"] = litellm_params["api_version"]
+        if config.api_base:
+            params["api_base"] = config.api_base
 
         # 构建请求体
         payload = {
             "model_name": config.name,
             "litellm_params": params
         }
-
-        # 添加 model_info
-        model_info = config.model_info or {}
-        if model_info:
-            payload["model_info"] = model_info
 
         return payload
 

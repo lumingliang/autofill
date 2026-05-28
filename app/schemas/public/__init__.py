@@ -28,14 +28,6 @@ from .schemas import (
     FieldGroupDetailRequest,
     # 填单数据相关
     RecordFillDataRequest,
-    # 下拉选项相关
-    DropdownOptionListRequest,
-    DropdownOptionDetailRequest,
-    FirstLevelMenusRequest,
-    SubmenusTreeRequest,
-    # 模板相关
-    SummaryTemplateListRequest,
-    SummaryTemplateDetailRequest,
     # LLM/AI填单相关
     AIFillDataRequest,
     AIFillDataResultRequest,
@@ -62,14 +54,6 @@ __all__ = [
     "StepLLMFillResponseData",
     # 填单数据相关
     "RecordFillDataRequest",
-    # 下拉选项相关
-    "DropdownOptionListRequest",
-    "DropdownOptionDetailRequest",
-    "FirstLevelMenusRequest",
-    "SubmenusTreeRequest",
-    # 模板相关
-    "SummaryTemplateListRequest",
-    "SummaryTemplateDetailRequest",
     # LLM/AI填单相关
     "AIFillDataRequest",
     "AIFillDataResultRequest",

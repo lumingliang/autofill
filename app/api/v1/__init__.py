@@ -6,14 +6,12 @@ from .apis import apis_router
 from .auditlog import auditlog_router
 from .autofill import (
     app_router,
-    dropdown_router,
     field_group_router,
     field_spec_router,
     record_router,
     rule_router,
     rule_test_router,
     rule_import_router,
-    template_router,
     test_fill_router,
     system_prompt_router,
 )
@@ -40,8 +38,6 @@ v1_router.include_router(upload_router, prefix="/upload")
 
 # 智能填单模块 - 分别设置 tags
 v1_router.include_router(app_router, prefix="/autofill", dependencies=[DependPermission], tags=["应用管理"])
-v1_router.include_router(template_router, prefix="/autofill", dependencies=[DependPermission], tags=["总结模板管理"])
-v1_router.include_router(dropdown_router, prefix="/autofill", dependencies=[DependPermission], tags=["下拉选项管理"])
 v1_router.include_router(record_router, prefix="/autofill", dependencies=[DependPermission], tags=["填单记录管理"])
 
 # 智能填单模块 - 字段组、字段管理（页面管理已删除）
