@@ -67,10 +67,14 @@ export default {
   createTenant: (data: any = {}) => request.post('/tenant/create', data),
   updateTenant: (data: any = {}) => request.post('/tenant/update', data),
   deleteTenant: (params: any = {}) => request.delete('/tenant/delete', { params }),
-  getTenantSelect: () => request.get('/tenant/select'),
+  getTenantSelect: (params: any = {}) => request.get('/tenant/select', { params }),
   getTenantUsers: (params: any = {}) => request.get('/tenant/users', { params }),
   addUserToTenant: (data: any = {}) => request.post('/tenant/add_user', data),
   removeUserFromTenant: (data: any = {}) => request.post('/tenant/remove_user', data),
+  batchAddUsersToTenant: (data: any = {}) => request.post('/tenant/batch_add_users', data),
+  searchUsersForTenant: (params: any = {}) => request.get('/tenant/search_users', { params }),
+  getTenantAssignedUsers: (params: any = {}) => request.get('/tenant/assigned_users', { params }),
+  batchRemoveUsersFromTenant: (data: any = {}) => request.post('/tenant/batch_remove_users', data),
 
   // auditlog
   getAuditLogList: (params: any = {}) => request.get('/auditlog/list', { params }),

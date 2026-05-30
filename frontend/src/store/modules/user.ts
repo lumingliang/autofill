@@ -1,8 +1,8 @@
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { removeToken, setToken } from '@/utils'
 import api from '@/api'
 import router from '@/router'
+import { getSelectedTenantId, removeSelectedTenantId, removeToken, setSelectedTenantId } from '@/utils'
+import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
 
 export const useUserStore = defineStore('user', () => {
   const userInfo = ref<Record<string, any>>({})
@@ -30,7 +30,20 @@ export const useUserStore = defineStore('user', () => {
       const { id, username, email: uEmail, avatar: uAvatar, roles, is_superuser, is_active, tenants: ts, current_tenant_id } = res.data || res
       userInfo.value = { id, username, email: uEmail, avatar: uAvatar, roles, is_superuser, is_active, current_tenant_id }
       tenants.value = ts || []
-      if (current_tenant_id && ts) {
+
+      // 恢复持久化的租户选择
+      const savedTenantId = getSelectedTenantId()
+      if (savedTenantId) {
+        // 优先使用本地保存的租户ID（用户明确选择的）
+        const savedTenant = ts?.find((t: any) => t.id === savedTenantId)
+        if (savedTenant) {
+          currentTenant.value = savedTenant
+        } else {
+          // 如果租户列表中没有该租户（如超管切换到普通租户），创建一个临时租户对象
+          currentTenant.value = { id: savedTenantId, name: `租户${savedTenantId}`, domain: '' }
+        }
+      } else if (current_tenant_id && ts) {
+        // 没有本地保存的租户ID时，使用后端返回的当前租户
         currentTenant.value = ts.find((t: any) => t.id === current_tenant_id) || null
       }
       return res.data || res
@@ -41,6 +54,7 @@ export const useUserStore = defineStore('user', () => {
 
   async function logout() {
     removeToken()
+    removeSelectedTenantId()
     userInfo.value = {}
     tenants.value = []
     currentTenant.value = null
@@ -50,6 +64,7 @@ export const useUserStore = defineStore('user', () => {
   // 退出登录但不跳转（用于快捷登录）
   async function logoutWithoutRedirect() {
     removeToken()
+    removeSelectedTenantId()
     userInfo.value = {}
     tenants.value = []
     currentTenant.value = null
@@ -63,17 +78,28 @@ export const useUserStore = defineStore('user', () => {
     currentTenant.value = tenant
     if (tenant) {
       userInfo.value.current_tenant_id = tenant.id
+      setSelectedTenantId(tenant.id)
+    } else {
+      removeSelectedTenantId()
     }
   }
 
-  async function selectTenant(tenantId: number) {
+  async function selectTenant(tenantId: number | null, tenantObj?: any) {
     try {
-      const res: any = await api.selectTenant({ tenant_id: tenantId })
-      if (res.code === 200) {
-        setToken(res.data.access_token)
-        const tenant = tenants.value.find((t) => t.id === tenantId)
+      if (tenantId === null) {
+        // 清空租户选择（查询全部）
+        setCurrentTenant(null)
+        window.$message?.success('已切换到全部租户')
+        // 不刷新页面，只更新状态
+        return true
+      }
+
+      // 直接使用传入的租户对象或从列表中查找，不再调用后端接口
+      const tenant = tenantObj || tenants.value.find((t) => t.id === tenantId)
+      if (tenant) {
         setCurrentTenant(tenant)
         window.$message?.success('租户切换成功')
+        // 不刷新页面，只更新状态
         return true
       }
       return false

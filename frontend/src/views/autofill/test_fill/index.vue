@@ -3,24 +3,17 @@
         <a-card title="规则引擎测试" class="test-fill-card">
             <div class="rule-test-section">
                 <a-form layout="vertical">
-                    <!-- 第一行：租户选择（仅超级用户显示，必填）、应用选择 -->
+                    <!-- 第一行：应用选择 -->
                     <a-row :gutter="16">
-                        <a-col :span="8" v-if="isSuperUser">
-                            <a-form-item label="租户" required>
-                                <a-select v-model:value="ruleForm.tenant_id" placeholder="请选择租户"
-                                    :options="tenantOptions" @change="handleRuleTenantChange"
-                                    style="width: 100%" allow-clear />
-                            </a-form-item>
-                        </a-col>
-                        <a-col :span="isSuperUser ? 8 : 12">
+                        <a-col :span="12">
                             <a-form-item label="应用" required>
                                 <a-select v-model:value="ruleForm.app_name" placeholder="请选择应用"
                                     :options="ruleAppOptions" :loading="loadingRuleApps"
-                                    :disabled="isSuperUser && !ruleForm.tenant_id" style="width: 100%"
+                                    style="width: 100%"
                                     @change="handleRuleAppChange" />
                             </a-form-item>
                         </a-col>
-                        <a-col :span="isSuperUser ? 8 : 12">
+                        <a-col :span="12">
                             <a-form-item label="用户输入" required>
                                 <a-textarea v-model:value="ruleForm.query" :rows="2"
                                     placeholder="请输入用户输入文本，例如：我买的手机屏幕碎了，我要投诉" />
@@ -243,7 +236,6 @@ const isSuperUser = computed(() => userStore.isSuperUser)
 
 // ==================== 规则执行测试 ====================
 const ruleForm = reactive({
-    tenant_id: undefined as number | undefined,
     app_name: '',
     query: '',
     system_prompt_name: undefined as string | undefined,
@@ -327,17 +319,7 @@ const loadRuleApps = async () => {
     }
 }
 
-// 规则测试租户变更处理
-const handleRuleTenantChange = async (tenantId: number) => {
-    ruleForm.app_name = ''
-    ruleForm.params.forEach(p => {
-        p.rule_name = ''
-        p.columnOptions = []
-        p.sampleData = []
-    })
-    ruleOptions.value = []
-    await loadRuleApps()
-}
+
 
 // 规则测试应用变更处理
 const handleRuleAppChange = async (appName: string) => {
@@ -449,10 +431,6 @@ const handleRuleExecute = async () => {
             system_prompt_name: ruleForm.system_prompt_name
         }
 
-        if (isSuperUser.value && ruleForm.tenant_id) {
-            requestData.tenant_id = ruleForm.tenant_id
-        }
-
         const res: any = await api.executeRuleTest(requestData)
         ruleExecuteResult.value = res
         message.success('规则执行成功')
@@ -496,10 +474,6 @@ const handleExportCurl = async () => {
             system_prompt_name: ruleForm.system_prompt_name
         }
 
-        if (isSuperUser.value && ruleForm.tenant_id) {
-            requestData.tenant_id = ruleForm.tenant_id
-        }
-
         const res: any = await api.exportRuleTestCurl(requestData)
         const curlCommand = res?.data?.curl_command
 
@@ -528,24 +502,7 @@ const loadSystemPrompts = async () => {
     }
 }
 
-// 加载租户列表
-const tenantOptions = ref<{ label: string; value: number }[]>([])
-const loadTenants = async () => {
-    if (!isSuperUser.value) return
-    try {
-        const res: any = await api.getTenantSelect()
-        const items = res?.data || []
-        tenantOptions.value = items.map((t: any) => ({
-            label: t.name,
-            value: t.id
-        }))
-    } catch (error) {
-        console.error('加载租户列表失败:', error)
-    }
-}
-
 onMounted(() => {
-    loadTenants()
     loadRuleApps()
     loadSystemPrompts()
 })

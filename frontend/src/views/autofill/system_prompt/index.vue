@@ -7,12 +7,6 @@
             @modal-ok="handleSave">
             <!-- 筛选条件 -->
             <template #filter-items>
-                <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-                    <a-form-item label="租户" class="filter-item">
-                        <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear
-                            :options="tenantOptions" @change="handleSearch" />
-                    </a-form-item>
-                </a-col>
                 <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
                     <a-form-item label="提示词名称" class="filter-item">
                         <a-input v-model:value="queryParams.keyword" placeholder="请输入提示词名称" allow-clear
@@ -89,9 +83,6 @@
 
             <!-- 弹窗表单 -->
             <template #modal-form="{ form }">
-                <a-form-item v-if="userStore.isSuperUser" label="所属租户" name="tenant_id">
-                    <a-select v-model:value="form.tenant_id" placeholder="请选择租户" :options="tenantOptions" />
-                </a-form-item>
                 <a-form-item label="提示词名称" name="name" required>
                     <a-input v-model:value="form.name" placeholder="请输入提示词名称" />
                 </a-form-item>
@@ -196,11 +187,7 @@ const newCategoryName = ref('')
 // 加载分类选项
 const loadCategories = async () => {
     try {
-        const params: any = {}
-        if (userStore.isSuperUser && queryParams.tenant_id) {
-            params.tenant_id = queryParams.tenant_id
-        }
-        const res: any = await api.getSystemPromptCategories(params)
+        const res: any = await api.getSystemPromptCategories()
         if (res.code === 200 && Array.isArray(res.data)) {
             categoryOptions.value = res.data.map((cat: string) => ({
                 label: cat,
@@ -247,7 +234,6 @@ const handleAddNewCategory = () => {
 const queryParams = reactive({
     page: 1,
     page_size: 20,
-    tenant_id: undefined as number | undefined,
     keyword: '',
     category: undefined as string | undefined,
     is_default: undefined as boolean | undefined,
@@ -266,10 +252,6 @@ const pagination = reactive({
     showTotal: (total: number) => `共 ${total} 条`
 })
 
-// 租户选项
-const tenantOptions = ref<{ label: string; value: number }[]>([])
-const filterItemCount = computed(() => userStore.isSuperUser ? 3 : 2)
-
 // 弹窗相关
 const modalTitle = ref('新建提示词')
 const modalLoading = ref(false)
@@ -277,7 +259,6 @@ const isEdit = ref(false)
 const currentId = ref<string | null>(null)
 
 const modalForm = reactive({
-    tenant_id: undefined as number | undefined,
     name: '',
     category: 'general',
     content: '',
@@ -291,6 +272,8 @@ const modalRules = {
     category: [{ required: true, message: '请选择分类', trigger: 'change' }],
     content: [{ required: true, message: '请输入提示词内容', trigger: 'blur' }]
 }
+
+const filterItemCount = computed(() => 2)
 
 // 获取分类标签（动态分类直接显示）
 const getCategoryLabel = (category: string) => {
@@ -324,22 +307,6 @@ const formatDateTime = (dateStr: string) => {
     return date.toLocaleString('zh-CN')
 }
 
-// 加载租户选项
-const loadTenantOptions = async () => {
-    if (!userStore.isSuperUser) return
-    try {
-        const res: any = await api.getTenantSelect()
-        if (res.code === 200) {
-            tenantOptions.value = res.data.map((item: any) => ({
-                label: item.name,
-                value: item.id
-            }))
-        }
-    } catch (error) {
-        console.error('加载租户列表失败', error)
-    }
-}
-
 // 加载表格数据
 const loadTableData = async () => {
     loading.value = true
@@ -347,7 +314,6 @@ const loadTableData = async () => {
         const params = {
             page: queryParams.page,
             page_size: queryParams.page_size,
-            tenant_id: queryParams.tenant_id,
             keyword: queryParams.keyword || undefined,
             category: queryParams.category,
             is_default: queryParams.is_default,
@@ -377,7 +343,6 @@ const handleSearch = () => {
 const handleReset = () => {
     queryParams.page = 1
     queryParams.page_size = 20
-    queryParams.tenant_id = undefined
     queryParams.keyword = ''
     queryParams.category = undefined
     queryParams.is_default = undefined
@@ -400,7 +365,6 @@ const handleAdd = () => {
     isEdit.value = false
     currentId.value = null
     modalTitle.value = '新建提示词'
-    modalForm.tenant_id = userStore.isSuperUser ? undefined : userStore.currentTenant?.id
     modalForm.name = ''
     modalForm.category = 'general'
     modalForm.content = ''
@@ -419,17 +383,13 @@ const handleEdit = async (record: any) => {
         const res: any = await api.getSystemPromptById({ id: record.id })
         if (res.code === 200) {
             const data = res.data
-            // 如果租户ID为0（全局提示词），超管显示为undefined以便选择，普通账号显示当前租户
-            modalForm.tenant_id = data.tenant_id === 0 ? (userStore.isSuperUser ? undefined : userStore.currentTenant?.id) : data.tenant_id
             modalForm.name = data.name
             modalForm.category = data.category
             modalForm.content = data.content
             modalForm.description = data.description || ''
             modalForm.is_default = data.is_default
             modalForm.is_active = data.is_active
-            // 不传递 tenant_id，避免覆盖已处理的 modalForm.tenant_id
-            const { tenant_id, ...recordWithoutTenant } = record
-            crudTableRef.value?.openEditModal(recordWithoutTenant)
+            crudTableRef.value?.openEditModal(record)
         }
     } catch (error) {
         message.error('获取详情失败')
@@ -444,7 +404,6 @@ const handleSave = async (form: Record<string, any>, action: 'add' | 'edit') => 
         if (action === 'edit' && currentId.value) {
             const res: any = await api.updateSystemPrompt({
                 id: currentId.value,
-                tenant_id: userStore.isSuperUser ? form.tenant_id : undefined,
                 name: form.name,
                 category: form.category,
                 content: form.content,
@@ -459,7 +418,6 @@ const handleSave = async (form: Record<string, any>, action: 'add' | 'edit') => 
             }
         } else {
             const res: any = await api.createSystemPrompt({
-                tenant_id: form.tenant_id,
                 name: form.name,
                 category: form.category,
                 content: form.content,
@@ -484,12 +442,7 @@ const handleSave = async (form: Record<string, any>, action: 'add' | 'edit') => 
 // 删除
 const handleDelete = async (record: any) => {
     try {
-        const params: any = { id: record.id }
-        // 超管传递租户ID进行删除
-        if (userStore.isSuperUser && record.tenant_id !== undefined) {
-            params.tenant_id = record.tenant_id
-        }
-        const res: any = await api.deleteSystemPrompt(params)
+        const res: any = await api.deleteSystemPrompt({ id: record.id })
         if (res.code === 200) {
             message.success('删除成功')
             loadTableData()
@@ -501,7 +454,6 @@ const handleDelete = async (record: any) => {
 }
 
 onMounted(() => {
-    loadTenantOptions()
     loadCategories()
     loadTableData()
 })

@@ -6,12 +6,6 @@
       @reset="handleReset" @modal-ok="handleSave">
       <!-- 筛选条件 -->
       <template #filter-items>
-        <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-              @change="handleSearch" />
-          </a-form-item>
-        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="部门名称" class="filter-item">
             <a-input v-model:value="queryParams.name" placeholder="请输入部门名称" allow-clear @pressEnter="handleSearch" />
@@ -45,10 +39,6 @@
 
       <!-- 弹窗表单 -->
       <template #modal-form="{ form }">
-        <!-- 超级管理员：选择所属租户 -->
-        <a-form-item v-if="userStore.isSuperUser" label="所属租户" name="tenant_id">
-          <a-select v-model:value="form.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions" />
-        </a-form-item>
         <a-form-item label="父级部门" name="parent_id">
           <a-tree-select v-model:value="form.parent_id" :tree-data="deptOptions"
             :field-names="{ label: 'name', value: 'id', children: 'children' }" placeholder="请选择父级部门" allow-clear
@@ -81,14 +71,11 @@ const crudTableRef = ref<InstanceType<typeof CrudTable>>()
 // 查询参数
 const queryParams = reactive<any>({
   name: '',
-  tenant_id: undefined,
 })
 
 // 计算属性
 const filterItemCount = computed(() => {
-  let count = 1
-  if (userStore.isSuperUser) count++
-  return count
+  return 1
 })
 
 const columns = computed(() => [
@@ -118,7 +105,6 @@ const isDisabled = ref(false)
 
 const modalRules = computed(() => ({
   name: [{ required: true, message: '请输入部门名称', trigger: ['input', 'blur', 'change'] }],
-  tenant_id: { required: userStore.isSuperUser, message: '请选择所属租户', trigger: ['change', 'blur'], type: 'number' },
 }))
 
 // 方法
@@ -154,18 +140,35 @@ function handleSearch() {
 
 function handleReset() {
   queryParams.name = ''
-  queryParams.tenant_id = undefined
   handleSearch()
 }
 
 function handleAdd() {
+  // 检查是否选择了租户（超管需要选择租户，普通用户使用当前租户）
+  // 注意：检查 currentTenant（右上角选择器的选择状态）而不是 currentTenantId（JWT中的租户ID）
+  if (userStore.isSuperUser && !userStore.currentTenant) {
+    window.$message?.warning('请先选择租户')
+    return
+  }
+
   isDisabled.value = false
+  // 设置当前选中的租户ID
+  modalForm.tenant_id = userStore.currentTenantId
   crudTableRef.value?.openAddModal()
 }
 
 function handleEdit(record: any) {
+  // 检查是否选择了租户（超管需要选择租户，普通用户使用当前租户）
+  // 注意：检查 currentTenant（右上角选择器的选择状态）而不是 currentTenantId（JWT中的租户ID）
+  if (userStore.isSuperUser && !userStore.currentTenant) {
+    window.$message?.warning('请先选择租户')
+    return
+  }
+
   isDisabled.value = record.parent_id === 0
   Object.assign(modalForm, record)
+  // 确保使用当前选中的租户ID
+  modalForm.tenant_id = userStore.currentTenantId
   crudTableRef.value?.openEditModal(record)
 }
 

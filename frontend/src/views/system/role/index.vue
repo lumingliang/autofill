@@ -6,12 +6,6 @@
       @search="handleSearch" @reset="handleReset" @table-change="handleTableChange" @modal-ok="handleSave">
       <!-- 筛选条件 -->
       <template #filter-items>
-        <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-              @change="handleSearch" />
-          </a-form-item>
-        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="角色名" class="filter-item">
             <a-input v-model:value="queryParams.role_name" placeholder="请输入角色名" allow-clear
@@ -56,9 +50,6 @@
 
       <!-- 弹窗表单 -->
       <template #modal-form="{ form, action }">
-        <a-form-item v-if="userStore.isSuperUser" label="所属租户" name="tenant_id">
-          <a-select v-model:value="form.tenant_id" placeholder="请选择所属租户" :options="tenantOptions" />
-        </a-form-item>
         <a-form-item label="角色名" name="name">
           <a-input v-model:value="form.name" placeholder="请输入角色名称" />
         </a-form-item>
@@ -122,14 +113,11 @@ const crudTableRef = ref<InstanceType<typeof CrudTable>>()
 // 查询参数
 const queryParams = reactive({
   role_name: '',
-  tenant_id: undefined as number | undefined,
 })
 
 // 计算表单项数量
 const filterItemCount = computed(() => {
-  let count = 1
-  if (userStore.isSuperUser) count++
-  return count
+  return 1
 })
 
 // 表格数据
@@ -162,7 +150,6 @@ const modalForm = reactive({
   tenant_id: undefined as number | undefined,
 })
 const modalRules = computed(() => ({
-  tenant_id: { required: userStore.isSuperUser, message: '请选择所属租户', trigger: ['change', 'blur'], type: 'number' },
   name: { required: true, message: '请输入角色名称', trigger: ['input', 'blur'] },
 }))
 
@@ -230,13 +217,27 @@ function handleTableChange(p: any) {
 
 // 新增
 function handleAdd() {
+  // 检查是否选择了租户（超管需要选择租户，普通用户使用当前租户）
+  // 注意：检查 currentTenant（右上角选择器的选择状态）而不是 currentTenantId（JWT中的租户ID）
+  if (userStore.isSuperUser && !userStore.currentTenant) {
+    window.$message?.warning('请先选择租户')
+    return
+  }
+
   modalTitle.value = '新增角色'
-  Object.assign(modalForm, { name: '', desc: '', tenant_id: undefined })
+  Object.assign(modalForm, { name: '', desc: '', tenant_id: userStore.currentTenantId })
   crudTableRef.value?.openAddModal()
 }
 
 // 编辑
 function handleEdit(record: any) {
+  // 检查是否选择了租户（超管需要选择租户，普通用户使用当前租户）
+  // 注意：检查 currentTenant（右上角选择器的选择状态）而不是 currentTenantId（JWT中的租户ID）
+  if (userStore.isSuperUser && !userStore.currentTenant) {
+    window.$message?.warning('请先选择租户')
+    return
+  }
+
   modalTitle.value = '编辑角色'
   crudTableRef.value?.openEditModal(record)
 }

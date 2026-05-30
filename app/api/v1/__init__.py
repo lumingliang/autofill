@@ -16,8 +16,8 @@ from .base import base_router
 from .depts import depts_router
 from .menus import menus_router
 from .roles import roles_router
-from .tenants import tenant_router
-from .users import users_router
+from .system import tenants_router as tenant_router
+from .system import users_router
 from .upload import router as upload_router
 from .ai.llm_config import llm_config_router
 

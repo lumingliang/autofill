@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
+from app.core.ctx import Ctx
 from app.core.dependency import AuthControl
 from app.core.tenant import TenantContext
 from app.log import logger, set_request_id, set_tenant_domain
@@ -75,16 +76,17 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 class TenantContextMiddleware(BaseHTTPMiddleware):
     """
     租户上下文中间件
-    
+
     功能：
     1. 在请求开始时从 Header 获取 token 进行认证
-    2. 设置 TenantContext（用户和租户ID）
+    2. 设置 TenantContext 和 Ctx（用户和租户ID）
     3. 将用户信息和租户ID存储到请求状态中
     4. 请求结束后清理租户上下文
-    
+
     使用方式：
     - API Handler 直接从 request.state 获取 current_user 和 tenant_id
-    - Service/Repository 层从 TenantContext 获取租户信息
+    - Service/Repository 层从 Ctx 获取租户信息（推荐新代码使用）
+    - Service/Repository 层从 TenantContext 获取租户信息（兼容旧代码）
     - 不需要在 API 层重复调用 AuthControl.is_authed()
     """
 
@@ -102,7 +104,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
-        
+
         # 跳过不需要认证的路径
         if any(path.startswith(p) for p in self.exclude_paths):
             return await call_next(request)
@@ -119,21 +121,25 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             try:
                 # 调用认证逻辑
                 user = await AuthControl.is_authed(token)
-                
-                # 设置租户上下文（已经在 AuthControl.is_authed 中设置）
-                # 这里再设置一次确保上下文已设置
-                TenantContext.set_user(user)
-                
+
                 # 从请求参数或查询参数获取租户ID（用于超管指定租户）
-                tenant_id = await self._get_request_tenant_id(request, user)
-                
-                # 如果超管指定了租户，设置到上下文中
-                if user.is_superuser and tenant_id > 0:
-                    TenantContext.set_tenant_id(tenant_id)
-                
+                request_tenant_id = await self._get_request_tenant_id(request, user)
+                jwt_tenant_id = getattr(user, "current_tenant_id", 0)
+
+                # 设置新的 Ctx 上下文（推荐新代码使用）
+                Ctx.set_user(user)
+                Ctx.set_jwt_tenant_id(jwt_tenant_id)
+                if user.is_superuser:
+                    Ctx.set_request_tenant_id(request_tenant_id)
+
+                # 设置旧的 TenantContext 上下文（兼容旧代码）
+                TenantContext.set_user(user)
+                if user.is_superuser and request_tenant_id > 0:
+                    TenantContext.set_tenant_id(request_tenant_id)
+
                 # 存储到请求状态，供 API Handler 直接使用
                 request.state.current_user = user
-                request.state.tenant_id = tenant_id
+                request.state.tenant_id = request_tenant_id if user.is_superuser else jwt_tenant_id
                 request.state.is_authenticated = True
 
             except Exception as e:
@@ -144,6 +150,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         # 请求结束后清理租户上下文
+        Ctx.clear()
         TenantContext.clear()
 
         return response
@@ -153,9 +160,10 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         从请求中获取租户ID
 
         优先级：
-        1. 查询参数 tenant_id
-        2. JSON 请求体 tenant_id
-        3. 用户当前的租户ID（仅普通用户）
+        1. 请求头 X-Tenant-ID（前端统一传递）
+        2. 查询参数 tenant_id（兼容旧代码）
+        3. JSON 请求体 tenant_id（兼容旧代码）
+        4. 用户当前的租户ID（仅普通用户）
 
         Args:
             request: 请求对象
@@ -166,7 +174,15 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         """
         # 超级管理员可以指定租户
         if user.is_superuser:
-            # 从查询参数获取
+            # 1. 从请求头 X-Tenant-ID 获取（前端统一传递）
+            tenant_id_header = request.headers.get("X-Tenant-ID")
+            if tenant_id_header:
+                try:
+                    return int(tenant_id_header)
+                except ValueError:
+                    pass
+
+            # 2. 从查询参数获取（兼容旧代码）
             tenant_id = request.query_params.get("tenant_id")
             if tenant_id:
                 try:
@@ -174,7 +190,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 except ValueError:
                     pass
 
-            # 从请求体获取（需要在调用前预加载）
+            # 3. 从请求体获取（需要在调用前预加载，兼容旧代码）
             if request.method in ["POST", "PUT", "PATCH"]:
                 try:
                     body = await request.json()

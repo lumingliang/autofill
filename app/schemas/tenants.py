@@ -45,3 +45,32 @@ class TenantWithAdmin(BaseModel):
     tenant: BaseTenant
     admin_role_id: int = 0
     message: str = ""
+
+
+class BatchAddUsersToTenant(BaseModel):
+    """批量添加用户到租户"""
+    tenant_id: int
+    user_ids: List[int]
+
+
+class BatchRemoveUsersFromTenant(BaseModel):
+    """批量从租户移除用户"""
+    tenant_id: int
+    user_ids: List[int]
+
+
+class UserSearchResult(BaseModel):
+    """用户搜索结果"""
+    id: int
+    username: str
+    email: str = ""
+    is_active: bool = True
+
+
+class TenantUserResult(BaseModel):
+    """租户已分配用户结果"""
+    id: int
+    username: str
+    email: str = ""
+    is_active: bool = True
+    assigned_at: str = ""

@@ -18,25 +18,26 @@
         </a-button>
       </div>
 
-      <a-dropdown v-if="userStore.tenants.length > 1">
-        <a-button type="text">
-          <ClusterOutlined />
-          {{ userStore.currentTenant?.name || '选择租户' }}
-          <DownOutlined />
-        </a-button>
-        <template #overlay>
-          <a-menu @click="handleTenantSwitch">
-            <a-menu-item v-for="tenant in userStore.tenants" :key="tenant.id">
-              {{ tenant.name }}
-            </a-menu-item>
-          </a-menu>
-        </template>
-      </a-dropdown>
+      <!-- 租户选择器 - 多个租户时才显示，不允许清空 -->
+      <div v-if="tenantOptions.length > 1" class="tenant-selector-wrapper">
+        <a-select v-model:value="selectedTenantId" :placeholder="'选择租户'" :options="tenantOptions" :show-search="true"
+          :filter-option="false" :allow-clear="false" :loading="tenantLoading" style="width: 180px"
+          @search="handleTenantSearch" @change="handleTenantChange">
+          <template #suffixIcon>
+            <ClusterOutlined />
+          </template>
+          <template #notFoundContent>
+            <a-empty :image="simpleImage" description="无匹配租户" />
+          </template>
+        </a-select>
+      </div>
 
       <a-dropdown>
         <div class="user-info">
           <a-avatar :src="userStore.avatar" :size="32">
-            <template #icon><UserOutlined /></template>
+            <template #icon>
+              <UserOutlined />
+            </template>
           </a-avatar>
           <span class="username">{{ userStore.name }}</span>
           <DownOutlined />
@@ -60,29 +61,97 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import api from '@/api'
 import { useAppStore, useUserStore } from '@/store'
 import { setToken } from '@/utils'
-import api from '@/api'
 import {
+  ClusterOutlined,
+  DownOutlined,
+  LoginOutlined,
+  LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  DownOutlined,
   UserOutlined,
-  LogoutOutlined,
-  ClusterOutlined,
-  LoginOutlined,
 } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
+import { debounce } from 'lodash-es'
+import { onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import Breadcrumb from './Breadcrumb.vue'
 
 const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 // 快捷登录相关
 const isQuickLoginMode = ref(false)
 const quickLoginTarget = ref('')
+
+// 租户选择相关
+const tenantLoading = ref(false)
+const tenantOptions = ref<Array<{ label: string; value: number }>>([])
+const selectedTenantId = ref<number | null>(null)
+const isTenantLoaded = ref(false) // 防止重复加载
+
+// 初始化选中的租户ID
+watch(
+  () => userStore.currentTenant,
+  (tenant) => {
+    selectedTenantId.value = tenant?.id || null
+  },
+  { immediate: true }
+)
+
+// 加载租户列表 - 统一使用后端接口
+async function loadTenants(keyword: string = '') {
+  // 如果已经加载过且没有搜索关键词，则不再加载
+  if (isTenantLoaded.value && !keyword) {
+    return
+  }
+
+  tenantLoading.value = true
+  try {
+    const res: any = await api.getTenantSelect({ keyword })
+    if (res.code === 200) {
+      tenantOptions.value = (res.data || []).map((t: any) => ({
+        label: `${t.name} (${t.domain})`,
+        value: t.id,
+      }))
+      if (!keyword) {
+        isTenantLoaded.value = true
+      }
+    }
+  } catch (error) {
+    console.error('加载租户列表失败', error)
+  } finally {
+    tenantLoading.value = false
+  }
+}
+
+// 防抖搜索
+const handleTenantSearch = debounce((value: string) => {
+  loadTenants(value)
+}, 300)
+
+// 租户切换 - 统一使用 selectTenant
+async function handleTenantChange(value: number | null) {
+  // 从 tenantOptions 中找到完整的租户对象
+  const tenantObj = tenantOptions.value.find((t) => t.value === value)
+  if (tenantObj) {
+    const success = await userStore.selectTenant(value, { id: tenantObj.value, name: tenantObj.label.split(' (')[0], domain: tenantObj.label.match(/\((.*)\)/)?.[1] || '' })
+    if (success) {
+      // 租户切换成功后，刷新当前页面以加载新租户的数据
+      router.go(0)
+    }
+  } else {
+    const success = await userStore.selectTenant(value)
+    if (success && value !== null) {
+      // 租户切换成功后，刷新当前页面以加载新租户的数据
+      router.go(0)
+    }
+  }
+}
 
 onMounted(() => {
   // 检查是否处于快捷登录模式
@@ -92,6 +161,9 @@ onMounted(() => {
     isQuickLoginMode.value = true
     quickLoginTarget.value = target
   }
+
+  // 加载租户列表
+  loadTenants()
 })
 
 // 返回原用户
@@ -137,15 +209,6 @@ async function handleReturnToOriginal() {
     console.error('return to original error', error)
     window.$message?.error('返回原用户失败')
     router.push('/login')
-  }
-}
-
-function handleTenantSwitch({ key }: { key: string }) {
-  const tenantId = Number(key)
-  if (tenantId !== userStore.currentTenantId) {
-    userStore.selectTenant(tenantId).then(() => {
-      window.location.reload()
-    })
   }
 }
 
@@ -196,6 +259,17 @@ function handleUserMenuClick({ key }: { key: string }) {
       margin-right: 8px;
     }
 
+    .tenant-selector-wrapper {
+      display: flex;
+      align-items: center;
+
+      :deep(.ant-select) {
+        .ant-select-selector {
+          border-radius: 4px;
+        }
+      }
+    }
+
     .user-info {
       display: flex;
       align-items: center;
@@ -208,4 +282,5 @@ function handleUserMenuClick({ key }: { key: string }) {
       }
     }
   }
-}</style>
+}
+</style>

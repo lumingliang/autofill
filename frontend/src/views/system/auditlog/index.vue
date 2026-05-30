@@ -5,11 +5,6 @@
       @search="handleSearch" @reset="handleReset" @table-change="handleTableChange">
       <!-- 筛选条件 -->
       <template #filter-items>
-        <a-col v-if="isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions" />
-          </a-form-item>
-        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="用户名称" class="filter-item">
             <a-input v-model:value="queryParams.username" placeholder="请输入用户名称" allow-clear
@@ -107,7 +102,6 @@ const queryParams = reactive({
   method: undefined as string | undefined,
   path: '',
   status: '',
-  tenant_id: undefined as number | undefined,
   start_time: '',
   end_time: '',
 })
@@ -141,10 +135,7 @@ const columns = computed(() => [
 
 const filterItemCount = computed(() => {
   // 基础字段：用户名称、功能模块、接口概要、请求方法、请求路径、状态码、操作时间 = 7个
-  let count = 7
-  // 超级管理员额外显示租户字段
-  if (isSuperUser.value) count++
-  return count
+  return 7
 })
 
 const methodOptions = ref([
@@ -191,7 +182,6 @@ async function loadData() {
     if (queryParams.method) params.method = queryParams.method
     if (queryParams.path) params.path = queryParams.path
     if (queryParams.status) params.status = parseInt(queryParams.status)
-    if (queryParams.tenant_id) params.tenant_id = queryParams.tenant_id
     if (queryParams.start_time) params.start_time = queryParams.start_time
     if (queryParams.end_time) params.end_time = queryParams.end_time
 
@@ -216,7 +206,6 @@ function handleReset() {
     method: undefined,
     path: '',
     status: '',
-    tenant_id: undefined,
     start_time: '',
     end_time: '',
   })
