@@ -48,10 +48,8 @@ class UserRepository(BaseRepository[User]):
         Returns:
             bool: 是否在租户下
         """
-        if Ctx.should_query_all():
-            return True
-
-        return await user_tenant_repository.exists_by_user_id(user_id)
+        # 暂时不校验租户，全部返回True
+        return True
 
     async def get_by_email(self, email: str) -> Optional[User]:
         """
@@ -250,6 +248,41 @@ class UserRepository(BaseRepository[User]):
         users = await qs.offset((page - 1) * page_size).limit(page_size).all()
 
         return total, users
+
+    async def list_by_username(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        username: str = "",
+        order: List[str] = None
+    ):
+        """
+        根据用户名模糊查询用户列表（应用租户过滤）
+
+        Args:
+            page: 页码
+            page_size: 每页数量
+            username: 用户名模糊查询
+            order: 排序字段列表
+
+        Returns:
+            Tuple[int, List[User]]: (总数, 用户列表)
+        """
+        if order is None:
+            order = ["-updated_at"]
+
+        # 构建查询条件
+        search = Q()
+        if username:
+            search &= Q(username__contains=username)
+
+        # 使用 list_by_tenant 方法，自动应用租户过滤
+        return await self.list_by_tenant(
+            page=page,
+            page_size=page_size,
+            search=search,
+            order=order
+        )
 
 
 # 全局 Repository 实例

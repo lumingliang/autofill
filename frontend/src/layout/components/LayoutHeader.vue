@@ -176,11 +176,11 @@ async function handleReturnToOriginal() {
   }
 
   try {
-    // 获取原用户信息（用于判断是否需要选择租户）
+    // 获取原用户信息
     setToken(originalToken)
-    const res: any = await api.getUserInfo()
+    const userRes: any = await api.getUserInfo()
 
-    if (res.code !== 200) {
+    if (userRes.code !== 200) {
       window.$message?.error('获取原用户信息失败')
       return
     }
@@ -188,9 +188,7 @@ async function handleReturnToOriginal() {
     // 构建待验证的登录信息
     const pendingAuth = {
       token: originalToken,
-      tenants: res.data.tenants,
-      needSelectTenant: res.data.tenants?.length > 1 && !res.data.current_tenant_id,
-      currentTenantId: res.data.current_tenant_id,
+      currentTenantId: userRes.data.current_tenant_id,
       isQuickLogin: false, // 返回原用户不是快捷登录
     }
     localStorage.setItem('pending_auth', JSON.stringify(pendingAuth))

@@ -1,4 +1,3 @@
-
 import asyncio
 
 from fastapi import FastAPI
@@ -10,7 +9,6 @@ from app.core.kafka.consumer import shutdown_kafka_consumers
 
 from app.api import api_router
 from app.controllers.api import api_controller
-from app.controllers.user import UserCreate, user_controller
 from app.core.exceptions import (
     BusinessException,
     BusinessExceptionHandle,
@@ -36,11 +34,15 @@ from app.core.exceptions import (
 )
 from app.core.relation import RelationQuery
 from app.log import logger
-from app.models.admin import Api, Menu, Role
+from app.models.admin import Api, Menu, Role, User
+from app.repositories import user_repository
 from app.schemas.menus import MenuType
+from app.schemas.users import UserCreate
+from app.services.system.user_service import user_service
 from app.settings.config import settings
 from app.core.menu_registry import menu_registry
 from app.core.menu_config import register_all_menus
+from app.utils.password import get_password_hash
 
 from .middlewares import (
     BackGroundTaskMiddleware,
@@ -127,17 +129,19 @@ def register_routers(app: FastAPI, prefix: str = "/api"):
 
 
 async def init_superuser():
-    user = await user_controller.model.exists()
-    if not user:
-        await user_controller.create_user(
-            UserCreate(
-                username="admin",
-                email="admin@admin.com",
-                password="123456",
-                is_active=True,
-                is_superuser=True,
-            )
-        )
+    """初始化超级管理员用户"""
+    user_exists = await User.exists()
+    if not user_exists:
+        # 使用 Repository 层直接创建超级管理员
+        create_data = {
+            "username": "admin",
+            "email": "admin@admin.com",
+            "password": get_password_hash("123456"),
+            "is_active": True,
+            "is_superuser": True,
+        }
+        user = await user_repository.create(create_data)
+        logger.info(f"Superuser created: {user.username}")
 
 
 async def init_menus():

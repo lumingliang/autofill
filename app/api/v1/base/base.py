@@ -3,13 +3,14 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Header
 from pydantic import BaseModel
 
-from app.controllers.user import user_controller
 from app.core.dependency import AuthControl
 from app.core.relation import RelationQuery
 from app.models.admin import Api, Menu, Tenant, User
 from app.schemas.base import Fail, Success
 from app.schemas.login import *
 from app.schemas.users import UpdatePassword
+from app.repositories import user_repository
+from app.services.system.user_service import user_service
 from app.settings import settings
 from app.utils.jwt_utils import create_access_token
 from app.utils.password import get_password_hash, verify_password
@@ -19,25 +20,13 @@ router = APIRouter()
 
 @router.post("/access_token", summary="获取token")
 async def login_access_token(credentials: CredentialsSchema):
-    user: User = await user_controller.authenticate(credentials)
-    await user_controller.update_last_login(user.id)
+    user: User = await user_service.authenticate(
+        username=credentials.username,
+        password=credentials.password
+    )
+    await user_repository.update_last_login(user.id)
 
-    # 获取用户所属租户
-    tenants = await user_controller.get_user_tenants(user.id)
-    tenant_list = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
-
-    # 如果用户只有一个租户且没有设置当前租户，自动设置为当前租户
     current_tenant_id = user.current_tenant_id
-    tenant_domain = ""
-    if len(tenant_list) == 1 and not current_tenant_id:
-        current_tenant_id = tenant_list[0]["id"]
-        tenant_domain = tenant_list[0]["domain"]
-        await user_controller.set_current_tenant(user.id, current_tenant_id)
-    elif current_tenant_id:
-        for t in tenant_list:
-            if t["id"] == current_tenant_id:
-                tenant_domain = t["domain"]
-                break
 
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.now(timezone.utc) + access_token_expires
@@ -50,12 +39,10 @@ async def login_access_token(credentials: CredentialsSchema):
                 is_superuser=user.is_superuser,
                 exp=expire,
                 current_tenant_id=current_tenant_id,
-                tenant_domain=tenant_domain,
+                tenant_domain="",
             )
         ),
         username=user.username,
-        tenants=tenant_list,
-        need_select_tenant=len(tenant_list) > 1 and not user.is_superuser,
         current_tenant_id=current_tenant_id,
     )
     return Success(data=data.model_dump())
@@ -72,7 +59,7 @@ async def select_tenant_and_get_token(
     """用户选择租户后，更新当前租户并返回新的token"""
     try:
         current_user = await AuthControl.is_authed(token)
-        await user_controller.set_current_tenant(current_user.id, schema.tenant_id)
+        await user_service.set_current_tenant(current_user.id, schema.tenant_id)
 
         tenant = await Tenant.filter(id=schema.tenant_id).first()
         tenant_domain = tenant.domain if tenant else ""
@@ -103,14 +90,10 @@ async def select_tenant_and_get_token(
 async def get_userinfo(token: str = Header(..., description="token验证")):
     user = await AuthControl.is_authed(token)
     user_id = user.id
-    user_obj = await user_controller.get(id=user_id)
+    user_obj = await user_service.get_user_by_id(user_id)
     data = await user_obj.to_dict(exclude_fields=["password"])
-    if not data.get("avatar"):
-        data["avatar"] = "https://avatars.githubusercontent.com/u/54677442?v=4"
 
-    # 添加租户信息
-    tenants = await user_controller.get_user_tenants(user_id)
-    data["tenants"] = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
+    # 添加当前租户ID
     data["current_tenant_id"] = user_obj.current_tenant_id
 
     return Success(data=data)
@@ -154,10 +137,10 @@ async def get_user_menu(token: str = Header(..., description="token验证")):
     else:
         current_tenant_id = user_obj.current_tenant_id
         if not current_tenant_id:
-            user_tenants = await user_controller.get_user_tenants(user_id)
+            user_tenants = await user_service.get_user_tenants(user_id)
             if user_tenants:
                 current_tenant_id = user_tenants[0].id
-                await user_controller.set_current_tenant(user_id, current_tenant_id)
+                await user_service.set_current_tenant(user_id, current_tenant_id)
 
         # 通过RelationQuery获取用户在当前租户下的菜单ID集合
         menu_ids = await RelationQuery.get_user_menu_ids(user_id, current_tenant_id)
@@ -211,10 +194,10 @@ async def get_user_api(token: str = Header(..., description="token验证")):
 
     current_tenant_id = user_obj.current_tenant_id
     if not current_tenant_id:
-        user_tenants = await user_controller.get_user_tenants(user_id)
+        user_tenants = await user_service.get_user_tenants(user_id)
         if user_tenants:
             current_tenant_id = user_tenants[0].id
-            await user_controller.set_current_tenant(user_id, current_tenant_id)
+            await user_service.set_current_tenant(user_id, current_tenant_id)
 
     # 通过RelationQuery获取用户在当前租户下的API权限
     api_ids = await RelationQuery.get_user_api_ids(user_id, current_tenant_id)
@@ -229,13 +212,11 @@ async def get_user_api(token: str = Header(..., description="token验证")):
 @router.post("/update_password", summary="修改密码")
 async def update_user_password(req_in: UpdatePassword, token: str = Header(..., description="token验证")):
     user = await AuthControl.is_authed(token)
-    user_id = user.id
-    user_obj = await user_controller.get(user_id)
-    verified = verify_password(req_in.old_password, user_obj.password)
-    if not verified:
-        return Fail(msg="旧密码验证错误！")
-    user_obj.password = get_password_hash(req_in.new_password)
-    await user_obj.save()
+    await user_service.update_password(
+        user_id=user.id,
+        old_password=req_in.old_password,
+        new_password=req_in.new_password
+    )
     return Success(msg="密码修改成功")
 
 
@@ -255,38 +236,25 @@ async def quick_login(
     """
     current_user = await AuthControl.is_authed(token)
 
-    target_user = await user_controller.get(id=schema.target_user_id)
-    if not target_user:
-        return Fail(code=404, msg="目标用户不存在")
+    target_user = await user_service.get_user_by_id(schema.target_user_id)
 
     if target_user.is_superuser:
         return Fail(code=403, msg="不能快捷登录到超级管理员账户")
 
     if not current_user.is_superuser:
-        current_tenants = await user_controller.get_user_tenants(current_user.id)
-        target_tenants = await user_controller.get_user_tenants(target_user.id)
+        current_tenants = await user_service.get_user_tenants(current_user.id)
+        target_tenants = await user_service.get_user_tenants(target_user.id)
         current_tenant_ids = {t.id for t in current_tenants}
         target_tenant_ids = {t.id for t in target_tenants}
 
         if not current_tenant_ids.intersection(target_tenant_ids):
             return Fail(code=403, msg="您没有权限快捷登录到该用户")
 
-    await user_controller.update_last_login(target_user.id)
-
-    tenants = await user_controller.get_user_tenants(target_user.id)
-    tenant_list = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenants]
+    # 更新最后登录时间
+    from app.repositories import user_repository
+    await user_repository.update_last_login(target_user.id)
 
     current_tenant_id = target_user.current_tenant_id
-    tenant_domain = ""
-    if len(tenant_list) == 1 and not current_tenant_id:
-        current_tenant_id = tenant_list[0]["id"]
-        tenant_domain = tenant_list[0]["domain"]
-        await user_controller.set_current_tenant(target_user.id, current_tenant_id)
-    elif current_tenant_id:
-        for t in tenant_list:
-            if t["id"] == current_tenant_id:
-                tenant_domain = t["domain"]
-                break
 
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.now(timezone.utc) + access_token_expires
@@ -299,12 +267,10 @@ async def quick_login(
                 is_superuser=target_user.is_superuser,
                 exp=expire,
                 current_tenant_id=current_tenant_id,
-                tenant_domain=tenant_domain,
+                tenant_domain="",
             )
         ),
         username=target_user.username,
-        tenants=tenant_list,
-        need_select_tenant=len(tenant_list) > 1 and not target_user.is_superuser,
         current_tenant_id=current_tenant_id,
     )
     return Success(data=data.model_dump())

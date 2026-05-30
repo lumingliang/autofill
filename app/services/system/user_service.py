@@ -111,10 +111,6 @@ class UserService:
         # 批量获取角色信息
         await self._attach_roles_to_users(data, user_ids)
 
-        # 批量获取租户信息（仅超级管理员可见）
-        if Ctx.is_superuser():
-            await self._attach_tenants_to_users(data, user_ids)
-
         # 获取部门信息
         await self._attach_depts_to_users(data)
 
@@ -134,22 +130,6 @@ class UserService:
 
         for item in data:
             item["roles"] = [role_map.get(rid) for rid in user_role_map.get(item["id"], []) if role_map.get(rid)]
-
-    async def _attach_tenants_to_users(self, data: List[dict], user_ids: List[int]) -> None:
-        """为用户数据附加租户信息（仅超管调用）"""
-        user_tenant_map = await user_tenant_repository.batch_get_tenant_ids_by_user_ids(user_ids)
-        all_tenant_ids = set()
-        for tids in user_tenant_map.values():
-            all_tenant_ids.update(tids)
-
-        tenant_map = {}
-        if all_tenant_ids:
-            # 超管查看租户信息，不过滤租户ID
-            tenants = await tenant_repository.get_by_ids(list(all_tenant_ids))
-            tenant_map = {t.id: {"id": t.id, "name": t.name} for t in tenants}
-
-        for item in data:
-            item["tenants"] = [tenant_map.get(tid) for tid in user_tenant_map.get(item["id"], []) if tenant_map.get(tid)]
 
     async def _attach_depts_to_users(self, data: List[dict]) -> None:
         """为用户数据附加部门信息"""
@@ -173,11 +153,6 @@ class UserService:
             user_dict["roles"] = [{"id": r.id, "name": r.name, "tenant_id": r.tenant_id} for r in roles]
         else:
             user_dict["roles"] = []
-
-        # 获取用户租户（仅超管可见）
-        if Ctx.is_superuser():
-            tenant_ids = await user_tenant_repository.get_tenant_ids_by_user_id(user_id)
-            user_dict["tenant_ids"] = tenant_ids
 
         return user_dict
 
@@ -337,20 +312,16 @@ class UserService:
         # 更新用户角色关联（租户ID从 Ctx 自动获取）
         await user_role_repository.replace_user_roles(user_id, role_ids)
 
-        # 如果用户不在该租户下，将用户添加到该租户
-        target_tenant_id = Ctx.get_effective_tenant_id()
-        user_tenant_ids = await user_tenant_repository.get_tenant_ids_by_user_id(user_id)
-        if target_tenant_id not in user_tenant_ids:
-            await user_tenant_repository.create({"user_id": user_id})
-
         # 清除该用户在该租户下的权限缓存
+        target_tenant_id = Ctx.get_effective_tenant_id()
         await permission_cache_service.clear_user_cache(user_id, target_tenant_id)
 
     # ==================== 认证相关 ====================
 
     async def authenticate(self, username: str, password: str) -> User:
         """用户认证"""
-        user = await user_repository.get_by_username(username)
+        # 使用 first 方法不检查租户，因为登录时还没有选择租户
+        user = await user_repository.first(username=username)
         if not user:
             raise HTTPException(status_code=400, detail="无效的用户名")
 

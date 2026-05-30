@@ -83,11 +83,32 @@ onMounted(() => {
   initLoginInfo()
 })
 
+// 加载租户列表并显示选择弹窗
+async function loadTenantsAndShowModal(token: string) {
+  pendingToken.value = token
+  try {
+    // 设置临时token以调用租户接口
+    setToken(token)
+    const res: any = await api.getTenantSelect()
+    if (res.code === 200 && res.data?.length > 1) {
+      tenantOptions.value = res.data.map((t: any) => ({ label: `${t.name} (${t.domain})`, value: t.id }))
+      showTenantModal.value = true
+      loading.value = false
+      return true
+    }
+    // 如果只有一个租户或没有租户，直接完成登录
+    return false
+  } catch (error) {
+    console.error('加载租户列表失败', error)
+    return false
+  }
+}
+
 // 处理待验证的登录信息
 async function handlePendingAuth(authData: string) {
   try {
     loading.value = true
-    const { token, tenants, needSelectTenant, currentTenantId, isQuickLogin, targetUser } = typeof authData === 'string' ? JSON.parse(authData) : authData
+    const { token, currentTenantId, isQuickLogin, targetUser } = typeof authData === 'string' ? JSON.parse(authData) : authData
 
     // 清除待验证数据
     localStorage.removeItem('pending_auth')
@@ -99,12 +120,11 @@ async function handlePendingAuth(authData: string) {
     }
 
     // 检查是否需要选择租户
-    if (needSelectTenant && tenants?.length > 1 && !currentTenantId) {
-      pendingToken.value = token
-      tenantOptions.value = tenants.map((t: any) => ({ label: t.name, value: t.id }))
-      showTenantModal.value = true
-      loading.value = false
-      return
+    if (!currentTenantId) {
+      const needSelect = await loadTenantsAndShowModal(token)
+      if (needSelect) {
+        return
+      }
     }
 
     // 直接完成登录
@@ -132,15 +152,14 @@ async function handleLogin() {
     const res: any = await api.login({ username, password: password.toString() })
     localStorage.setItem('loginInfo', JSON.stringify({ username, password }))
 
-    const { access_token, tenants, need_select_tenant, current_tenant_id } = res.data
+    const { access_token, current_tenant_id } = res.data
 
     // 检查是否需要选择租户
-    if (need_select_tenant && tenants?.length > 1 && !current_tenant_id) {
-      pendingToken.value = access_token
-      tenantOptions.value = tenants.map((t: any) => ({ label: t.name, value: t.id }))
-      showTenantModal.value = true
-      loading.value = false
-      return
+    if (!current_tenant_id) {
+      const needSelect = await loadTenantsAndShowModal(access_token)
+      if (needSelect) {
+        return
+      }
     }
 
     await completeLogin(access_token)

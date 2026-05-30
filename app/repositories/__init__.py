@@ -18,8 +18,12 @@ Repository 层 - 数据访问层
 
 from .base_repository import BaseRepository
 from .rule_management import rule_info_repository, rule_version_repository, rule_data_repository
+from .system.api_repository import api_repository
 from .system.dept_closure_repository import dept_closure_repository
 from .system.dept_repository import dept_repository
+from .system.menu_repository import menu_repository
+from .system.role_api_repository import role_api_repository
+from .system.role_menu_repository import role_menu_repository
 from .system.role_repository import role_repository
 from .system.tenant_repository import tenant_repository
 from .system.user_repository import user_repository
@@ -27,9 +31,13 @@ from .system.user_role_repository import user_role_repository
 from .system.user_tenant_repository import user_tenant_repository
 
 __all__ = [
+    "api_repository",
     "BaseRepository",
     "dept_closure_repository",
     "dept_repository",
+    "menu_repository",
+    "role_api_repository",
+    "role_menu_repository",
     "role_repository",
     "rule_info_repository",
     "rule_version_repository",

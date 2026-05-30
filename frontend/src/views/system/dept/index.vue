@@ -23,9 +23,6 @@
 
       <!-- 表格列自定义 -->
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'tenant_name'">
-          {{ record.tenant_name || '-' }}
-        </template>
         <template v-if="column.key === 'action'">
           <a-space>
             <a-button v-permission="'post/api/v1/dept/update'" type="link" size="small"
@@ -80,7 +77,6 @@ const filterItemCount = computed(() => {
 
 const columns = computed(() => [
   { title: '部门名称', dataIndex: 'name', key: 'name' },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name' }] : []),
   { title: '备注', dataIndex: 'desc', key: 'desc', ellipsis: true },
   { title: '操作', key: 'action', width: 150, fixed: 'right' },
 ])

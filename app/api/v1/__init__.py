@@ -15,7 +15,7 @@ from .autofill import (
 from .base import base_router
 from .depts import depts_router
 from .menus import menus_router
-from .roles import roles_router
+from .system import roles_router
 from .system import tenants_router as tenant_router
 from .system import users_router
 from .upload import router as upload_router

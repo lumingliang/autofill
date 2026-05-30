@@ -5,7 +5,7 @@
 UserTenant 有 tenant_id 字段，基类会自动处理租户过滤。
 """
 
-from typing import List
+from typing import List, Tuple
 
 from app.models.admin import UserTenant
 from app.repositories.base_repository import BaseRepository
@@ -92,6 +92,40 @@ class UserTenantRepository(BaseRepository[UserTenant]):
         """
         # 直接使用 model.filter 绕过租户过滤
         return await self.model.filter(tenant_id=tenant_id).all()
+
+    async def delete_by_user_and_tenant(self, user_id: int, tenant_id: int) -> None:
+        """
+        删除用户-租户关联
+
+        Args:
+            user_id: 用户ID
+            tenant_id: 租户ID
+        """
+        await self.model.filter(user_id=user_id, tenant_id=tenant_id).delete()
+
+    async def batch_add_user_tenants(self, user_id_tenant_id_pairs: List[Tuple[int, int]]) -> None:
+        """
+        批量添加用户-租户关联（自动去重）
+
+        Args:
+            user_id_tenant_id_pairs: (用户ID, 租户ID) 元组列表
+        """
+        if not user_id_tenant_id_pairs:
+            return
+
+        # 只查询相关用户的数据，减少查询范围
+        user_ids = list(set(uid for uid, _ in user_id_tenant_id_pairs))
+        existing = await self.get_queryset().filter(user_id__in=user_ids).values("user_id", "tenant_id")
+        existing_set = {(r["user_id"], r["tenant_id"]) for r in existing}
+
+        to_create = []
+        for uid, tid in user_id_tenant_id_pairs:
+            if (uid, tid) not in existing_set:
+                to_create.append(self.model(user_id=uid, tenant_id=tid))
+                existing_set.add((uid, tid))
+
+        if to_create:
+            await self.model.bulk_create(to_create)
 
 
 # 全局 Repository 实例

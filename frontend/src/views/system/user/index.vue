@@ -57,11 +57,7 @@
                 {{ role.name }}
               </a-tag>
             </template>
-            <template v-if="column.key === 'tenants'">
-              <a-tag v-for="tenant in record.tenants" :key="tenant.id" color="orange" style="margin: 2px 3px">
-                {{ tenant.name }}
-              </a-tag>
-            </template>
+
             <template v-if="column.key === 'dept'">
               {{ record.dept?.name }}
             </template>
@@ -116,12 +112,6 @@
           </a-form-item>
           <a-form-item v-if="modalAction === 'add'" label="确认密码" name="confirmPassword">
             <a-input-password v-model:value="modalForm.confirmPassword" placeholder="请确认密码" />
-          </a-form-item>
-
-          <!-- 编辑时显示已分配租户（只读）：仅超级管理员可见 -->
-          <a-form-item v-if="modalAction === 'edit' && userStore.isSuperUser" label="已分配租户">
-            <a-select :value="modalForm.assigned_tenant_ids" :options="tenantOptions" mode="multiple" disabled
-              placeholder="该用户已分配的租户" />
           </a-form-item>
 
           <!-- 角色选择 -->
@@ -230,7 +220,7 @@ const columns = computed(() => [
   { title: '名称', dataIndex: 'username', key: 'username', width: 120, ellipsis: true, resizable: true },
   { title: '邮箱', dataIndex: 'email', key: 'email', width: 180, ellipsis: true, resizable: true },
   { title: '用户角色', key: 'roles', width: 150, resizable: true },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenants', width: 150, resizable: true }] : []),
+
   { title: '部门', key: 'dept', width: 120, ellipsis: true, resizable: true },
   { title: '超级用户', key: 'is_superuser', width: 90, resizable: true },
   { title: '上次登录时间', key: 'last_login', width: 180, ellipsis: true, resizable: true },
@@ -357,7 +347,6 @@ function handleAddUser() {
     tenant_id: undefined,
     dept_id: undefined,
     role_ids: [],
-    assigned_tenant_ids: [],
   })
   roleOptions.value = []
   deptOptions.value = []
@@ -389,11 +378,9 @@ async function handleEditUser(record: any) {
     is_superuser: record.is_superuser,
     is_active: record.is_active,
     dept_id: record.dept?.id || null,
-    role_ids: [],
     tenant_id: undefined,
-    assigned_tenant_ids: record.tenants?.map((t: any) => t.id) || [],
+    role_ids: [],
   })
-
   roleOptions.value = []
   deptOptions.value = []
 
@@ -502,7 +489,7 @@ async function handleQuickLogin(record: any) {
     hide?.()
 
     if (res.code === 200) {
-      const { access_token, tenants, need_select_tenant, current_tenant_id } = res.data
+      const { access_token, current_tenant_id } = res.data
 
       const originalToken = localStorage.getItem('access_token')
       if (originalToken) {
@@ -511,8 +498,6 @@ async function handleQuickLogin(record: any) {
 
       const pendingAuth = {
         token: access_token,
-        tenants,
-        needSelectTenant: need_select_tenant,
         currentTenantId: current_tenant_id,
         isQuickLogin: true,
         targetUser: record.username,

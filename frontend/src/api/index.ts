@@ -25,7 +25,6 @@ export default {
   updateUser: (data: any = {}) => request.post('/user/update', data),
   deleteUser: (params: any = {}) => request.delete('/user/delete', { params }),
   resetPassword: (data: any = {}) => request.post('/user/reset_password', data),
-  getMyTenants: () => request.get('/user/my_tenants'),
   selectUserTenant: (data: any = {}) => request.post('/user/select_tenant', data),
   getTenantRoles: (params: any = {}) => request.get('/user/tenant_roles', { params }),
   getUserTenantAssignedRoles: (params: any = {}) => request.get('/user/tenant_assigned_roles', { params }),

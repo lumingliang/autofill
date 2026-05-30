@@ -1,2 +1,2 @@
-from .role import role_controller as role_controller
-from .user import user_controller as user_controller
+# Controller 层已弃用，请使用 Service + Repository 架构
+# 参见架构规范: .trae/architecture_rules.md

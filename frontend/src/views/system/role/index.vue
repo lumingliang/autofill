@@ -25,10 +25,10 @@
       <!-- 表格列自定义 -->
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
-          <a-tag color="blue">{{ record.name }}</a-tag>
-        </template>
-        <template v-if="column.key === 'tenant_name'">
-          <a-tag color="orange">{{ record.tenant_name || '系统角色' }}</a-tag>
+          <a-space>
+            <a-tag color="blue">{{ record.name }}</a-tag>
+            <a-tag v-if="record.is_system" color="green">系统角色</a-tag>
+          </a-space>
         </template>
         <template v-if="column.key === 'created_at'">
           {{ formatDateTime(record.created_at) }}
@@ -86,9 +86,10 @@
       @ok="handleSaveAssignUsers" @cancel="assignUserModalVisible = false" width="600px">
       <a-form :label-col="{ span: 4 }" :wrapper-col="{ span: 20 }">
         <a-form-item label="角色">
-          <a-tag color="blue">{{ currentRole?.name }}</a-tag>
-          <a-tag v-if="currentRole?.tenant_name" color="orange">{{ currentRole.tenant_name }}</a-tag>
-          <span v-else-if="currentRole && !currentRole.tenant_id" class="ant-tag ant-tag-orange">系统角色</span>
+          <a-space>
+            <a-tag color="blue">{{ currentRole?.name }}</a-tag>
+            <a-tag v-if="currentRole?.is_system" color="green">系统角色</a-tag>
+          </a-space>
         </a-form-item>
         <a-form-item label="选择用户">
           <a-select v-model:value="selectedUserIds" mode="multiple" placeholder="请选择要分配的用户" style="width: 100%"
@@ -135,7 +136,6 @@ const tenantOptions = ref<{ label: string; value: number }[]>([])
 // 表格列
 const columns = computed(() => [
   { title: '角色名', dataIndex: 'name', key: 'name', width: 150 },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name', width: 150 }] : []),
   { title: '角色描述', dataIndex: 'desc', key: 'desc', width: 200, ellipsis: true },
   { title: '创建日期', dataIndex: 'created_at', key: 'created_at', width: 180 },
   { title: '操作', key: 'action', width: 280, fixed: 'right' as const },

@@ -4,7 +4,7 @@
 提供 UserRole 关联表的数据访问操作，继承 BaseRepository 获得通用 CRUD 能力。
 """
 
-from typing import List
+from typing import List, Tuple
 
 from app.core.ctx import Ctx
 from app.models.admin import UserRole
@@ -86,6 +86,40 @@ class UserRoleRepository(BaseRepository[UserRole]):
                 for rid in set(role_ids)
             ]
             await self.model.bulk_create([self.model(**data) for data in create_data])
+
+    async def delete_by_user_and_role(self, user_id: int, role_id: int) -> None:
+        """
+        删除用户-角色关联
+
+        Args:
+            user_id: 用户ID
+            role_id: 角色ID
+        """
+        await self.get_queryset().filter(user_id=user_id, role_id=role_id).delete()
+
+    async def batch_add_user_roles(self, user_id_role_id_pairs: List[Tuple[int, int, int]]) -> None:
+        """
+        批量添加用户-角色关联（自动去重）
+
+        Args:
+            user_id_role_id_pairs: (用户ID, 角色ID, 租户ID) 元组列表
+        """
+        if not user_id_role_id_pairs:
+            return
+
+        # 只查询相关用户的数据，减少查询范围
+        user_ids = list(set(uid for uid, _, _ in user_id_role_id_pairs))
+        existing = await self.get_queryset().filter(user_id__in=user_ids).values("user_id", "role_id")
+        existing_set = {(r["user_id"], r["role_id"]) for r in existing}
+
+        to_create = []
+        for uid, rid, tid in user_id_role_id_pairs:
+            if (uid, rid) not in existing_set:
+                to_create.append(self.model(user_id=uid, role_id=rid, tenant_id=tid))
+                existing_set.add((uid, rid))
+
+        if to_create:
+            await self.model.bulk_create(to_create)
 
 
 # 全局 Repository 实例

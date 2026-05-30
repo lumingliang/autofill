@@ -5,6 +5,10 @@
 Role 有 tenant_id 字段，基类会自动处理租户过滤。
 """
 
+from typing import List
+
+from tortoise.expressions import Q
+
 from app.models.admin import Role
 from app.repositories.base_repository import BaseRepository
 
@@ -27,6 +31,59 @@ class RoleRepository(BaseRepository[Role]):
 
     def __init__(self):
         super().__init__(Role)
+
+    async def get_by_name(self, name: str):
+        """根据名称获取角色（应用租户过滤）"""
+        return await self.get_queryset().filter(name=name).first()
+
+    async def list_by_name(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        role_name: str = "",
+        order: List[str] = None
+    ):
+        """
+        根据名称模糊查询角色列表
+
+        Args:
+            page: 页码
+            page_size: 每页数量
+            role_name: 角色名称模糊查询
+            order: 排序字段列表
+
+        Returns:
+            Tuple[int, List[Role]]: (总数, 角色列表)
+        """
+        query = self.get_queryset()
+
+        if role_name:
+            query = query.filter(name__contains=role_name)
+
+        total = await query.count()
+
+        if order:
+            query = query.order_by(*order)
+
+        roles = await query.offset((page - 1) * page_size).limit(page_size).all()
+
+        return total, roles
+
+    async def exists_by_ids_and_tenant(self, role_ids: List[int], tenant_id: int) -> bool:
+        """
+        检查指定ID列表中是否存在指定租户的角色
+
+        Args:
+            role_ids: 角色ID列表
+            tenant_id: 租户ID
+
+        Returns:
+            bool: 是否存在
+        """
+        return await self.get_queryset().filter(
+            id__in=role_ids,
+            tenant_id=tenant_id
+        ).exists()
 
 
 # 全局 Repository 实例

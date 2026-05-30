@@ -14,8 +14,6 @@ class BaseUser(BaseModel):
     updated_at: str = ""
     last_login: str = ""
     roles: list = []
-    # 多租户字段
-    tenants: list = []
     current_tenant_id: int = 0
 
 
