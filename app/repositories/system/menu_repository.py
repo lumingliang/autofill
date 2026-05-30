@@ -5,10 +5,12 @@
 Menu 模型没有 tenant_id 字段，关闭自动租户过滤。
 """
 
-from typing import List
+from typing import List, Set
 
 from app.models.admin import Menu
 from app.repositories.base_repository import BaseRepository
+from app.repositories.system.role_menu_repository import role_menu_repository
+from app.repositories.system.user_role_repository import user_role_repository
 
 
 class MenuRepository(BaseRepository[Menu]):
@@ -34,6 +36,35 @@ class MenuRepository(BaseRepository[Menu]):
         if not menu_ids:
             return []
         return await self.model.filter(id__in=menu_ids).all()
+
+    async def get_all(self) -> List[Menu]:
+        """获取所有菜单"""
+        return await self.model.all()
+
+    async def get_user_menu_ids(self, user_id: int) -> Set[int]:
+        """
+        获取用户在当前租户下的所有菜单ID
+
+        自动应用租户过滤（通过 role_menu_repository 继承自 BaseRepository）
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            Set[int]: 菜单ID集合
+        """
+        if not user_id:
+            return set()
+
+        role_ids = await user_role_repository.get_role_ids_by_user_id(user_id)
+        if not role_ids:
+            return set()
+
+        rows = await role_menu_repository.batch_get_menu_ids_by_role_ids(role_ids)
+        menu_ids: Set[int] = set()
+        for rid, mids in rows.items():
+            menu_ids.update(mids)
+        return menu_ids
 
 
 # 全局 Repository 实例

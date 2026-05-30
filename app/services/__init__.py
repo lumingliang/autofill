@@ -8,9 +8,17 @@
 - storage: 存储服务（文件管理）
 """
 
-from app.services.system import role_service, tenant_service, user_service
+from app.services.system import (
+    api_service,
+    menu_service,
+    role_service,
+    tenant_service,
+    user_service,
+)
 
 __all__ = [
+    "api_service",
+    "menu_service",
     "role_service",
     "tenant_service",
     "user_service",

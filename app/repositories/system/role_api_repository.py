@@ -6,6 +6,7 @@
 
 from typing import List
 
+from app.core.ctx import Ctx
 from app.models.admin import RoleApi
 from app.repositories.base_repository import BaseRepository
 
@@ -50,6 +51,8 @@ class RoleApiRepository(BaseRepository[RoleApi]):
     async def batch_get_api_ids_by_role_ids(self, role_ids: List[int]) -> dict[int, List[int]]:
         """
         批量获取角色 ID -> API ID 列表的映射
+
+        自动应用租户过滤（继承自 BaseRepository）
 
         Args:
             role_ids: 角色ID列表

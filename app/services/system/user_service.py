@@ -333,6 +333,58 @@ class UserService:
 
         return user
 
+    async def update_last_login(self, user_id: int) -> None:
+        """更新用户最后登录时间"""
+        await user_repository.update_last_login(user_id)
+
+    async def select_tenant(self, user_id: int, tenant_id: int) -> dict:
+        """
+        选择租户并返回租户信息
+
+        Returns:
+            dict: 包含 tenant_domain 的字典
+        """
+        await self.set_current_tenant(user_id, tenant_id)
+
+        tenant = await tenant_repository.get_by_id(tenant_id)
+        return {"tenant_domain": tenant.domain if tenant else ""}
+
+    async def quick_login_validate(
+        self,
+        current_user_id: int,
+        target_user_id: int,
+        is_current_superuser: bool
+    ) -> User:
+        """
+        验证快捷登录权限
+
+        Args:
+            current_user_id: 当前用户ID
+            target_user_id: 目标用户ID
+            is_current_superuser: 当前用户是否为超级管理员
+
+        Returns:
+            User: 目标用户对象
+
+        Raises:
+            HTTPException: 权限验证失败
+        """
+        target_user = await self.get_user_by_id(target_user_id)
+
+        if target_user.is_superuser:
+            raise HTTPException(status_code=403, detail="不能快捷登录到超级管理员账户")
+
+        if not is_current_superuser:
+            current_tenants = await self.get_user_tenants(current_user_id)
+            target_tenants = await self.get_user_tenants(target_user_id)
+            current_tenant_ids = {t.id for t in current_tenants}
+            target_tenant_ids = {t.id for t in target_tenants}
+
+            if not current_tenant_ids.intersection(target_tenant_ids):
+                raise HTTPException(status_code=403, detail="您没有权限快捷登录到该用户")
+
+        return target_user
+
 
 # 全局 Service 实例
 user_service = UserService()

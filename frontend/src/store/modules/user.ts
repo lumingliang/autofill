@@ -32,11 +32,10 @@ export const useUserStore = defineStore('user', () => {
       // 恢复持久化的租户选择
       const savedTenantId = getSelectedTenantId()
       if (savedTenantId) {
-        // 使用本地保存的租户ID
         currentTenant.value = { id: savedTenantId, name: `租户${savedTenantId}`, domain: '' }
       } else if (current_tenant_id) {
-        // 没有本地保存的租户ID时，使用后端返回的当前租户
         currentTenant.value = { id: current_tenant_id, name: `租户${current_tenant_id}`, domain: '' }
+        setSelectedTenantId(current_tenant_id)
       }
       return res.data || res
     } catch (error) {

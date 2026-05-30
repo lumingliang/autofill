@@ -18,8 +18,8 @@
         </a-button>
       </div>
 
-      <!-- 租户选择器 - 多个租户时才显示，不允许清空 -->
-      <div v-if="tenantOptions.length > 1" class="tenant-selector-wrapper">
+      <!-- 租户选择器 - 至少一个租户时才显示 -->
+      <div v-if="tenantOptions.length >= 1" class="tenant-selector-wrapper">
         <a-select v-model:value="selectedTenantId" :placeholder="'选择租户'" :options="tenantOptions" :show-search="true"
           :filter-option="false" :allow-clear="false" :loading="tenantLoading" style="width: 180px"
           @search="handleTenantSearch" @change="handleTenantChange">
