@@ -101,8 +101,8 @@ async def get_user_menu(current_user: User = Depends(AuthControl.is_authed)):
 
 
 @router.get("/userapi", summary="查看用户API")
-async def get_user_api(current_user: User = Depends(AuthControl.is_authed)):
-    apis = await api_service.get_user_apis(current_user.id, current_user.is_superuser)
+async def get_user_api():
+    apis = await api_service.get_user_apis()
     return Success(data=apis)
 
 
