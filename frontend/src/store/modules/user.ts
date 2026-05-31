@@ -1,12 +1,11 @@
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { removeToken, setToken } from '@/utils'
 import api from '@/api'
 import router from '@/router'
+import { getSelectedTenantId, removeSelectedTenantId, removeToken, setSelectedTenantId } from '@/utils'
+import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
 
 export const useUserStore = defineStore('user', () => {
   const userInfo = ref<Record<string, any>>({})
-  const tenants = ref<any[]>([])
   const currentTenant = ref<any>(null)
 
   const userId = computed(() => userInfo.value?.id)
@@ -27,11 +26,16 @@ export const useUserStore = defineStore('user', () => {
         await logout()
         return
       }
-      const { id, username, email: uEmail, avatar: uAvatar, roles, is_superuser, is_active, tenants: ts, current_tenant_id } = res.data || res
+      const { id, username, email: uEmail, avatar: uAvatar, roles, is_superuser, is_active, current_tenant_id } = res.data || res
       userInfo.value = { id, username, email: uEmail, avatar: uAvatar, roles, is_superuser, is_active, current_tenant_id }
-      tenants.value = ts || []
-      if (current_tenant_id && ts) {
-        currentTenant.value = ts.find((t: any) => t.id === current_tenant_id) || null
+
+      // 恢复持久化的租户选择
+      const savedTenantId = getSelectedTenantId()
+      if (savedTenantId) {
+        currentTenant.value = { id: savedTenantId, name: `租户${savedTenantId}`, domain: '' }
+      } else if (current_tenant_id) {
+        currentTenant.value = { id: current_tenant_id, name: `租户${current_tenant_id}`, domain: '' }
+        setSelectedTenantId(current_tenant_id)
       }
       return res.data || res
     } catch (error) {
@@ -41,8 +45,8 @@ export const useUserStore = defineStore('user', () => {
 
   async function logout() {
     removeToken()
+    removeSelectedTenantId()
     userInfo.value = {}
-    tenants.value = []
     currentTenant.value = null
     router.push('/login')
   }
@@ -50,8 +54,8 @@ export const useUserStore = defineStore('user', () => {
   // 退出登录但不跳转（用于快捷登录）
   async function logoutWithoutRedirect() {
     removeToken()
+    removeSelectedTenantId()
     userInfo.value = {}
-    tenants.value = []
     currentTenant.value = null
   }
 
@@ -63,39 +67,36 @@ export const useUserStore = defineStore('user', () => {
     currentTenant.value = tenant
     if (tenant) {
       userInfo.value.current_tenant_id = tenant.id
+      setSelectedTenantId(tenant.id)
+    } else {
+      removeSelectedTenantId()
     }
   }
 
-  async function selectTenant(tenantId: number) {
+  async function selectTenant(tenantId: number | null, tenantObj?: any) {
     try {
-      const res: any = await api.selectTenant({ tenant_id: tenantId })
-      if (res.code === 200) {
-        setToken(res.data.access_token)
-        const tenant = tenants.value.find((t) => t.id === tenantId)
-        setCurrentTenant(tenant)
-        window.$message?.success('租户切换成功')
+      if (tenantId === null) {
+        // 清空租户选择（查询全部）
+        setCurrentTenant(null)
+        window.$message?.success('已切换到全部租户')
+        // 不刷新页面，只更新状态
         return true
       }
-      return false
+
+      // 使用传入的租户对象或创建临时租户对象
+      const tenant = tenantObj || { id: tenantId, name: `租户${tenantId}`, domain: '' }
+      setCurrentTenant(tenant)
+      window.$message?.success('租户切换成功')
+      // 不刷新页面，只更新状态
+      return true
     } catch (error) {
       console.error('选择租户失败', error)
       return false
     }
   }
 
-  async function fetchMyTenants() {
-    try {
-      const res: any = await api.getMyTenants()
-      tenants.value = res.data || []
-      return tenants.value
-    } catch (error) {
-      return []
-    }
-  }
-
   return {
     userInfo,
-    tenants,
     currentTenant,
     userId,
     name,
@@ -110,6 +111,5 @@ export const useUserStore = defineStore('user', () => {
     setUserInfo,
     setCurrentTenant,
     selectTenant,
-    fetchMyTenants,
   }
 })

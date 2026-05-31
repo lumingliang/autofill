@@ -22,24 +22,15 @@ scripts/
 │   ├── rule_engine/         # 规则引擎相关
 │   │   └── test_rule_engine.py            # 规则引擎完整测试
 │   └── utils/               # 工具脚本
-│       ├── create_test_rule.py            # 创建测试规则
-│       └── create_fields_v2.py            # 创建字段V2
+        └── create_test_rule.py            # 创建测试规则
 │
 ├── database/                # 数据库相关脚本
 │   ├── db_schema_manager.py               # 数据库Schema管理
 │   ├── migrate_to_seekdb.py               # 迁移到SeekDB
 │   └── aerich_fake_init.py                # Aerich假初始化
 │
-├── llm/                     # LLM相关测试
-│   ├── test_step_llm_fill.py              # 步骤LLM填充测试
-│   └── test_step_llm_fill_simple.py       # 简化版LLM填充测试
-│
 ├── feedback/                # 反馈相关
 │   └── test_summary_feedback.py           # 摘要反馈测试
-│
-├── dropdown/                # 下拉选项相关
-│   ├── test_dropdown_api.py               # 下拉选项API测试
-│   └── generate_dropdown_csv.py           # 生成下拉选项CSV
 │
 ├── api/                     # API相关脚本
 │   ├── migrate_api_code.py                # 迁移API代码

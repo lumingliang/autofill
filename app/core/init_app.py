@@ -1,4 +1,3 @@
-
 import asyncio
 
 from fastapi import FastAPI
@@ -9,8 +8,6 @@ from tortoise.expressions import Q
 from app.core.kafka.consumer import shutdown_kafka_consumers
 
 from app.api import api_router
-from app.controllers.api import api_controller
-from app.controllers.user import UserCreate, user_controller
 from app.core.exceptions import (
     BusinessException,
     BusinessExceptionHandle,
@@ -34,15 +31,17 @@ from app.core.exceptions import (
     StarletteHttpExcHandle,
     ValidationException,
 )
-from app.core.kafka.consumer import get_consumer_manager
 from app.core.relation import RelationQuery
 from app.log import logger
-from app.models.admin import Api, Menu, Role
+from app.models.admin import Api, Menu, Role, User
+from app.repositories import user_repository
 from app.schemas.menus import MenuType
-from app.services.autofill.ai_fill_service import AIFillService, get_ai_fill_service
+from app.schemas.users import UserCreate
+from app.services.system.user_service import user_service
 from app.settings.config import settings
 from app.core.menu_registry import menu_registry
 from app.core.menu_config import register_all_menus
+from app.utils.password import get_password_hash
 
 from .middlewares import (
     BackGroundTaskMiddleware,
@@ -129,17 +128,19 @@ def register_routers(app: FastAPI, prefix: str = "/api"):
 
 
 async def init_superuser():
-    user = await user_controller.model.exists()
-    if not user:
-        await user_controller.create_user(
-            UserCreate(
-                username="admin",
-                email="admin@admin.com",
-                password="123456",
-                is_active=True,
-                is_superuser=True,
-            )
-        )
+    """初始化超级管理员用户"""
+    user_exists = await User.exists()
+    if not user_exists:
+        # 使用 Repository 层直接创建超级管理员
+        create_data = {
+            "username": "admin",
+            "email": "admin@admin.com",
+            "password": get_password_hash("123456"),
+            "is_active": True,
+            "is_superuser": True,
+        }
+        user = await user_repository.create(create_data)
+        logger.info(f"Superuser created: {user.username}")
 
 
 async def init_menus():
@@ -152,12 +153,6 @@ async def init_menus():
 
     # 同步到数据库（自动处理新增、更新）
     await menu_registry.sync_to_database()
-
-
-async def init_apis(app: FastAPI):
-    apis = await api_controller.model.exists()
-    if not apis:
-        await api_controller.refresh_api(app)
 
 
 async def init_db():
@@ -204,47 +199,19 @@ async def init_roles():
 
 async def init_kafka_consumers():
     """初始化 Kafka 消费者"""
-    try:
-        logger.info("[KAFKA INIT] Starting Kafka consumers initialization...")
-        manager = get_consumer_manager()
-        logger.info(f"[KAFKA INIT] Consumer manager created")
-
-        # 注册 AI 填单消费者
-        service = get_ai_fill_service()
-        topic = AIFillService.AI_FILL_TOPIC
-        logger.info(f"[KAFKA INIT] Registering consumer for topic: {topic}")
-
-        manager.register_consumer(
-            name="ai_fill_consumer",
-            topics=[topic],
-            message_handler=service.process_kafka_message,
-        )
-        logger.info(f"[KAFKA INIT] Consumer registered successfully")
-
-        # 启动所有消费者
-        logger.info(f"[KAFKA INIT] Starting all consumers...")
-        loop = asyncio.get_event_loop()
-        logger.info(f"[KAFKA INIT] Got event loop: {loop}")
-        manager.start_all(loop=loop)
-        logger.info("[KAFKA INIT] Kafka consumers initialized successfully")
-    except Exception as e:
-        logger.error(f"[KAFKA INIT] Failed to initialize Kafka consumers: {e}", exc_info=True)
-        # 不阻塞应用启动，只是记录错误
+    # AI填单功能已删除，Kafka消费者初始化暂时为空
+    pass
 
 
 async def shutdown_kafka():
     """关闭 Kafka 消费者"""
-    try:
-        shutdown_kafka_consumers()
-        logger.info("Kafka consumers shutdown successfully")
-    except Exception as e:
-        logger.error(f"Error shutting down Kafka consumers: {e}")
+    pass
 
 
 async def init_data(app: FastAPI):
     await init_db()
-    await init_superuser()
-    await init_menus()
-    await init_apis(app)
+    # await init_superuser()
+    # await init_menus()
+    # await init_apis(app)
     # 不需要初始化角色，手动配置
     # await init_roles()

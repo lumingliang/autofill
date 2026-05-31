@@ -194,6 +194,7 @@
           <a-tab-pane key="curl" tab="从CURL导入">
             <CurlImport ref="curlImportRef" :rule-id="ruleId" :rule-code="ruleCode" :rule-name="ruleName"
               :tenant-id="tenantId" :existing-headers="headers" :primary-keys="primaryKeys" :sync-fields="syncFields"
+              :allow-add-new="allowAddNew"
               @preview="handleCurlPreview" @imported="handleCurlImportSuccess" />
           </a-tab-pane>
         </a-tabs>

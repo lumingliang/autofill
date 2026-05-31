@@ -14,8 +14,6 @@ class BaseUser(BaseModel):
     updated_at: str = ""
     last_login: str = ""
     roles: list = []
-    # 多租户字段
-    tenants: list = []
     current_tenant_id: int = 0
 
 
@@ -27,11 +25,9 @@ class UserCreate(BaseModel):
     is_superuser: bool = False
     role_ids: List[int] = []
     dept_id: int = Field(0, description="部门ID")
-    # 多租户字段：超管指定租户ID，普通用户从JWT获取
-    tenant_id: int = Field(0, description="租户ID（仅超管有效）")
 
     def create_dict(self):
-        return self.model_dump(exclude_unset=True, exclude={"role_ids", "tenant_id"})
+        return self.model_dump(exclude_unset=True, exclude={"role_ids"})
 
 
 class UserUpdate(BaseModel):
@@ -49,13 +45,29 @@ class UpdatePassword(BaseModel):
     new_password: str = Field(description="新密码")
 
 
-class UserQuery(BaseModel):
-    """用户查询参数"""
-    username: str = ""
-    email: str = ""
-    dept_id: int = 0
-    # 多租户字段：按租户筛选（仅root可见）
-    tenant_id: int = Field(0, description="租户ID筛选")
+class UserListQuery(BaseModel):
+    """用户列表查询参数"""
+    page: int = Field(1, description="页码")
+    page_size: int = Field(10, description="每页数量")
+    username: str = Field("", description="用户名称，用于搜索")
+    email: str = Field("", description="邮箱地址")
+    dept_id: int = Field(0, description="部门ID")
+    dept_recursive: bool = Field(True, description="是否递归查询子部门")
+
+
+class UserGet(BaseModel):
+    """用户详情查询参数"""
+    user_id: int = Field(..., description="用户ID")
+
+
+class UserDelete(BaseModel):
+    """用户删除参数"""
+    user_id: int = Field(..., description="用户ID")
+
+
+class ResetPassword(BaseModel):
+    """重置密码参数"""
+    user_id: int = Field(..., description="用户ID")
 
 
 class UserTenantSelect(BaseModel):
@@ -63,11 +75,20 @@ class UserTenantSelect(BaseModel):
     tenant_id: int = Field(description="租户ID")
 
 
+class UserTenantRolesQuery(BaseModel):
+    """获取用户租户角色查询参数
+
+    租户ID从 Ctx 自动获取，无需传递
+    """
+    user_id: int = Field(..., description="用户ID")
+
+
 class UserUpdateTenantRoles(BaseModel):
-    """更新用户在指定租户下的角色
-    - 超管账号：使用传参的tenant_id
-    - 普通账号：使用JWT中的current_tenant_id，传参的tenant_id会被忽略
+    """更新用户在当前租户下的角色
+
+    租户ID从 Ctx 自动获取，无需传递
+    - 超管可通过请求参数指定租户（request_tenant_id）
+    - 普通账号使用 JWT 中的 current_tenant_id
     """
     user_id: int = Field(description="用户ID")
-    tenant_id: int = Field(default=0, description="租户ID（仅超管有效）")
     role_ids: List[int] = Field(default=[], description="角色ID列表")

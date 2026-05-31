@@ -7,12 +7,6 @@
             @modal-ok="handleSave">
             <!-- 筛选条件 -->
             <template #filter-items>
-                <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-                    <a-form-item label="租户" class="filter-item">
-                        <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear
-                            :options="tenantOptions" @change="handleTenantChange" />
-                    </a-form-item>
-                </a-col>
                 <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
                     <a-form-item label="应用名称" class="filter-item">
                         <a-input v-model:value="queryParams.app_name" placeholder="请输入应用名称" allow-clear
@@ -66,9 +60,6 @@
                     <a-input v-model:value="form.app_name" placeholder="请输入应用名称（英文、数字、下划线）"
                         :disabled="modalAction === 'edit'" />
                 </a-form-item>
-                <a-form-item v-if="userStore.isSuperUser" label="租户" name="tenant_id">
-                    <a-select v-model:value="form.tenant_id" placeholder="请选择租户" :options="tenantOptions" />
-                </a-form-item>
                 <a-form-item label="应用描述" name="description">
                     <a-textarea v-model:value="form.description" placeholder="请输入应用描述" :rows="3" />
                 </a-form-item>
@@ -97,7 +88,6 @@ const crudTableRef = ref<InstanceType<typeof CrudTable>>()
 // 查询参数
 const queryParams = reactive({
     app_name: '',
-    tenant_id: undefined as number | undefined,
 })
 
 // 表格数据
@@ -116,13 +106,9 @@ const modalAction = ref<'add' | 'edit'>('add')
 const modalForm = reactive({
     id: undefined as number | undefined,
     app_name: '',
-    tenant_id: undefined as number | undefined,
     description: '',
     is_active: true,
 })
-
-// 其他数据
-const tenantOptions = ref<any[]>([])
 
 // 计算属性
 const columns = computed(() => [
@@ -134,18 +120,13 @@ const columns = computed(() => [
     { title: '操作', key: 'action', width: 150, fixed: 'right' },
 ])
 
-const filterItemCount = computed(() => {
-    let count = 1
-    if (userStore.isSuperUser) count++
-    return count
-})
+const filterItemCount = computed(() => 1)
 
 const modalRules = {
     app_name: [
         { required: true, message: '请输入应用名称', trigger: 'blur' },
         { pattern: /^[a-zA-Z0-9_]+$/, message: '应用名称只能包含英文、数字、下划线', trigger: 'blur' },
     ],
-    tenant_id: [{ required: true, message: '请选择租户', trigger: 'change', type: 'number' }],
 }
 
 // 方法
@@ -178,21 +159,6 @@ const fetchData = async () => {
     }
 }
 
-const fetchTenantOptions = async () => {
-    if (!userStore.isSuperUser) return
-    try {
-        const res: any = await api.getTenantSelect()
-        if (res.code === 200) {
-            tenantOptions.value = (res.data || []).map((t: any) => ({
-                label: t.name,
-                value: t.id,
-            }))
-        }
-    } catch (error) {
-        console.error('获取租户列表失败', error)
-    }
-}
-
 const handleSearch = () => {
     pagination.current = 1
     fetchData()
@@ -200,14 +166,8 @@ const handleSearch = () => {
 
 const handleReset = () => {
     queryParams.app_name = ''
-    queryParams.tenant_id = undefined
     pagination.current = 1
     fetchData()
-}
-
-const handleTenantChange = () => {
-    // 租户变更时刷新数据
-    handleSearch()
 }
 
 const handleTableChange = (pag: any) => {
@@ -222,7 +182,6 @@ const handleAdd = () => {
     Object.assign(modalForm, {
         id: undefined,
         app_name: '',
-        tenant_id: userStore.isSuperUser ? undefined : userStore.userInfo?.current_tenant_id,
         description: '',
         is_active: true,
     })
@@ -269,6 +228,5 @@ const handleDelete = async (record: any) => {
 
 onMounted(() => {
     fetchData()
-    fetchTenantOptions()
 })
 </script>

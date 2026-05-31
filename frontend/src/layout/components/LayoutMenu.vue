@@ -155,11 +155,7 @@ function handleMenuClick({ key }: { key: string }) {
 
   const menuItem = findMenuByKey(menuList.value)
   if (menuItem) {
-    if (menuItem.path === route.path) {
-      router.replace({ path: '/redirect' + menuItem.path })
-    } else {
-      router.push(menuItem.path)
-    }
+    router.push(menuItem.path)
   }
 }
 </script>

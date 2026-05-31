@@ -13,12 +13,6 @@
       <a-card>
         <a-form :model="queryParams" class="crud-filter-form smart-filter-form">
           <a-row :gutter="16" class="filter-row">
-            <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-              <a-form-item label="租户" class="filter-item">
-                <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-                  @change="handleSearch" />
-              </a-form-item>
-            </a-col>
             <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
               <a-form-item label="名称" class="filter-item">
                 <a-input v-model:value="queryParams.username" placeholder="请输入用户名称" allow-clear
@@ -63,11 +57,7 @@
                 {{ role.name }}
               </a-tag>
             </template>
-            <template v-if="column.key === 'tenants'">
-              <a-tag v-for="tenant in record.tenants" :key="tenant.id" color="orange" style="margin: 2px 3px">
-                {{ tenant.name }}
-              </a-tag>
-            </template>
+
             <template v-if="column.key === 'dept'">
               {{ record.dept?.name }}
             </template>
@@ -124,19 +114,6 @@
             <a-input-password v-model:value="modalForm.confirmPassword" placeholder="请确认密码" />
           </a-form-item>
 
-          <!-- 编辑时显示已分配租户（只读）：仅超级管理员可见 -->
-          <a-form-item v-if="modalAction === 'edit' && userStore.isSuperUser" label="已分配租户">
-            <a-select :value="modalForm.assigned_tenant_ids" :options="tenantOptions" mode="multiple" disabled
-              placeholder="该用户已分配的租户" />
-          </a-form-item>
-
-          <!-- 选择操作租户（单选）：仅超级管理员可见 -->
-          <a-form-item v-if="userStore.isSuperUser" label="选择租户" name="tenant_id"
-            :rules="[{ required: modalAction === 'edit', message: '请选择租户', trigger: 'change', type: 'number' }]">
-            <a-select v-model:value="modalForm.tenant_id" placeholder="请选择要操作的租户" allow-clear :options="tenantOptions"
-              @change="handleModalTenantChange" />
-          </a-form-item>
-
           <!-- 角色选择 -->
           <a-form-item label="角色" name="role_ids"
             :rules="[{ type: 'array', required: modalAction === 'add', message: '请至少选择一个角色', trigger: ['blur', 'change'] }]">
@@ -168,12 +145,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { useUserStore } from '@/store'
 import api from '@/api'
+import { useUserStore } from '@/store'
 import { formatDateTime } from '@/utils'
+import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -181,16 +158,12 @@ const userStore = useUserStore()
 const queryParams = reactive<any>({
   username: '',
   email: '',
-  tenant_id: undefined,
 })
 
 // 计算表单项数量（用于控制按钮布局）
 const filterItemCount = computed(() => {
   // 基础字段：名称、邮箱
-  let count = 2
-  // 超级管理员额外显示租户字段
-  if (userStore.isSuperUser) count++
-  return count
+  return 2
 })
 
 // 操作按钮列的栅格配置
@@ -227,7 +200,6 @@ const pagination = reactive({
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const tenantOptions = ref<any[]>([])
 const roleOptions = ref<any[]>([])
 const deptOptions = ref<any[]>([])
 
@@ -247,7 +219,7 @@ const columns = computed(() => [
   { title: '名称', dataIndex: 'username', key: 'username', width: 120, ellipsis: true, resizable: true },
   { title: '邮箱', dataIndex: 'email', key: 'email', width: 180, ellipsis: true, resizable: true },
   { title: '用户角色', key: 'roles', width: 150, resizable: true },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenants', width: 150, resizable: true }] : []),
+
   { title: '部门', key: 'dept', width: 120, ellipsis: true, resizable: true },
   { title: '超级用户', key: 'is_superuser', width: 90, resizable: true },
   { title: '上次登录时间', key: 'last_login', width: 180, ellipsis: true, resizable: true },
@@ -299,14 +271,6 @@ const modalRules = computed(() => ({
       trigger: 'blur',
     },
   ],
-  tenant_id: [
-    {
-      required: userStore.isSuperUser && modalAction.value === 'add',
-      message: '请选择租户',
-      trigger: 'change',
-      type: 'number',
-    },
-  ],
 }))
 
 async function loadData() {
@@ -323,13 +287,6 @@ async function loadData() {
   } finally {
     loading.value = false
   }
-}
-
-async function loadTenants() {
-  // 超级管理员和租户管理员都需要加载租户列表
-  if (!userStore.isSuperUser && !userStore.isTenantAdmin) return
-  const res: any = await api.getTenantSelect()
-  tenantOptions.value = (res.data || []).map((item: any) => ({ label: item.name, value: item.id }))
 }
 
 async function loadRoles(tenantId?: number) {
@@ -354,7 +311,6 @@ function handleSearch() {
 function handleReset() {
   queryParams.username = ''
   queryParams.email = ''
-  queryParams.tenant_id = undefined
   handleSearch()
 }
 
@@ -365,6 +321,13 @@ function handleTableChange(p: any) {
 }
 
 function handleAddUser() {
+  // 检查是否选择了租户（超管需要选择租户，普通用户使用当前租户）
+  // 注意：检查 currentTenant（右上角选择器的选择状态）而不是 currentTenantId（JWT中的租户ID）
+  if (userStore.isSuperUser && !userStore.currentTenant) {
+    window.$message?.warning('请先选择租户')
+    return
+  }
+
   modalAction.value = 'add'
   Object.assign(modalForm, {
     username: '',
@@ -376,19 +339,27 @@ function handleAddUser() {
     tenant_id: undefined,
     dept_id: undefined,
     role_ids: [],
-    assigned_tenant_ids: [],
   })
   roleOptions.value = []
   deptOptions.value = []
 
-  if (!userStore.isSuperUser && userStore.currentTenantId) {
-    loadRoles(userStore.currentTenantId)
-    loadDepts(userStore.currentTenantId)
+  // 使用当前选中的租户加载角色和部门
+  const tenantId = userStore.currentTenantId
+  if (tenantId) {
+    loadRoles(tenantId)
+    loadDepts(tenantId)
   }
   modalVisible.value = true
 }
 
 async function handleEditUser(record: any) {
+  // 检查是否选择了租户（超管需要选择租户，普通用户使用当前租户）
+  // 注意：检查 currentTenant（右上角选择器的选择状态）而不是 currentTenantId（JWT中的租户ID）
+  if (userStore.isSuperUser && !userStore.currentTenant) {
+    window.$message?.warning('请先选择租户')
+    return
+  }
+
   modalAction.value = 'edit'
   Object.assign(modalForm, {
     id: record.id,
@@ -399,21 +370,20 @@ async function handleEditUser(record: any) {
     is_superuser: record.is_superuser,
     is_active: record.is_active,
     dept_id: record.dept?.id || null,
-    role_ids: [],
     tenant_id: undefined,
-    assigned_tenant_ids: record.tenants?.map((t: any) => t.id) || [],
+    role_ids: [],
   })
-
   roleOptions.value = []
   deptOptions.value = []
 
-  // 普通用户（非超管）自动加载当前租户的角色和部门
-  if (!userStore.isSuperUser && userStore.currentTenantId) {
-    await loadRoles(userStore.currentTenantId)
-    await loadDepts(userStore.currentTenantId)
+  // 使用当前选中的租户加载角色和部门
+  const tenantId = userStore.currentTenantId
+  if (tenantId) {
+    await loadRoles(tenantId)
+    await loadDepts(tenantId)
     // 从record.roles中提取当前租户下的角色ID
     modalForm.role_ids = record.roles
-      ?.filter((r: any) => r.tenant_id === userStore.currentTenantId)
+      ?.filter((r: any) => r.tenant_id === tenantId)
       ?.map((r: any) => r.id) || []
   }
 
@@ -427,14 +397,14 @@ async function handleSave() {
 
     // 编辑用户时使用单租户角色更新接口
     if (modalAction.value === 'edit') {
-      // 普通用户不需要传tenant_id，后端会从JWT获取
+      // 使用当前选中的租户ID
       const params: any = {
         user_id: modalForm.id,
         role_ids: modalForm.role_ids || [],
       }
-      // 超管账号才传tenant_id
+      // 超管账号传当前选中的租户ID
       if (userStore.isSuperUser) {
-        params.tenant_id = modalForm.tenant_id
+        params.tenant_id = userStore.currentTenantId
       }
       const res: any = await api.updateUserTenantRoles(params)
       if (res.code === 200) {
@@ -452,8 +422,8 @@ async function handleSave() {
     delete data.confirmPassword
     delete data.dept
 
-    // 租户ID：使用当前选择的租户
-    data.tenant_id = modalForm.tenant_id
+    // 租户ID：使用当前选中的租户
+    data.tenant_id = userStore.currentTenantId
 
     // 角色ID
     data.role_ids = modalForm.role_ids || []
@@ -511,7 +481,7 @@ async function handleQuickLogin(record: any) {
     hide?.()
 
     if (res.code === 200) {
-      const { access_token, tenants, need_select_tenant, current_tenant_id } = res.data
+      const { access_token, current_tenant_id } = res.data
 
       const originalToken = localStorage.getItem('access_token')
       if (originalToken) {
@@ -520,8 +490,6 @@ async function handleQuickLogin(record: any) {
 
       const pendingAuth = {
         token: access_token,
-        tenants,
-        needSelectTenant: need_select_tenant,
         currentTenantId: current_tenant_id,
         isQuickLogin: true,
         targetUser: record.username,
@@ -612,7 +580,6 @@ function handleDeptClick(_selectedKeys: any, e: any) {
 
 onMounted(() => {
   loadData()
-  loadTenants()
   if (!userStore.isSuperUser && userStore.currentTenantId) {
     loadRoles(userStore.currentTenantId)
     loadDepts(userStore.currentTenantId)

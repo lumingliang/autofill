@@ -1,12 +1,23 @@
+"""
+审计日志 API 层
+
+接收 HTTP 请求，调用 Service 层处理业务逻辑
+
+约束：
+- 只负责接收请求、参数校验、调用 Service 层
+- 禁止直接操作数据库、直接访问 Repository 层
+- 禁止直接查询 Model 层
+- 认证已在中间件处理，API层不再重复认证
+"""
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Header, Query
-from tortoise.expressions import Q
 
-from app.core.dependency import AuthControl, is_superuser, get_effective_tenant_id
-from app.models.admin import AuditLog, User
+from fastapi import APIRouter, Query
+
+from app.core.ctx import Ctx
 from app.schemas import SuccessExtra
 from app.schemas.apis import *
+from app.services.system.audit_log_service import audit_log_service
 
 router = APIRouter()
 
@@ -24,38 +35,33 @@ async def get_audit_log_list(
     tenant_id: int = Query(None, description="租户ID（仅超级管理员可见）"),
     start_time: Optional[datetime] = Query(None, description="开始时间"),
     end_time: Optional[datetime] = Query(None, description="结束时间"),
-    token: str = Header(..., description="token验证"),
 ):
-    current_user = await AuthControl.is_authed(token)
-    q = Q()
-    if username:
-        q &= Q(username__icontains=username)
-    if module:
-        q &= Q(module__icontains=module)
-    if method:
-        q &= Q(method__icontains=method)
-    if summary:
-        q &= Q(summary__icontains=summary)
-    if path:
-        q &= Q(path__icontains=path)
-    if status:
-        q &= Q(status=status)
-    if start_time and end_time:
-        q &= Q(created_at__range=[start_time, end_time])
-    elif start_time:
-        q &= Q(created_at__gte=start_time)
-    elif end_time:
-        q &= Q(created_at__lte=end_time)
-    
-    # 多租户筛选：仅超级管理员可按租户筛选
-    effective_tenant_id = get_effective_tenant_id(current_user, tenant_id if tenant_id is not None else 0)
-    if effective_tenant_id > 0:
-        q &= Q(tenant_id=effective_tenant_id)
-    elif not is_superuser(current_user):
-        # 非超级管理员且没有有效租户ID，使用当前租户ID（可能为0）
-        q &= Q(tenant_id=current_user.current_tenant_id)
+    """
+    查看操作日志列表
 
-    audit_log_objs = await AuditLog.filter(q).offset((page - 1) * page_size).limit(page_size).order_by("-created_at")
-    total = await AuditLog.filter(q).count()
+    权限：所有登录用户可查看，租户过滤自动应用
+    认证：已在中间件处理
+    """
+    # 从上下文获取当前用户
+    current_user = Ctx.get_user()
+
+    # 调用 Service 层处理业务逻辑
+    total, audit_log_objs = await audit_log_service.list_audit_logs(
+        page=page,
+        page_size=page_size,
+        username=username,
+        module=module,
+        method=method,
+        summary=summary,
+        path=path,
+        status=status,
+        tenant_id=tenant_id,
+        start_time=start_time,
+        end_time=end_time,
+        current_user=current_user
+    )
+
+    # 转换数据
     data = [await audit_log.to_dict() for audit_log in audit_log_objs]
+
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)

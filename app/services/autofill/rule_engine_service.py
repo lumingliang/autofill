@@ -6,10 +6,9 @@ import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.core.tenant import TenantContext
 from app.log import logger
-from app.models.autofill import FillDataRecord
-from app.models.enums import AIFillDataStatus
+from app.repositories.autofill.fill_data_record_repository import fill_data_record_repository
+from app.repositories.rule_management.rule_data_repository import rule_data_repository
 from app.services.autofill.prompt_builder_service import PromptBuilderService
 from app.services.autofill.system_prompt_service import system_prompt_service
 from app.services.llm.llm_config_service import llm_config_service
@@ -474,10 +473,17 @@ class RuleEngineService:
         Returns:
             RuleVersion 对象或 None
         """
-        # 使用 Service 层获取规则版本（自动处理租户过滤和软删除过滤）
-        return await rule_service.get_version_by_rule_code(
+        # 1. 先获取规则信息
+        rule = await rule_service.get_rule_by_code(
             rule_code=rule_name,
             app_name=app_name
+        )
+        if not rule or not rule.latest_version_id:
+            return None
+
+        # 2. 根据版本ID获取版本详情
+        return await rule_service.get_version_by_id(
+            version_id=rule.latest_version_id
         )
 
     async def _get_filtered_rule_data(
@@ -498,16 +504,16 @@ class RuleEngineService:
             筛选并去重后的数据列表
         """
         try:
-            # 使用 Service 层查询 seekdb
+            # 使用 Repository 层查询 seekdb
             if filter_config:
                 # 有过滤条件，使用过滤查询
-                result_data = await rule_service.query_rule_data_with_filter(
+                result_data = await rule_data_repository.query_with_filter(
                     collection_name=collection_name,
                     filter_config=filter_config
                 )
             else:
                 # 没有过滤条件，获取全部数据
-                result = await rule_service.get_rule_data_from_collection(collection_name)
+                result = await rule_data_repository.get_by_collection(collection_name)
                 if not result:
                     return []
 
@@ -818,47 +824,21 @@ class RuleEngineService:
         step: int
     ) -> None:
         """保存步骤请求数据"""
-        tenant_id = TenantContext.get_tenant_id()
         try:
-            record = await FillDataRecord.filter(
-                session_id=session_id,
-                tenant_id=tenant_id,
-                app_name=app_name
-            ).first()
-
             request_data = {
                 "query": query,
                 "method": method,
                 "params": params,
-                "step": step
+                "step": step,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
             }
 
-            if record:
-                existing_data = record.data or []
-                if not isinstance(existing_data, list):
-                    existing_data = [existing_data] if existing_data else []
-
-                existing_data.append({
-                    "step": step,
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "request": request_data
-                })
-
-                record.data = existing_data
-                await record.save()
-            else:
-                await FillDataRecord.create(
-                    session_id=session_id,
-                    tenant_id=tenant_id,
-                    app_name=app_name,
-                    data=[{
-                        "step": step,
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "request": request_data
-                    }],
-                    result=[],
-                    status=AIFillDataStatus.PROCESSING.value
-                )
+            await fill_data_record_repository.save_step_request(
+                session_id=session_id,
+                app_name=app_name,
+                request_data=request_data,
+                step=step
+            )
         except Exception as e:
             logger.error(f"保存步骤请求失败: {e}")
 
@@ -872,33 +852,15 @@ class RuleEngineService:
         is_last: bool
     ) -> None:
         """保存步骤结果"""
-        tenant_id = TenantContext.get_tenant_id()
         try:
-            record = await FillDataRecord.filter(
+            await fill_data_record_repository.save_step_result(
                 session_id=session_id,
-                tenant_id=tenant_id,
-                app_name=app_name
-            ).first()
-
-            if record:
-                existing_result = record.result or []
-                if not isinstance(existing_result, list):
-                    existing_result = [existing_result] if existing_result else []
-
-                existing_result.append({
-                    "step": step,
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "fields": results,
-                    "timing": {"elapsed_time": elapsed_time}
-                })
-
-                record.result = existing_result
-
-                if is_last:
-                    record.status = AIFillDataStatus.COMPLETED.value
-                    record.processed_at = time.strftime("%Y-%m-%d %H:%M:%S")
-
-                await record.save()
+                app_name=app_name,
+                step=step,
+                results=results,
+                elapsed_time=elapsed_time,
+                is_last=is_last
+            )
         except Exception as e:
             logger.error(f"保存步骤结果失败: {e}")
 
@@ -917,12 +879,10 @@ class RuleEngineService:
         Returns:
             填单结果
         """
-        tenant_id = TenantContext.get_tenant_id()
-        record = await FillDataRecord.filter(
+        record = await fill_data_record_repository.get_by_session_and_app(
             session_id=session_id,
-            tenant_id=tenant_id,
             app_name=app_name
-        ).first()
+        )
 
         if not record:
             return None

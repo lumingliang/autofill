@@ -8,9 +8,10 @@ from fastapi import APIRouter, File, Form, UploadFile, Depends
 
 from app.core.dependency import AuthControl
 from app.log import logger
-from app.models import User
+from app.models.admin import User
 from app.schemas.base import Success, Fail
 from app.services.storage.file_service import FileService, file_service
+from app.services.system.user_service import user_service
 
 router = APIRouter()
 
@@ -44,8 +45,7 @@ async def upload_avatar(
         )
 
         # 更新用户头像
-        user.avatar = result["url"]
-        await user.save()
+        await user_service.update_avatar(user.id, result["url"])
 
         logger.info(f"用户 {user.id} 上传了头像: {result['url']}")
 

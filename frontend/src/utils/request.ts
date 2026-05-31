@@ -1,6 +1,6 @@
 import router from '@/router'
 import axios from 'axios'
-import { getToken, removeToken } from './auth'
+import { getSelectedTenantId, getToken, removeToken } from './auth'
 
 const request = axios.create({
     baseURL: import.meta.env.VITE_BASE_API,
@@ -31,6 +31,11 @@ request.interceptors.request.use(
         const token = getToken()
         if (token) {
             config.headers.token = token
+        }
+        // 自动添加 X-Tenant-ID 请求头
+        const tenantId = getSelectedTenantId()
+        if (tenantId) {
+            config.headers['X-Tenant-ID'] = tenantId
         }
         return config
     },

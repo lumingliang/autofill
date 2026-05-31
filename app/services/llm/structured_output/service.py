@@ -42,11 +42,10 @@ class StructuredOutputService:
 
     def __init__(self, config: LLMConfig):
         self.config = config
-        self.litellm_params = config.litellm_params or {}
         self.model_name = config.name
-        self.api_key = self.litellm_params.get("api_key", "")
-        self.api_base = self.litellm_params.get("api_base", None)
-        self.timeout = self.litellm_params.get("timeout", 300)
+        self.api_key = config.api_key or ""
+        self.api_base = config.api_base or None
+        self.timeout = config.timeout or 300
 
         # 获取结构化输出配置
         self.structured_config = settings.STRUCTURED_OUTPUT_CONFIG
@@ -188,7 +187,9 @@ class StructuredOutputService:
 
     async def _record_method_failure(self, method: str, error: str):
         """记录方法失败"""
-        capabilities = self.config.capabilities or LLMConfig.get_default_capabilities()
+        from app.repositories.llm.llm_config_repository import llm_config_repository
+
+        capabilities = self.config.capabilities or llm_config_repository.get_default_capabilities()
         structured_methods = capabilities.get("structured_output_methods", {})
 
         if method in structured_methods:
@@ -202,6 +203,5 @@ class StructuredOutputService:
                 method_config["supported"] = False
                 logger.warning(f"Method {method} marked as unsupported after {method_config['failed_count']} failures")
 
-            # 保存更新
-            self.config.capabilities = capabilities
-            await self.config.save()
+            # 保存更新（通过 Repository 层）
+            await llm_config_repository.update_capabilities(self.config.id, capabilities)

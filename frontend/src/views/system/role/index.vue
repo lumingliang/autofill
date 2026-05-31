@@ -6,12 +6,6 @@
       @search="handleSearch" @reset="handleReset" @table-change="handleTableChange" @modal-ok="handleSave">
       <!-- 筛选条件 -->
       <template #filter-items>
-        <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-              @change="handleSearch" />
-          </a-form-item>
-        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="角色名" class="filter-item">
             <a-input v-model:value="queryParams.role_name" placeholder="请输入角色名" allow-clear
@@ -31,10 +25,10 @@
       <!-- 表格列自定义 -->
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
-          <a-tag color="blue">{{ record.name }}</a-tag>
-        </template>
-        <template v-if="column.key === 'tenant_name'">
-          <a-tag color="orange">{{ record.tenant_name || '系统角色' }}</a-tag>
+          <a-space>
+            <a-tag color="blue">{{ record.name }}</a-tag>
+            <a-tag v-if="record.is_system" color="green">系统角色</a-tag>
+          </a-space>
         </template>
         <template v-if="column.key === 'created_at'">
           {{ formatDateTime(record.created_at) }}
@@ -56,9 +50,6 @@
 
       <!-- 弹窗表单 -->
       <template #modal-form="{ form, action }">
-        <a-form-item v-if="userStore.isSuperUser" label="所属租户" name="tenant_id">
-          <a-select v-model:value="form.tenant_id" placeholder="请选择所属租户" :options="tenantOptions" />
-        </a-form-item>
         <a-form-item label="角色名" name="name">
           <a-input v-model:value="form.name" placeholder="请输入角色名称" />
         </a-form-item>
@@ -95,9 +86,10 @@
       @ok="handleSaveAssignUsers" @cancel="assignUserModalVisible = false" width="600px">
       <a-form :label-col="{ span: 4 }" :wrapper-col="{ span: 20 }">
         <a-form-item label="角色">
-          <a-tag color="blue">{{ currentRole?.name }}</a-tag>
-          <a-tag v-if="currentRole?.tenant_name" color="orange">{{ currentRole.tenant_name }}</a-tag>
-          <span v-else-if="currentRole && !currentRole.tenant_id" class="ant-tag ant-tag-orange">系统角色</span>
+          <a-space>
+            <a-tag color="blue">{{ currentRole?.name }}</a-tag>
+            <a-tag v-if="currentRole?.is_system" color="green">系统角色</a-tag>
+          </a-space>
         </a-form-item>
         <a-form-item label="选择用户">
           <a-select v-model:value="selectedUserIds" mode="multiple" placeholder="请选择要分配的用户" style="width: 100%"
@@ -122,14 +114,11 @@ const crudTableRef = ref<InstanceType<typeof CrudTable>>()
 // 查询参数
 const queryParams = reactive({
   role_name: '',
-  tenant_id: undefined as number | undefined,
 })
 
 // 计算表单项数量
 const filterItemCount = computed(() => {
-  let count = 1
-  if (userStore.isSuperUser) count++
-  return count
+  return 1
 })
 
 // 表格数据
@@ -141,13 +130,9 @@ const pagination = reactive({
   total: 0,
 })
 
-// 租户选项
-const tenantOptions = ref<{ label: string; value: number }[]>([])
-
 // 表格列
 const columns = computed(() => [
   { title: '角色名', dataIndex: 'name', key: 'name', width: 150 },
-  ...(userStore.isSuperUser ? [{ title: '所属租户', key: 'tenant_name', width: 150 }] : []),
   { title: '角色描述', dataIndex: 'desc', key: 'desc', width: 200, ellipsis: true },
   { title: '创建日期', dataIndex: 'created_at', key: 'created_at', width: 180 },
   { title: '操作', key: 'action', width: 280, fixed: 'right' as const },
@@ -162,7 +147,6 @@ const modalForm = reactive({
   tenant_id: undefined as number | undefined,
 })
 const modalRules = computed(() => ({
-  tenant_id: { required: userStore.isSuperUser, message: '请选择所属租户', trigger: ['change', 'blur'], type: 'number' },
   name: { required: true, message: '请输入角色名称', trigger: ['input', 'blur'] },
 }))
 
@@ -201,13 +185,6 @@ async function loadData() {
   }
 }
 
-// 加载租户选项
-async function loadTenants() {
-  if (!userStore.isSuperUser) return
-  const res: any = await api.getTenantSelect()
-  tenantOptions.value = (res.data || []).map((item: any) => ({ label: item.name, value: item.id }))
-}
-
 // 查询
 function handleSearch() {
   pagination.current = 1
@@ -230,13 +207,27 @@ function handleTableChange(p: any) {
 
 // 新增
 function handleAdd() {
+  // 检查是否选择了租户（超管需要选择租户，普通用户使用当前租户）
+  // 注意：检查 currentTenant（右上角选择器的选择状态）而不是 currentTenantId（JWT中的租户ID）
+  if (userStore.isSuperUser && !userStore.currentTenant) {
+    window.$message?.warning('请先选择租户')
+    return
+  }
+
   modalTitle.value = '新增角色'
-  Object.assign(modalForm, { name: '', desc: '', tenant_id: undefined })
+  Object.assign(modalForm, { name: '', desc: '', tenant_id: userStore.currentTenantId })
   crudTableRef.value?.openAddModal()
 }
 
 // 编辑
 function handleEdit(record: any) {
+  // 检查是否选择了租户（超管需要选择租户，普通用户使用当前租户）
+  // 注意：检查 currentTenant（右上角选择器的选择状态）而不是 currentTenantId（JWT中的租户ID）
+  if (userStore.isSuperUser && !userStore.currentTenant) {
+    window.$message?.warning('请先选择租户')
+    return
+  }
+
   modalTitle.value = '编辑角色'
   crudTableRef.value?.openEditModal(record)
 }
@@ -408,6 +399,5 @@ async function handleSaveAssignUsers() {
 
 onMounted(() => {
   loadData()
-  loadTenants()
 })
 </script>

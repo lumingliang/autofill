@@ -25,7 +25,6 @@ export default {
   updateUser: (data: any = {}) => request.post('/user/update', data),
   deleteUser: (params: any = {}) => request.delete('/user/delete', { params }),
   resetPassword: (data: any = {}) => request.post('/user/reset_password', data),
-  getMyTenants: () => request.get('/user/my_tenants'),
   selectUserTenant: (data: any = {}) => request.post('/user/select_tenant', data),
   getTenantRoles: (params: any = {}) => request.get('/user/tenant_roles', { params }),
   getUserTenantAssignedRoles: (params: any = {}) => request.get('/user/tenant_assigned_roles', { params }),
@@ -67,10 +66,14 @@ export default {
   createTenant: (data: any = {}) => request.post('/tenant/create', data),
   updateTenant: (data: any = {}) => request.post('/tenant/update', data),
   deleteTenant: (params: any = {}) => request.delete('/tenant/delete', { params }),
-  getTenantSelect: () => request.get('/tenant/select'),
+  getTenantSelect: (params: any = {}) => request.get('/tenant/select', { params }),
   getTenantUsers: (params: any = {}) => request.get('/tenant/users', { params }),
   addUserToTenant: (data: any = {}) => request.post('/tenant/add_user', data),
   removeUserFromTenant: (data: any = {}) => request.post('/tenant/remove_user', data),
+  batchAddUsersToTenant: (data: any = {}) => request.post('/tenant/batch_add_users', data),
+  searchUsersForTenant: (params: any = {}) => request.get('/tenant/search_users', { params }),
+  getTenantAssignedUsers: (params: any = {}) => request.get('/tenant/assigned_users', { params }),
+  batchRemoveUsersFromTenant: (data: any = {}) => request.post('/tenant/batch_remove_users', data),
 
   // auditlog
   getAuditLogList: (params: any = {}) => request.get('/auditlog/list', { params }),
@@ -120,43 +123,6 @@ export default {
   syncToGateway: (params: any = {}) => request.post('/ai/llm_config/sync_to_gateway', null, { params }),
   syncFromGateway: (params: any = {}) => request.post('/ai/llm_config/sync_from_gateway', null, { params }),
   getGatewayModels: () => request.get('/ai/llm_config/gateway/models'),
-
-  // LLM 代理公开接口 (使用 API Key 认证，使用绝对路径)
-  llmProxy: (data: any = {}, apiKey: string) => publicRequest.post('/api/llm/proxy', data, {
-    headers: { 'Authorization': `Bearer ${apiKey}` }
-  }),
-  llmProxyHealth: (apiKey: string) => publicRequest.get('/api/llm/proxy/health', {
-    headers: { 'Authorization': `Bearer ${apiKey}` }
-  }),
-
-  // autofill - 字段组管理
-  getFieldGroupList: (params: any = {}) => request.get('/autofill/field_group/list', { params }),
-  getFieldGroupById: (params: any = {}) => request.get('/autofill/field_group/get', { params }),
-  getFieldGroupDetail: (params: any = {}) => request.get('/autofill/field_group/detail', { params }),
-  getFieldGroupDetailByName: (params: any = {}) => request.get('/autofill/field_group/detail_by_name', { params }),
-  exportFieldGroupMd: (params: any = {}) => request.get('/autofill/field_group/export_md', { params }),
-  getFieldGroupByCode: (params: any = {}) => request.get('/autofill/field_group/get_by_code', { params }),
-  createFieldGroup: (data: any = {}) => request.post('/autofill/field_group/create', data),
-  updateFieldGroup: (data: any = {}) => request.post('/autofill/field_group/update', data),
-  deleteFieldGroup: (params: any = {}) => request.delete('/autofill/field_group/delete', { params }),
-  getFieldGroupSelect: (params: any = {}) => request.get('/autofill/field_group/select', { params }),
-  getFieldGroupFieldSpecList: (params: any = {}) => request.get('/autofill/field_group/field_spec/list', { params }),
-
-  // autofill - 字段管理
-  getFieldSpecList: (params: any = {}) => request.get('/autofill/field_spec/list', { params }),
-  getFieldSpecById: (params: any = {}) => request.get('/autofill/field_spec/get', { params }),
-  getFieldSpecsByGroup: (params: any = {}) => request.get('/autofill/field_spec/by_group', { params }),
-  batchAddFieldsToGroup: (data: any = {}) => request.post('/autofill/field_group/batch_add_fields', data),
-  batchRemoveFieldsFromGroup: (data: any = {}) => request.post('/autofill/field_group/batch_remove_fields', data),
-  createFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/create', data),
-  updateFieldSpec: (data: any = {}) => request.post('/autofill/field_spec/update', data),
-  deleteFieldSpec: (params: any = {}) => request.delete('/autofill/field_spec/delete', { params }),
-  batchDeleteFieldSpecs: (data: any = {}) => request.post('/autofill/field_spec/batch_delete', data),
-  getFieldSpecsByApp: (params: any = {}) => request.get('/autofill/field_spec/by_app', { params }),
-
-  // 测试填单
-  testFillChat: (data: any = {}) => request.post('/autofill/test-fill/chat', data),
-  testFill: (data: any = {}) => request.post('/autofill/test-fill/fill', data),
 
   // 规则管理
   getRuleList: (params: any = {}) => request.get('/autofill/rule/list', { params }),

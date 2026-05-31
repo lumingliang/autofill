@@ -6,12 +6,6 @@
       modal-width="600px" @search="handleSearch" @reset="handleReset" @table-change="handleTableChange"
       @modal-ok="handleSave">
       <template #filter-items>
-        <a-col v-if="userStore.isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-              @change="handleTenantChange" />
-          </a-form-item>
-        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="应用名称" class="filter-item">
             <a-select v-model:value="queryParams.app_name" placeholder="请选择应用" allow-clear :options="appOptions"
@@ -75,11 +69,6 @@
       </template>
 
       <template #modal-form="{ form }">
-        <!-- 创建时：超级管理员显示租户下拉 -->
-        <a-form-item v-if="userStore.isSuperUser && modalAction === 'add'" label="租户" name="tenant_id" required>
-          <a-select v-model:value="form.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-            @change="(val: number) => handleModalTenantChange(val, form)" />
-        </a-form-item>
         <!-- 创建时：app_name 必填；编辑时：app_name 禁用 -->
         <a-form-item label="应用名称" name="app_name" :required="modalAction === 'add'">
           <a-select v-model:value="form.app_name" placeholder="请选择应用" allow-clear :options="appOptions"
@@ -105,7 +94,7 @@
 
     <!-- 规则内容编辑弹窗 -->
     <RuleContentModal v-model:open="contentModalVisible" :rule-id="currentRule?.id" :rule-code="currentRule?.rule_code"
-      :rule-name="currentRule?.rule_name" :tenant-id="queryParams.tenant_id" @saved="handleContentSaved" />
+      :rule-name="currentRule?.rule_name" @saved="handleContentSaved" />
   </div>
 </template>
 
@@ -128,7 +117,6 @@ const crudTableRef = ref<InstanceType<typeof CrudTable>>()
 const queryParams = reactive({
   keyword: '',
   status: undefined as number | undefined,
-  tenant_id: undefined as number | undefined,
   app_name: undefined as string | undefined,
 })
 
@@ -159,7 +147,6 @@ const contentModalVisible = ref(false)
 const currentRule = ref<any>(null)
 
 // 其他数据
-const tenantOptions = ref<any[]>([])
 const appOptions = ref<any[]>([])
 
 // 计算属性
@@ -174,19 +161,11 @@ const columns = computed(() => [
   { title: '操作', key: 'action', width: 250, fixed: 'right' },
 ])
 
-const filterItemCount = computed(() => {
-  let count = 3
-  if (userStore.isSuperUser) count++
-  return count
-})
+const filterItemCount = computed(() => 3)
 
 const modalRules = computed(() => {
   const rules: Record<string, any[]> = {
     rule_name: [{ required: true, message: '请输入规则名称', trigger: 'blur' }],
-  }
-  // 超管创建时：租户必填
-  if (userStore.isSuperUser && modalAction.value === 'add') {
-    rules.tenant_id = [{ required: true, message: '请选择租户', trigger: 'change' }]
   }
   // 创建时：应用名称必填
   if (modalAction.value === 'add') {
@@ -213,29 +192,9 @@ const fetchData = async () => {
   }
 }
 
-const fetchTenantOptions = async () => {
-  if (!userStore.isSuperUser) return
+const fetchAppOptions = async () => {
   try {
-    const res: any = await api.getTenantSelect()
-    if (res.code === 200) {
-      tenantOptions.value = (res.data || []).map((t: any) => ({
-        label: t.name,
-        value: t.id,
-      }))
-    }
-  } catch (error) {
-    console.error('获取租户列表失败', error)
-  }
-}
-
-const fetchAppOptions = async (tenantId?: number) => {
-  try {
-    const params: any = {}
-    // 如果指定了租户（大于0），只加载该租户的应用
-    if (tenantId && tenantId > 0) {
-      params.tenant_id = tenantId
-    }
-    const res: any = await api.getAppSelect(params)
+    const res: any = await api.getAppSelect()
     if (res.code === 200) {
       appOptions.value = (res.data || []).map((app: any) => ({
         label: app.label,
@@ -255,27 +214,9 @@ const handleSearch = () => {
 const handleReset = () => {
   queryParams.keyword = ''
   queryParams.status = undefined
-  queryParams.tenant_id = undefined
   queryParams.app_name = undefined
   pagination.current = 1
   fetchData()
-}
-
-const handleTenantChange = (tenantId: number) => {
-  // 重置应用选择
-  queryParams.app_name = undefined
-  // 重新加载该租户的应用
-  fetchAppOptions(tenantId)
-  // 刷新数据
-  handleSearch()
-}
-
-// 弹窗中租户变化处理
-const handleModalTenantChange = (tenantId: number, form: any) => {
-  // 重置应用选择
-  form.app_name = undefined
-  // 重新加载该租户的应用
-  fetchAppOptions(tenantId)
 }
 
 const handleTableChange = (pag: any) => {
@@ -294,10 +235,7 @@ const handleAdd = () => {
     desc: '',
     status: 1,
     app_name: queryParams.app_name,
-    tenant_id: queryParams.tenant_id,
   })
-  // 加载对应租户的应用列表
-  fetchAppOptions(queryParams.tenant_id)
   crudTableRef.value?.openAddModal()
 }
 
@@ -312,7 +250,6 @@ const handleEdit = (record: any) => {
     desc: '',
     status: 1,
     app_name: undefined as string | undefined,
-    tenant_id: undefined as number | undefined,
   })
   // 再合并编辑的记录数据
   Object.assign(modalForm, { ...record })
@@ -334,26 +271,6 @@ const handleSave = async (form: Record<string, any>, action: 'add' | 'edit') => 
     // 构建请求数据
     const requestData: any = { ...form }
 
-    // 创建时：超级管理员必须使用选择的租户ID
-    if (action === 'add' && userStore.isSuperUser) {
-      if (!form.tenant_id) {
-        message.error('请选择租户')
-        modalLoading.value = false
-        return
-      }
-      requestData.tenant_id = form.tenant_id
-    }
-
-    // 编辑时：使用当前查询的租户ID（从列表数据中已带过来）
-    if (action === 'edit' && queryParams.tenant_id) {
-      requestData.tenant_id = queryParams.tenant_id
-    }
-
-    // 如果不是超级用户，使用当前选择的应用名称
-    if (!userStore.isSuperUser && queryParams.app_name) {
-      requestData.app_name = queryParams.app_name
-    }
-
     let res: any
     if (action === 'add') {
       res = await api.createRule(requestData)
@@ -368,6 +285,8 @@ const handleSave = async (form: Record<string, any>, action: 'add' | 'edit') => 
     } else {
       message.error(res.msg || '操作失败')
     }
+  } catch (error: any) {
+    message.error(error?.response?.data?.msg || error?.message || '操作失败')
   } finally {
     modalLoading.value = false
   }
@@ -375,11 +294,7 @@ const handleSave = async (form: Record<string, any>, action: 'add' | 'edit') => 
 
 const handleDelete = async (record: any) => {
   try {
-    const params: any = { id: record.id }
-    if (queryParams.tenant_id) {
-      params.tenant_id = queryParams.tenant_id
-    }
-    const res: any = await api.deleteRule(params)
+    const res: any = await api.deleteRule({ id: record.id })
     if (res.code === 200) {
       message.success('删除成功')
       fetchData()
@@ -393,7 +308,6 @@ const handleDelete = async (record: any) => {
 
 onMounted(() => {
   fetchData()
-  fetchTenantOptions()
   fetchAppOptions()
 })
 </script>

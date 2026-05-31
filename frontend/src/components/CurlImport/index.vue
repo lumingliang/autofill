@@ -128,6 +128,7 @@ const props = defineProps<{
   existingHeaders?: string[]
   primaryKeys?: string[]
   syncFields?: string[]
+  allowAddNew?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -323,7 +324,8 @@ const handleImport = async () => {
           current_md5: currentMd5.value,
           primary_keys: props.primaryKeys,
           sync_fields: props.syncFields || [],
-          curl_config: curlConfig.value
+          curl_config: curlConfig.value,
+          allow_add_new: props.allowAddNew !== false
         })
 
         if (res.code === 200) {

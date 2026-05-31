@@ -111,41 +111,58 @@ class CsvImportSeekdbService:
         构建允许的字段列表
 
         规则：
-        1. 包含已有字段 + primary_keys + sync_fields 去重后的结果
-        2. 以 'id' 结尾的字段放在列表最后
+        1. 如果有旧CSV（existing_headers不为空），使用旧表头 + sync_fields（去重）
+        2. 如果没有旧CSV，只使用主键 + sync_fields
+        3. 以 'id' 结尾的字段放在列表最后
 
         Args:
-            existing_headers: 已有表头字段列表
+            existing_headers: 已有表头字段列表（旧CSV的表头）
             primary_keys: 主键字段列表
             sync_fields: 需要同步的字段列表
 
         Returns:
             排序后的允许字段列表（非id字段在前，id字段在后）
         """
-        # 合并所有字段并去重
-        all_fields = set(existing_headers) | set(primary_keys) | set(sync_fields or [])
+        # 确定基础字段列表
+        if existing_headers:
+            # 有旧CSV：使用旧表头 + sync_fields
+            all_fields = set(existing_headers) | set(sync_fields or [])
+        else:
+            # 没有旧CSV：只使用主键 + sync_fields
+            all_fields = set(primary_keys) | set(sync_fields or [])
+
+        # 确保主键一定包含在字段列表中
+        all_fields = all_fields | set(primary_keys)
 
         # 分离id字段和非id字段
         id_fields = [f for f in all_fields if f.lower().endswith('id')]
         non_id_fields = [f for f in all_fields if not f.lower().endswith('id')]
 
-        # 保持原有顺序：非id字段按existing_headers中的顺序，然后是新字段
+        # 保持原有顺序：非id字段按existing_headers或primary_keys+sync_fields中的顺序
         ordered_non_id = []
         seen = set()
 
-        # 先按existing_headers的顺序添加
-        for f in existing_headers:
+        # 确定字段顺序的来源
+        if existing_headers:
+            # 有旧CSV：先按旧表头顺序
+            field_order = existing_headers
+        else:
+            # 没有旧CSV：按 primary_keys + sync_fields 顺序
+            field_order = list(primary_keys) + list(sync_fields or [])
+
+        # 按顺序添加非id字段
+        for f in field_order:
             if f in non_id_fields and f not in seen:
                 ordered_non_id.append(f)
                 seen.add(f)
 
-        # 再添加primary_keys和sync_fields中的新字段
-        for f in list(primary_keys) + list(sync_fields or []):
+        # 再添加sync_fields中的新非id字段（如果有的话）
+        for f in list(sync_fields or []):
             if f in non_id_fields and f not in seen:
                 ordered_non_id.append(f)
                 seen.add(f)
 
-        # id字段也保持一定顺序：先primary_keys中的id，然后是其他的
+        # id字段排序：先primary_keys中的id，然后是其他id
         ordered_id = []
         seen_id = set()
 

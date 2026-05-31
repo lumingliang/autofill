@@ -1,10 +1,9 @@
 import json
-from typing import Optional
 
 from fastapi import Header, HTTPException
 
+from app.core.ctx import Ctx
 from app.core.redis import redis_client
-from app.core.tenant import TenantContext
 from app.models.admin import Tenant
 from app.models.autofill import AppManagement
 
@@ -16,7 +15,8 @@ class APIKeyAuth:
     async def authenticate(cls, authorization: str = Header(..., description="Authorization: Bearer {api_key}")) -> dict:
         """
         解析 Authorization: Bearer {api_key}
-        返回: {"tenant_id": int, "app_name": str, "domain": str}
+        返回: {"app_name": str, "domain": str}
+        注意：租户ID通过 Ctx 设置，不直接返回
         """
         if not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Invalid authorization format")
@@ -42,11 +42,10 @@ class APIKeyAuth:
         tenant = await Tenant.filter(id=app.tenant_id).first()
         domain = tenant.domain if tenant else ""
 
-        # 设置租户上下文
-        TenantContext.set_tenant_id(app.tenant_id)
+        # 设置租户上下文（通过 Ctx）
+        Ctx.set_tenant_id(app.tenant_id)
 
         result = {
-            "tenant_id": app.tenant_id,
             "app_name": app.app_name,
             "domain": domain,
         }

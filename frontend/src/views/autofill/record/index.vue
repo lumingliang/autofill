@@ -5,12 +5,6 @@
       @search="handleSearch" @reset="handleReset" @table-change="handleTableChange">
       <!-- 筛选条件 -->
       <template #filter-items>
-        <a-col v-if="isSuperUser" :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="租户" class="filter-item">
-            <a-select v-model:value="queryParams.tenant_id" placeholder="请选择租户" allow-clear :options="tenantOptions"
-              @change="handleTenantChange" />
-          </a-form-item>
-        </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
           <a-form-item label="会话ID" class="filter-item">
             <a-input v-model:value="queryParams.session_id" placeholder="请输入会话ID" allow-clear
@@ -151,7 +145,6 @@ const queryParams = reactive({
   phone: '',
   user_unique_id: '',
   app_name: '',
-  tenant_id: undefined as number | undefined,
 })
 
 // 表格数据
@@ -164,7 +157,6 @@ const pagination = reactive({
 })
 
 // 其他数据
-const tenantOptions = ref<any[]>([])
 const appOptions = ref<any[]>([])
 const currentRecord = ref<any>(null)
 const detailModalVisible = ref(false)
@@ -295,11 +287,7 @@ const columns = computed(() => [
   { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ])
 
-const filterItemCount = computed(() => {
-  let count = 4
-  if (isSuperUser.value) count++
-  return count
-})
+const filterItemCount = computed(() => 4)
 
 // 加载数据
 const fetchData = async () => {
@@ -319,29 +307,9 @@ const fetchData = async () => {
   }
 }
 
-const fetchTenantOptions = async () => {
-  if (!isSuperUser.value) return
+const fetchAppOptions = async () => {
   try {
-    const res: any = await api.getTenantSelect()
-    if (res.code === 200) {
-      tenantOptions.value = (res.data || []).map((t: any) => ({
-        label: t.name,
-        value: t.id,
-      }))
-    }
-  } catch (error) {
-    console.error('获取租户列表失败', error)
-  }
-}
-
-const fetchAppOptions = async (tenantId?: number) => {
-  try {
-    const params: any = {}
-    // 如果指定了租户，只加载该租户的应用
-    if (tenantId && tenantId > 0) {
-      params.tenant_id = tenantId
-    }
-    const res: any = await api.getAppSelect(params)
+    const res: any = await api.getAppSelect()
     if (res.code === 200) {
       appOptions.value = res.data || []
     }
@@ -360,18 +328,8 @@ const handleReset = () => {
   queryParams.phone = ''
   queryParams.user_unique_id = ''
   queryParams.app_name = ''
-  queryParams.tenant_id = undefined
   pagination.current = 1
   fetchData()
-}
-
-const handleTenantChange = (tenantId: number) => {
-  // 重置应用选择
-  queryParams.app_name = ''
-  // 重新加载该租户的应用
-  fetchAppOptions(tenantId)
-  // 刷新数据
-  handleSearch()
 }
 
 const handleTableChange = (pag: any) => {
@@ -387,7 +345,6 @@ const viewDetail = (record: any) => {
 }
 
 onMounted(() => {
-  fetchTenantOptions()
   fetchAppOptions()
   fetchData()
 })

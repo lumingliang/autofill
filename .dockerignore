@@ -1,4 +1,117 @@
-frontend/node_modules
-uploads/*
-tests/*
-docs/*
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.trae/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Uploads and data
+uploads/
+avatars/
+data/
+logs/
+*.log
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Tests
+tests/
+test_server/
+
+# Scripts (not needed in production image)
+scripts/
+
+# Configuration (will be mounted or generated)
+config.toml
+.env
+.env.example
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.docker/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+llmtemp/
+
+# Archive
+autofill-archive/
+*.tar.gz
+*.zip
+*.tar
+*.bak
+*.backup
+
+# SeekDB
+seekdb/
+
+# LiteLLM (external service)
+litellm/
+
+# Static files (will be copied separately if needed)
+static/
+
+# Migration files (will be generated in container)
+migrations/
+
+# Development files
+*.example
+exclude_list.txt
+package_project.py
+pyrightconfig.json

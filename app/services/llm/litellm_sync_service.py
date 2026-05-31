@@ -8,6 +8,7 @@ import httpx
 
 from app.log import logger
 from app.models.llm_config import LLMConfig
+from app.repositories.llm.llm_config_repository import llm_config_repository
 from app.settings.config import settings
 
 
@@ -66,7 +67,13 @@ class LiteLLMSyncService:
         # 构建请求体
         payload = {
             "model_name": config.name,
-            "litellm_params": params
+            "litellm_params": params,
+            "model_info": {
+                "mode": "chat",
+                "max_tokens": 4096,
+                "supports_vision": False,
+                "supports_function_calling": True
+            }
         }
 
         return payload
@@ -115,6 +122,7 @@ class LiteLLMSyncService:
         """
         try:
             payload = self._build_model_payload(config)
+            logger.info(f"Updating model '{config.name}' with payload: {payload}")
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -129,6 +137,7 @@ class LiteLLMSyncService:
             return True
 
         except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error for model '{config.name}': status={e.response.status_code}, response={e.response.text}")
             # 如果模型不存在（404），尝试添加
             if e.response.status_code == 404:
                 logger.warning(f"Model '{config.name}' not found in LiteLLM, trying to add instead")
@@ -268,25 +277,26 @@ class LiteLLMSyncService:
                         continue
 
                     litellm_params = model_data.get("litellm_params", {})
-                    model_info = model_data.get("model_info", {})
 
                     # 检查本地是否已存在
-                    existing = await LLMConfig.filter(name=model_name).first()
+                    existing = await llm_config_repository.get_by_name(name=model_name)
 
                     if existing:
                         # 更新现有配置（保留本地 API Key，只更新其他字段）
-                        existing_litellm_params = existing.litellm_params or {}
-                        existing_api_key = existing_litellm_params.get("api_key", "")
+                        existing_api_key = existing.api_key or ""
 
                         # 使用网关的参数，但保留本地的 API Key
-                        merged_litellm_params = {**litellm_params}
+                        new_api_key = litellm_params.get("api_key", "")
                         if existing_api_key and not self._is_masked_api_key(existing_api_key):
-                            merged_litellm_params["api_key"] = existing_api_key
+                            new_api_key = existing_api_key
                             logger.debug(f"Preserved local API key for model '{model_name}'")
 
-                        existing.litellm_params = merged_litellm_params
-                        existing.model_info = model_info
-                        await existing.save()
+                        update_data = {
+                            "api_key": new_api_key,
+                            "api_base": litellm_params.get("api_base", ""),
+                            "timeout": litellm_params.get("timeout", 300)
+                        }
+                        await llm_config_repository.update(existing.id, update_data)
                         result["updated"] += 1
                         logger.info(f"Updated model '{model_name}' from gateway (API key preserved)")
                     else:
@@ -297,16 +307,19 @@ class LiteLLMSyncService:
                         if "/" in model_value:
                             model_provider = model_value.split("/")[0]
 
-                        await LLMConfig.create(
-                            name=model_name,
-                            model_provider=model_provider,
-                            litellm_params=litellm_params,
-                            model_info=model_info,
-                            capabilities=LLMConfig.get_default_capabilities(),
-                            is_active=True,
-                            is_default=False,
-                            description=f"从 LiteLLM 网关同步导入"
-                        )
+                        create_data = {
+                            "name": model_name,
+                            "model_provider": model_provider,
+                            "model": model_value,
+                            "api_key": litellm_params.get("api_key", ""),
+                            "api_base": litellm_params.get("api_base", ""),
+                            "timeout": litellm_params.get("timeout", 300),
+                            "capabilities": llm_config_repository.get_default_capabilities(),
+                            "is_active": True,
+                            "is_default": False,
+                            "description": "从 LiteLLM 网关同步导入"
+                        }
+                        await llm_config_repository.create(create_data)
                         result["created"] += 1
                         logger.info(f"Created new model '{model_name}' from gateway")
 
@@ -333,7 +346,7 @@ class LiteLLMSyncService:
         """
         try:
             # 获取所有活跃的模型配置
-            configs = await LLMConfig.filter(is_active=True).all()
+            configs = await llm_config_repository.get_active_configs()
 
             success_count = 0
             fail_count = 0

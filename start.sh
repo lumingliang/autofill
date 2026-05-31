@@ -391,10 +391,14 @@ show_logs() {
     esac
 }
 
-# 启动所有服务
+# 启动所有服务（先停止再启动）
 start_all() {
     log_info "启动所有服务..."
     echo ""
+    # 先停止现有服务
+    stop_all
+    echo ""
+    sleep 2
     start_backend
     echo ""
     start_frontend
