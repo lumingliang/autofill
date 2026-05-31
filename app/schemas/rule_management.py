@@ -6,6 +6,47 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+# ==================== 规则管理查询参数 ====================
+
+class RuleListQuery(BaseModel):
+    """规则列表查询参数"""
+    page: int = Field(1, description="页码", ge=1)
+    page_size: int = Field(10, description="每页数量", ge=1, le=100)
+    keyword: str = Field("", description="搜索关键词")
+    status: Optional[int] = Field(None, description="状态筛选（0-禁用，1-启用）")
+    app_name: str = Field("", description="应用名称")
+
+
+class RuleGetQuery(BaseModel):
+    """规则详情查询参数"""
+    id: int = Field(..., description="规则ID", gt=0)
+
+
+class RuleDeleteQuery(BaseModel):
+    """规则删除查询参数"""
+    id: int = Field(..., description="规则ID", gt=0)
+
+
+class RuleVersionsQuery(BaseModel):
+    """规则版本历史查询参数"""
+    rule_id: int = Field(..., description="规则ID", gt=0)
+    page: int = Field(1, description="页码", ge=1)
+    page_size: int = Field(20, description="每页数量", ge=1, le=100)
+
+
+class RuleExportQuery(BaseModel):
+    """规则导出查询参数"""
+    rule_id: int = Field(..., description="规则ID", gt=0)
+    version_no: Optional[int] = Field(None, description="版本号，为空则导出最新版本")
+
+
+class ImportConfigQuery(BaseModel):
+    """导入配置查询参数"""
+    rule_id: int = Field(..., description="规则ID", gt=0)
+
+
+# ==================== 规则管理 Schemas ====================
+
 class RuleCreate(BaseModel):
     """创建规则请求"""
     rule_code: str = Field("", max_length=64, description="规则唯一编码，为空时自动生成")

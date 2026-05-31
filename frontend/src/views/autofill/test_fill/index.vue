@@ -364,6 +364,7 @@ const handleRuleChange = async (ruleCode: string, paramIndex: number) => {
 
         const columns = res?.data?.columns || []
         const sampleData = res?.data?.sample_data || []
+        const sampleCount = res?.data?.sample_count || 0
 
         param.columnOptions = columns.map((c: string) => ({
             label: c,
@@ -376,10 +377,20 @@ const handleRuleChange = async (ruleCode: string, paramIndex: number) => {
             key: c
         }))
 
-        param.sampleData = sampleData.map((row: any, idx: number) => ({
-            key: idx,
-            ...row
-        }))
+        // 将二维数组转换为对象数组，以便表格正确显示
+        param.sampleData = sampleData.map((row: any, idx: number) => {
+            if (Array.isArray(row)) {
+                // 如果是数组，将列名作为 key，数组值作为 value
+                const rowObj: any = { key: idx }
+                columns.forEach((col: string, colIdx: number) => {
+                    rowObj[col] = row[colIdx] ?? ''
+                })
+                return rowObj
+            } else {
+                // 如果已经是对象，直接返回
+                return { key: idx, ...row }
+            }
+        })
     } catch (error) {
         console.error('加载规则列失败:', error)
     }
@@ -492,7 +503,7 @@ const handleExportCurl = async () => {
 const loadSystemPrompts = async () => {
     try {
         const res: any = await api.getSystemPromptList({ page: 1, page_size: 100 })
-        const items = res?.data?.items || []
+        const items = res?.data || []
         systemPromptOptions.value = items.map((s: any) => ({
             label: s.name,
             value: s.name

@@ -42,11 +42,10 @@ class StructuredOutputService:
 
     def __init__(self, config: LLMConfig):
         self.config = config
-        self.litellm_params = config.litellm_params or {}
         self.model_name = config.name
-        self.api_key = self.litellm_params.get("api_key", "")
-        self.api_base = self.litellm_params.get("api_base", None)
-        self.timeout = self.litellm_params.get("timeout", 300)
+        self.api_key = config.api_key or ""
+        self.api_base = config.api_base or None
+        self.timeout = config.timeout or 300
 
         # 获取结构化输出配置
         self.structured_config = settings.STRUCTURED_OUTPUT_CONFIG

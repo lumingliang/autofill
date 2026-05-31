@@ -52,10 +52,6 @@ class LLMProxyService:
         if not config:
             raise ValueError("config 参数不能为空")
 
-        # 如果指定了temperature，更新配置
-        if temperature is not None and config.litellm_params:
-            config.litellm_params["temperature"] = temperature
-
         service = StructuredOutputService(config)
 
         result = await service.generate(

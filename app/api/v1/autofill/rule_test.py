@@ -1,22 +1,19 @@
-
 """
 规则执行测试接口（前端页面使用）
-提供应用列表、规则列表、CSV表头获取和规则执行测试功能
 
-注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理，
-API Handler 不需要重复调用 AuthControl.is_authed() 或 TenantContext.set_tenant_id()
+参考 depts.py 简洁风格：
+- 直接在路由函数中调用 Service 层
+- 不使用 API 类包装
+- 认证由中间件统一处理
 """
 import json
 import uuid
-from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Query, Request
 from fastapi.exceptions import HTTPException
-from tortoise.expressions import Q
 
-from app.models.autofill import AppManagement
-from app.models.rule_management import RuleInfo, RuleVersion
 from app.schemas.base import Fail, Success, SuccessExtra
+from app.services.autofill.app_service import app_service
 from app.services.autofill.rule_engine_service import rule_engine_service
 from app.services.rule_management.rule_service import rule_service
 from app.log import logger
@@ -28,25 +25,17 @@ router = APIRouter()
 async def list_apps_for_test(
     request: Request,
 ):
-    """获取当前用户可用的应用列表（用于规则测试页面下拉选择）
-
-    注意：
-    - 超管可以查看所有应用（或指定租户的应用）
-    - 普通用户只能查看自己租户的应用
-    - 租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
+    """获取当前用户可用的应用列表（用于规则测试页面下拉选择）"""
     current_user = request.state.current_user if hasattr(request.state, 'current_user') else None
-    
+
     if not current_user:
         return Fail(code=401, msg="用户未认证")
 
-    effective_tenant_id = getattr(request.state, 'tenant_id', 0)
-
-    q = Q()
-    if effective_tenant_id > 0:
-        q &= Q(tenant_id=effective_tenant_id)
-
-    apps = await AppManagement.filter(q).all()
+    # 租户过滤由 Repository 层自动处理
+    total, apps = await app_service.list_all_apps(
+        page=1,
+        page_size=1000
+    )
 
     data = []
     for app in apps:
@@ -62,12 +51,8 @@ async def list_apps_for_test(
 async def list_rules_for_test(
     request: Request,
     app_name: str = Query(..., description="应用名称"),
-    tenant_id: Optional[int] = Query(None, description="租户ID（仅超管可用）"),
 ):
-    """获取指定应用下的规则列表（用于规则测试页面下拉选择）
-
-    注意：租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
+    """获取指定应用下的规则列表（用于规则测试页面下拉选择）"""
     _, rules = await rule_service.list_rules(
         app_name=app_name,
         page=1,
@@ -92,10 +77,7 @@ async def get_rule_columns(
     rule_code: str = Query(..., description="规则编码"),
     app_name: str = Query(..., description="应用名称"),
 ):
-    """获取指定规则的CSV表头（用于前端多选下拉）
-
-    注意：租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
+    """获取指定规则的CSV表头（用于前端多选下拉）"""
     rule = await rule_service.get_rule_by_code(
         rule_code=rule_code,
         app_name=app_name
@@ -140,18 +122,11 @@ async def execute_rule_test(
     """
     前端规则测试页面调用此接口执行规则测试
 
-    注意：
-    - 超管可以通过 tenant_id 参数指定租户（从 request.state.tenant_id 获取）
-    - 普通用户使用当前用户的租户
-    - 认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-
     请求示例:
     ```json
     {
         "app_name": "customer_service",
         "query": "我买的手机屏幕碎了，我要投诉",
-        "tenant_id": 1,  // 仅超管可用
-        "system_prompt_name": "default",  // 可选：全局系统提示词名称（多个规则共用）
         "params": [
             {
                 "rule_name": "event_type",
@@ -173,14 +148,7 @@ async def execute_rule_test(
     query = request_data.get("query")
     params = request_data.get("params", [])
     temperature = request_data.get("temperature", 0.7)
-    request_tenant_id = request_data.get("tenant_id")
     system_prompt_name = request_data.get("system_prompt_name")
-
-    current_user = request.state.current_user if hasattr(request.state, 'current_user') else None
-    effective_tenant_id = getattr(request.state, 'tenant_id', 0)
-
-    if current_user and current_user.is_superuser and request_tenant_id:
-        effective_tenant_id = request_tenant_id
 
     if not app_name:
         raise HTTPException(status_code=400, detail="app_name is required")
@@ -203,7 +171,7 @@ async def execute_rule_test(
 
     logger.info(
         f"Rule test execute: session_id={session_id}, app_name={app_name}, "
-        f"tenant_id={effective_tenant_id}, method={method}, params_count={len(params)}"
+        f"method={method}, params_count={len(params)}"
     )
 
     try:
@@ -236,15 +204,11 @@ async def export_rule_test_curl(
     """
     根据前端配置生成可直接测试的curl命令
 
-    注意：租户上下文由 TenantContextMiddleware 在中间件层统一处理
-
     请求示例:
     ```json
     {
         "app_name": "customer_service",
         "query": "我买的手机屏幕碎了，我要投诉",
-        "tenant_id": 1,  // 仅超管可用
-        "system_prompt_name": "default",  // 可选：全局系统提示词名称（多个规则共用）
         "params": [
             {
                 "rule_name": "event_type",
@@ -259,20 +223,6 @@ async def export_rule_test_curl(
         ]
     }
     ```
-
-    响应示例:
-    ```json
-    {
-        "code": 200,
-        "msg": "success",
-        "data": {
-            "curl_command": "curl -X POST 'http://localhost:9999/api/autofill/llm/rule/execute' -H 'Content-Type: application/json' -H 'Authorization: Bearer xxx' -d '{...}'",
-            "api_endpoint": "/api/autofill/llm/rule/execute",
-            "method": "POST",
-            "request_body": {...}
-        }
-    }
-    ```
     """
     request_data = await request.json()
 
@@ -280,14 +230,7 @@ async def export_rule_test_curl(
     query = request_data.get("query")
     params = request_data.get("params", [])
     temperature = request_data.get("temperature", 0.7)
-    request_tenant_id = request_data.get("tenant_id")
     system_prompt_name = request_data.get("system_prompt_name")
-
-    current_user = request.state.current_user if hasattr(request.state, 'current_user') else None
-    effective_tenant_id = getattr(request.state, 'tenant_id', 0)
-
-    if current_user and current_user.is_superuser and request_tenant_id:
-        effective_tenant_id = request_tenant_id
 
     if not app_name:
         raise HTTPException(status_code=400, detail="app_name is required")
@@ -304,10 +247,10 @@ async def export_rule_test_curl(
         if not param.get("prompt"):
             raise HTTPException(status_code=400, detail=f"params[{i}].prompt is required")
 
-    app = await AppManagement.filter(
-        tenant_id=effective_tenant_id,
+    # 租户过滤由 Repository 层自动处理
+    app = await app_service.get_app_by_name_for_current_tenant(
         app_name=app_name
-    ).first()
+    )
 
     if not app:
         raise HTTPException(status_code=400, detail=f"应用 '{app_name}' 不存在")

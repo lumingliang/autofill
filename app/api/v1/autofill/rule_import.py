@@ -1,24 +1,19 @@
-
 """
 规则导入接口 - 处理CSV导入的API端点
 
-优化后的实现：
-1. 直接落库到 seekdb
-2. 使用简洁的增量导入算法
-3. 不再使用旧的内存导入逻辑
-
-注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理，
-API Handler 不需要重复调用 AuthControl.is_authed()
+参考 depts.py 简洁风格：
+- 直接在路由函数中调用 Service 层
+- 不使用 API 类包装
+- 认证由中间件统一处理
 """
 import csv
 import io
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, Header, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.log import logger
-from app.models.rule_management import RuleInfo, RuleVersion
 from app.schemas.base import Fail, Success
 from app.schemas.rule_management import (
     CurlImportApplyRequest,
@@ -26,6 +21,7 @@ from app.schemas.rule_management import (
     CurlImportSaveConfigRequest,
     FilePreviewRequest,
     ImportApplyRequest,
+    ImportConfigQuery,
 )
 from app.services.rule_management.csv_import_seekdb import (
     CsvImportSeekdbService,
@@ -62,27 +58,17 @@ def _parse_import_config(config_str: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def _get_rule(rule_id: int) -> Optional[RuleInfo]:
-    """
-    获取规则
-    
-    注意：租户过滤由 Repository 层通过 TenantContext 自动处理
-    """
+async def _get_rule(rule_id: int) -> Optional[Any]:
+    """获取规则 - 租户过滤由 Repository 层通过 TenantContext 自动处理"""
     return await rule_service.get_rule_by_id(rule_id=rule_id)
 
 
-async def _prepare_import_version(rule: RuleInfo) -> tuple[int, Optional[str]]:
-    """
-    准备导入版本信息，返回版本号和源集合名称
-
-    Returns:
-        (version_no, source_collection_name)
-    """
+async def _prepare_import_version(rule: Any) -> tuple[int, Optional[str]]:
+    """准备导入版本信息，返回版本号和源集合名称"""
     version_no = 1
     source_collection_name = None
 
     if rule.latest_version_id:
-        # 使用 Service 层获取版本
         version = await rule_service.get_version_by_id(version_id=rule.latest_version_id)
         if version:
             version_no = version.version_no + 1
@@ -91,15 +77,9 @@ async def _prepare_import_version(rule: RuleInfo) -> tuple[int, Optional[str]]:
     return version_no, source_collection_name
 
 
-async def _get_existing_headers(rule: RuleInfo) -> tuple[List[str], bool]:
-    """
-    获取规则的现有表头和判断是否首次导入
-
-    Returns:
-        (existing_headers, is_first_import)
-    """
+async def _get_existing_headers(rule: Any) -> tuple[List[str], bool]:
+    """获取规则的现有表头和判断是否首次导入"""
     if rule.latest_version_id:
-        # 使用 Service 层获取版本
         version = await rule_service.get_version_by_id(version_id=rule.latest_version_id)
         if version:
             content_json = await rule_service.get_content_json(version)
@@ -108,15 +88,12 @@ async def _get_existing_headers(rule: RuleInfo) -> tuple[List[str], bool]:
     return [], True
 
 
-async def _save_primary_keys_config(
-    rule: RuleInfo, primary_keys: List[str]
-) -> None:
+async def _save_primary_keys_config(rule: Any, primary_keys: List[str]) -> None:
     """保存主键配置到规则config中"""
     existing_config = _parse_import_config(rule.config) or {}
     existing_config["primary_keys"] = primary_keys
     existing_config.pop("sync_fields", None)
 
-    # 使用 Service 层更新规则配置
     await rule_service.update_rule_config(
         rule_id=rule.id,
         config=existing_config
@@ -149,7 +126,7 @@ def _merge_headers(existing: List[str], new: List[str]) -> List[str]:
 
 
 async def _save_version_record(
-    rule: RuleInfo,
+    rule: Any,
     collection_name: str,
     headers: List[str],
     doc_count: int,
@@ -173,91 +150,19 @@ async def _save_version_record(
     }
 
 
-@router.post("/rule/import/file/preview", summary="预览CSV导入")
-async def preview_file_import(
-    request: Request,
-    file_request: FilePreviewRequest,
-):
-    """预览CSV导入 - 返回CSV表头、预览数据、是否是首次导入等信息
-    
-    注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
-    rule = await _get_rule(rule_id=file_request.rule_id)
-    if not rule:
-        return Fail(code=404, msg="规则不存在")
-
-    existing_headers, is_first_import = await _get_existing_headers(rule)
-
-    csv_headers, csv_data = _parse_csv_content(file_request.content)
-
-    primary_keys = []
-    existing_config = _parse_import_config(rule.config)
-    if existing_config:
-        primary_keys = existing_config.get("primary_keys", [])
-
-    if hasattr(file_request, "primary_keys") and file_request.primary_keys:
-        primary_keys = file_request.primary_keys
-        await _save_primary_keys_config(rule, primary_keys)
-
-    merged_headers = _merge_headers(existing_headers, csv_headers)
-    sync_fields = [h for h in merged_headers if h not in primary_keys]
-
-    return Success(
-        data={
-            "csv_headers": csv_headers,
-            "existing_headers": existing_headers,
-            "merged_headers": merged_headers,
-            "row_count": len(csv_data),
-            "preview_data": csv_data[:10],
-            "is_first_import": is_first_import,
-            "primary_keys": primary_keys,
-            "sync_fields": sync_fields,
-            "allow_add_new": True,
-        }
-    )
-
-
-@router.get("/rule/import/config", summary="获取导入配置")
-async def get_import_config(
-    request: Request,
-    rule_id: int = Query(..., description="规则ID"),
-):
-    """获取规则的导入配置
-    
-    注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
-    rule = await _get_rule(rule_id=rule_id)
-    if not rule:
-        return Fail(code=404, msg="规则不存在")
-
-    config = _parse_import_config(rule.config)
-    primary_keys = config.get("primary_keys", []) if config else []
-
-    return Success(data={"primary_keys": primary_keys})
-
-
 async def _execute_csv_import_core(
-    rule: RuleInfo,
+    rule: Any,
     csv_content: str,
     primary_keys: List[str],
     sync_fields: Optional[List[str]] = None,
     remark: Optional[str] = None,
     allow_add_new: bool = True,
 ) -> Dict[str, Any]:
-    """
-    执行CSV导入的核心逻辑（可被文件上传和内容上传复用）
-
-    Args:
-        allow_add_new: 是否允许新增数据（当主键不存在时，是否将CSV数据作为新行导入）
-
-    Returns:
-        包含导入结果的字典
-    """
+    """执行CSV导入的核心逻辑"""
     version_no, source_collection_name = await _prepare_import_version(rule)
     collection_name = build_collection_name(rule.id, rule.rule_code, version_no)
 
     if sync_fields is None:
-        # 如果未指定 sync_fields，默认使用CSV中除主键外的所有字段
         csv_headers, _ = CsvImportSeekdbService.parse_csv_streaming(csv_content)
         sync_fields = [h for h in csv_headers if h not in primary_keys]
 
@@ -316,7 +221,7 @@ async def _execute_csv_import_core(
 
 
 async def _execute_import_from_rows_core(
-    rule: RuleInfo,
+    rule: Any,
     headers: List[str],
     rows: List[Dict[str, Any]],
     primary_keys: List[str],
@@ -324,25 +229,11 @@ async def _execute_import_from_rows_core(
     remark: Optional[str] = None,
     allow_add_new: bool = True,
 ) -> Dict[str, Any]:
-    """
-    执行数据导入的核心逻辑（直接从结构化数据导入，避免 CSV 编解码开销）
-
-    Args:
-        headers: 表头列表
-        rows: 数据行列表，每行是一个字典
-        primary_keys: 主键字段列表
-        sync_fields: 需要同步更新的字段列表
-        remark: 导入备注
-        allow_add_new: 是否允许新增数据
-
-    Returns:
-        包含导入结果的字典
-    """
+    """执行数据导入的核心逻辑（直接从结构化数据导入）"""
     version_no, source_collection_name = await _prepare_import_version(rule)
     collection_name = build_collection_name(rule.id, rule.rule_code, version_no)
 
     if sync_fields is None:
-        # 如果未指定 sync_fields，默认使用除主键外的所有字段
         sync_fields = [h for h in headers if h not in primary_keys]
 
     result = await CsvImportSeekdbService.execute_import_from_rows(
@@ -400,16 +291,62 @@ async def _execute_import_from_rows_core(
     }
 
 
+@router.post("/rule/import/file/preview", summary="预览CSV导入")
+async def preview_file_import(file_request: FilePreviewRequest):
+    """预览CSV导入 - 返回CSV表头、预览数据、是否是首次导入等信息"""
+    rule = await _get_rule(rule_id=file_request.rule_id)
+    if not rule:
+        return Fail(code=404, msg="规则不存在")
+
+    existing_headers, is_first_import = await _get_existing_headers(rule)
+    csv_headers, csv_data = _parse_csv_content(file_request.content)
+
+    primary_keys = []
+    existing_config = _parse_import_config(rule.config)
+    if existing_config:
+        primary_keys = existing_config.get("primary_keys", [])
+
+    if hasattr(file_request, "primary_keys") and file_request.primary_keys:
+        primary_keys = file_request.primary_keys
+        await _save_primary_keys_config(rule, primary_keys)
+
+    merged_headers = _merge_headers(existing_headers, csv_headers)
+    sync_fields = [h for h in merged_headers if h not in primary_keys]
+
+    return Success(
+        data={
+            "csv_headers": csv_headers,
+            "existing_headers": existing_headers,
+            "merged_headers": merged_headers,
+            "row_count": len(csv_data),
+            "preview_data": csv_data[:10],
+            "is_first_import": is_first_import,
+            "primary_keys": primary_keys,
+            "sync_fields": sync_fields,
+            "allow_add_new": True,
+        }
+    )
+
+
+@router.get("/rule/import/config", summary="获取导入配置")
+async def get_import_config(query: ImportConfigQuery = Depends()):
+    """获取规则的导入配置"""
+    rule = await _get_rule(rule_id=query.rule_id)
+    if not rule:
+        return Fail(code=404, msg="规则不存在")
+
+    config = _parse_import_config(rule.config)
+    primary_keys = config.get("primary_keys", []) if config else []
+
+    return Success(data={"primary_keys": primary_keys})
+
+
 @router.post("/rule/import/file", summary="导入CSV文件")
 async def import_csv_file(
-    request: Request,
     file: UploadFile = File(..., description="CSV文件"),
     rule_id: int = Form(..., description="规则ID"),
 ):
-    """导入CSV文件，执行增量导入并保存为新版本
-    
-    注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
+    """导入CSV文件，执行增量导入并保存为新版本"""
     rule = await _get_rule(rule_id=rule_id)
     if not rule:
         return Fail(code=404, msg="规则不存在")
@@ -438,14 +375,8 @@ async def import_csv_file(
 
 
 @router.post("/rule/import/apply", summary="执行CSV导入（通过内容）")
-async def apply_import(
-    request: Request,
-    import_request: ImportApplyRequest,
-):
-    """执行CSV导入 - 通过内容参数直接落库到seekdb
-    
-    注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
+async def apply_import(import_request: ImportApplyRequest):
+    """执行CSV导入 - 通过内容参数直接落库到seekdb"""
     rule = await _get_rule(rule_id=import_request.rule_id)
     if not rule:
         return Fail(code=404, msg="规则不存在")
@@ -476,14 +407,8 @@ async def apply_import(
 
 
 @router.post("/rule/import/curl/preview", summary="预览CURL导入")
-async def preview_curl_import(
-    request: Request,
-    curl_request: CurlImportPreviewRequest,
-):
-    """预览CURL导入
-    
-    注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
+async def preview_curl_import(curl_request: CurlImportPreviewRequest):
+    """预览CURL导入"""
     try:
         curl_config = curl_request.curl_config.model_dump()
         engine = CurlImportEngine(curl_config)
@@ -515,21 +440,13 @@ async def preview_curl_import(
 
 
 @router.post("/rule/import/curl/config", summary="保存CURL导入配置")
-async def save_curl_import_config(
-    request: Request,
-    curl_config_request: CurlImportSaveConfigRequest,
-):
-    """保存CURL导入配置
-    
-    注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
+async def save_curl_import_config(curl_config_request: CurlImportSaveConfigRequest):
+    """保存CURL导入配置"""
     rule = await _get_rule(rule_id=curl_config_request.rule_id)
     if not rule:
         return Fail(code=404, msg="规则不存在")
 
-    # 直接使用前端配置（Pydantic 已解析为对象）
     curl_config = curl_config_request.curl_config.model_dump()
-
     existing_config = _parse_import_config(rule.config) or {}
     config = {
         "import_type": "curl",
@@ -537,22 +454,14 @@ async def save_curl_import_config(
         "curl_config": curl_config,
     }
 
-    # 使用 Service 层更新规则配置
     await rule_service.update_rule_config(rule_id=rule.id, config=config)
-
     return Success(msg="配置保存成功")
 
 
 @router.get("/rule/import/curl/config", summary="获取CURL导入配置")
-async def get_curl_import_config(
-    request: Request,
-    rule_id: int = Query(..., description="规则ID"),
-):
-    """获取CURL导入配置
-    
-    注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
-    rule = await _get_rule(rule_id=rule_id)
+async def get_curl_import_config(query: ImportConfigQuery = Depends()):
+    """获取CURL导入配置"""
+    rule = await _get_rule(rule_id=query.rule_id)
     if not rule:
         return Fail(code=404, msg="规则不存在")
 
@@ -569,14 +478,8 @@ async def get_curl_import_config(
 
 
 @router.post("/rule/import/curl/apply", summary="执行CURL导入")
-async def apply_curl_import(
-    request: Request,
-    curl_apply_request: CurlImportApplyRequest,
-):
-    """执行CURL导入 - 获取数据后落库到seekdb（使用结构化数据导入，避免CSV编解码开销）
-    
-    注意：认证和租户上下文由 TenantContextMiddleware 在中间件层统一处理
-    """
+async def apply_curl_import(curl_apply_request: CurlImportApplyRequest):
+    """执行CURL导入 - 获取数据后落库到seekdb"""
     rule = await _get_rule(rule_id=curl_apply_request.rule_id)
     if not rule:
         return Fail(code=404, msg="规则不存在")
@@ -587,7 +490,6 @@ async def apply_curl_import(
     try:
         curl_config = curl_apply_request.curl_config.model_dump()
         engine = CurlImportEngine(curl_config)
-        # 使用 fetch_data_as_rows 直接获取结构化数据，避免 CSV 编解码
         result = await engine.fetch_data_as_rows()
 
         headers = result["headers"]
@@ -597,7 +499,6 @@ async def apply_curl_import(
 
         await _save_primary_keys_config(rule, curl_apply_request.primary_keys)
 
-        # 使用 _execute_import_from_rows_core 直接导入结构化数据
         import_result = await _execute_import_from_rows_core(
             rule=rule,
             headers=headers,

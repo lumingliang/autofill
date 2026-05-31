@@ -268,24 +268,23 @@ class LiteLLMSyncService:
                         continue
 
                     litellm_params = model_data.get("litellm_params", {})
-                    model_info = model_data.get("model_info", {})
 
                     # 检查本地是否已存在
                     existing = await LLMConfig.filter(name=model_name).first()
 
                     if existing:
                         # 更新现有配置（保留本地 API Key，只更新其他字段）
-                        existing_litellm_params = existing.litellm_params or {}
-                        existing_api_key = existing_litellm_params.get("api_key", "")
+                        existing_api_key = existing.api_key or ""
 
                         # 使用网关的参数，但保留本地的 API Key
-                        merged_litellm_params = {**litellm_params}
+                        new_api_key = litellm_params.get("api_key", "")
                         if existing_api_key and not self._is_masked_api_key(existing_api_key):
-                            merged_litellm_params["api_key"] = existing_api_key
+                            new_api_key = existing_api_key
                             logger.debug(f"Preserved local API key for model '{model_name}'")
 
-                        existing.litellm_params = merged_litellm_params
-                        existing.model_info = model_info
+                        existing.api_key = new_api_key
+                        existing.api_base = litellm_params.get("api_base", "")
+                        existing.timeout = litellm_params.get("timeout", 300)
                         await existing.save()
                         result["updated"] += 1
                         logger.info(f"Updated model '{model_name}' from gateway (API key preserved)")
@@ -300,8 +299,10 @@ class LiteLLMSyncService:
                         await LLMConfig.create(
                             name=model_name,
                             model_provider=model_provider,
-                            litellm_params=litellm_params,
-                            model_info=model_info,
+                            model=model_value,
+                            api_key=litellm_params.get("api_key", ""),
+                            api_base=litellm_params.get("api_base", ""),
+                            timeout=litellm_params.get("timeout", 300),
                             capabilities=LLMConfig.get_default_capabilities(),
                             is_active=True,
                             is_default=False,

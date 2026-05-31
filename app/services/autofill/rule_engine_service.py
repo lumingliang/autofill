@@ -10,6 +10,7 @@ from app.core.tenant import TenantContext
 from app.log import logger
 from app.models.autofill import FillDataRecord
 from app.models.enums import AIFillDataStatus
+from app.repositories.rule_management.rule_data_repository import rule_data_repository
 from app.services.autofill.prompt_builder_service import PromptBuilderService
 from app.services.autofill.system_prompt_service import system_prompt_service
 from app.services.llm.llm_config_service import llm_config_service
@@ -474,10 +475,17 @@ class RuleEngineService:
         Returns:
             RuleVersion 对象或 None
         """
-        # 使用 Service 层获取规则版本（自动处理租户过滤和软删除过滤）
-        return await rule_service.get_version_by_rule_code(
+        # 1. 先获取规则信息
+        rule = await rule_service.get_rule_by_code(
             rule_code=rule_name,
             app_name=app_name
+        )
+        if not rule or not rule.latest_version_id:
+            return None
+
+        # 2. 根据版本ID获取版本详情
+        return await rule_service.get_version_by_id(
+            version_id=rule.latest_version_id
         )
 
     async def _get_filtered_rule_data(
@@ -498,16 +506,16 @@ class RuleEngineService:
             筛选并去重后的数据列表
         """
         try:
-            # 使用 Service 层查询 seekdb
+            # 使用 Repository 层查询 seekdb
             if filter_config:
                 # 有过滤条件，使用过滤查询
-                result_data = await rule_service.query_rule_data_with_filter(
+                result_data = await rule_data_repository.query_with_filter(
                     collection_name=collection_name,
                     filter_config=filter_config
                 )
             else:
                 # 没有过滤条件，获取全部数据
-                result = await rule_service.get_rule_data_from_collection(collection_name)
+                result = await rule_data_repository.get_by_collection(collection_name)
                 if not result:
                     return []
 

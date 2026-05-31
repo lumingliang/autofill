@@ -1,6 +1,15 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+# ==================== 应用管理查询参数 ====================
+
+class AppListQuery(BaseModel):
+    """应用列表查询参数"""
+    page: int = Field(1, description="页码", ge=1)
+    page_size: int = Field(10, description="每页数量", ge=1, le=100)
+    app_name: str = Field("", description="应用名称")
 
 
 # ==================== 应用管理 Schemas ====================

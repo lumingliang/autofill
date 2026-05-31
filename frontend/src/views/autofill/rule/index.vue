@@ -285,6 +285,8 @@ const handleSave = async (form: Record<string, any>, action: 'add' | 'edit') => 
     } else {
       message.error(res.msg || '操作失败')
     }
+  } catch (error: any) {
+    message.error(error?.response?.data?.msg || error?.message || '操作失败')
   } finally {
     modalLoading.value = false
   }

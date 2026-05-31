@@ -1,29 +1,36 @@
 """
-RuleVersion Repository - 规则版本数据访问层
+RuleVersion Repository - 规则版本数据访问层（重构版）
+
+严格遵循技术约束文档：
+- 继承 BaseRepository 获得通用 CRUD 能力
+- 自动应用租户过滤（通过 BaseRepository）
+- 禁止手动传递 tenant_id 参数
+- 使用 self.filter() 进行链式查询
 """
 from typing import List, Optional, Tuple
 
+from tortoise.expressions import Q
+
 from app.models.rule_management import RuleVersion
-from app.core.tenant import TenantContext
-from .rule_info_repository import rule_info_repository
+from app.repositories.base_repository import BaseRepository
 
 
-class RuleVersionRepository:
-    """规则版本仓库"""
+class RuleVersionRepository(BaseRepository[RuleVersion]):
+    """
+    规则版本 Repository
 
-    def _apply_tenant_filter(self, query):
-        """
-        应用租户过滤条件
+    职责：
+    - 规则版本相关的数据访问操作
+    - 继承 BaseRepository 获得通用 CRUD 能力
+    - 自动应用租户过滤
 
-        使用全局统一的 TenantContext.build_query_filter 方法
+    约束：
+    - 禁止直接查询 Model，使用 self.filter() 方法
+    - 禁止手动传递 tenant_id 参数，从 Ctx 获取
+    """
 
-        Args:
-            query: 查询对象
-        """
-        filter_dict = TenantContext.build_query_filter(0, 'tenant_id')
-        if filter_dict:
-            query = query.filter(**filter_dict)
-        return query
+    def __init__(self):
+        super().__init__(RuleVersion)
 
     async def get_by_id(
         self,
@@ -40,14 +47,12 @@ class RuleVersionRepository:
         Returns:
             RuleVersion 对象或 None
         """
-        query = RuleVersion.filter(id=version_id)
-
-        query = self._apply_tenant_filter(query)
+        query = Q(id=version_id)
 
         if not include_deleted:
-            query = query.filter(deleted=0)
+            query &= Q(deleted=0)
 
-        return await query.first()
+        return await self.filter(query).first()
 
     async def get_latest(
         self,
@@ -64,81 +69,12 @@ class RuleVersionRepository:
         Returns:
             RuleVersion 对象或 None
         """
-        query = RuleVersion.filter(rule_id=rule_id)
-
-        query = self._apply_tenant_filter(query)
+        query = Q(rule_id=rule_id)
 
         if not include_deleted:
-            query = query.filter(deleted=0)
+            query &= Q(deleted=0)
 
-        return await query.order_by("-version_no").first()
-
-    async def get_by_rule_code(
-        self,
-        rule_code: str,
-        app_name: str = "",
-        include_deleted: bool = False
-    ) -> Optional[RuleVersion]:
-        """
-        根据规则编码获取最新版本（用于规则引擎执行）
-
-        Args:
-            rule_code: 规则编码
-            app_name: 应用名称
-            include_deleted: 是否包含已删除的
-
-        Returns:
-            RuleVersion 对象或 None
-        """
-        # 先通过 rule_info_repository 查询规则（只查询启用状态的规则）
-        rule = await rule_info_repository.get_by_code(
-            rule_code=rule_code,
-            app_name=app_name,
-            include_deleted=include_deleted,
-            status=1 if not include_deleted else None
-        )
-
-        if not rule or not rule.latest_version_id:
-            return None
-
-        # 获取最新版本
-        return await self.get_by_id(
-            version_id=rule.latest_version_id,
-            include_deleted=include_deleted
-        )
-
-    async def list(
-        self,
-        rule_id: int,
-        include_deleted: bool = False,
-        page: int = 1,
-        page_size: int = 20
-    ) -> Tuple[int, List[RuleVersion]]:
-        """
-        获取规则的版本列表
-
-        Args:
-            rule_id: 规则ID
-            include_deleted: 是否包含已删除的
-            page: 页码
-            page_size: 每页数量
-
-        Returns:
-            (总数, 版本列表)
-        """
-        query = RuleVersion.filter(rule_id=rule_id)
-
-        query = self._apply_tenant_filter(query)
-
-        if not include_deleted:
-            query = query.filter(deleted=0)
-
-        total = await query.count()
-        versions = await query.order_by("-version_no").offset(
-            (page - 1) * page_size
-        ).limit(page_size).all()
-
-        return total, versions
+        return await self.filter(query).order_by("-version_no").first()
 
     async def get_by_rule_id_and_version_no(
         self,
@@ -157,14 +93,55 @@ class RuleVersionRepository:
         Returns:
             RuleVersion 对象或 None
         """
-        query = RuleVersion.filter(rule_id=rule_id, version_no=version_no)
-
-        query = self._apply_tenant_filter(query)
+        query = Q(rule_id=rule_id, version_no=version_no)
 
         if not include_deleted:
-            query = query.filter(deleted=0)
+            query &= Q(deleted=0)
 
-        return await query.first()
+        return await self.filter(query).first()
+
+    async def list_versions(
+        self,
+        rule_id: int,
+        include_deleted: bool = False,
+        page: int = 1,
+        page_size: int = 20
+    ) -> Tuple[int, List[RuleVersion]]:
+        """
+        获取规则的版本列表
+
+        Args:
+            rule_id: 规则ID
+            include_deleted: 是否包含已删除的
+            page: 页码
+            page_size: 每页数量
+
+        Returns:
+            (总数, 版本列表)
+        """
+        query = Q(rule_id=rule_id)
+
+        if not include_deleted:
+            query &= Q(deleted=0)
+
+        total = await self.filter(query).count()
+        versions = await self.filter(query).order_by("-version_no").offset(
+            (page - 1) * page_size
+        ).limit(page_size).all()
+
+        return total, versions
+
+    async def delete_by_rule_id(self, rule_id: int) -> int:
+        """
+        删除指定规则的所有版本（物理删除）
+
+        Args:
+            rule_id: 规则ID
+
+        Returns:
+            删除的记录数
+        """
+        return await self.filter(rule_id=rule_id).delete()
 
 
 # 创建全局仓库实例
