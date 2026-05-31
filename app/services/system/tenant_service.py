@@ -19,10 +19,11 @@ from fastapi import HTTPException
 from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
-from app.core.ctx import Ctx
 from app.core.relation import RelationQuery
-from app.models.admin import Api, Menu, Role, Tenant
+from app.models.admin import Tenant
 from app.repositories import (
+    api_repository,
+    menu_repository,
     role_repository,
     tenant_repository,
     user_repository,
@@ -138,23 +139,23 @@ class TenantService:
         tenant = await tenant_repository.create(tenant_data)
 
         # 自动创建该租户的管理员角色
-        all_menus = await Menu.all().values("id")
-        all_apis = await Api.all().values("id")
+        all_menus = await menu_repository.get_all_ids()
+        all_apis = await api_repository.get_all_ids()
 
-        admin_role = await Role.create(
-            name=f"{tenant.name}管理员",
-            desc=f"{tenant.name}租户的管理员角色，拥有所有权限",
-            tenant_id=tenant.id,
-            is_system=True,
-        )
+        admin_role = await role_repository.create({
+            "name": f"{tenant.name}管理员",
+            "desc": f"{tenant.name}租户的管理员角色，拥有所有权限",
+            "tenant_id": tenant.id,
+            "is_system": True,
+        })
 
         # 批量关联所有菜单和API
         await RelationQuery.batch_add_role_menus(
-            [(admin_role.id, m["id"]) for m in all_menus],
+            [(admin_role.id, m_id) for m_id in all_menus],
             tenant_id=tenant.id
         )
         await RelationQuery.batch_add_role_apis(
-            [(admin_role.id, a["id"]) for a in all_apis],
+            [(admin_role.id, a_id) for a_id in all_apis],
             tenant_id=tenant.id
         )
 
@@ -194,7 +195,7 @@ class TenantService:
         使用 @atomic() 事务控制
         """
         # 获取租户
-        tenant = await self.get_tenant_by_id(tenant_id)
+        await self.get_tenant_by_id(tenant_id)
 
         # 删除租户（关联数据由数据库外键约束处理）
         await tenant_repository.delete(tenant_id)
@@ -224,11 +225,10 @@ class TenantService:
     async def add_user_to_tenant(self, tenant_id: int, user_id: int) -> None:
         """将用户添加到租户"""
         # 验证租户存在
-        tenant = await self.get_tenant_by_id(tenant_id)
+        await self.get_tenant_by_id(tenant_id)
 
-        # 验证用户存在（使用 model 直接查询，不应用租户过滤）
-        from app.models.admin import User
-        user = await User.filter(id=user_id).first()
+        # 验证用户存在（通过 Repository 查询，不应用租户过滤）
+        user = await user_repository.get_by_id(user_id)
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
 
@@ -242,11 +242,10 @@ class TenantService:
     async def remove_user_from_tenant(self, tenant_id: int, user_id: int) -> None:
         """从租户移除用户"""
         # 验证租户存在
-        tenant = await self.get_tenant_by_id(tenant_id)
+        await self.get_tenant_by_id(tenant_id)
 
-        # 验证用户存在（使用 model 直接查询，不应用租户过滤）
-        from app.models.admin import User
-        user = await User.filter(id=user_id).first()
+        # 验证用户存在（通过 Repository 查询，不应用租户过滤）
+        user = await user_repository.get_by_id(user_id)
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
 
@@ -269,7 +268,7 @@ class TenantService:
             dict: 包含成功和失败的数量
         """
         # 验证租户存在
-        tenant = await self.get_tenant_by_id(tenant_id)
+        await self.get_tenant_by_id(tenant_id)
 
         success_count = 0
         failed_count = 0

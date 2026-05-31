@@ -111,6 +111,53 @@ class LLMFillRequest(AppBaseRequest):
     use_additional_data: bool = Field(default=False, description="是否使用附加数据，为true时跳过additional_data中已有字段的LLM提取")
 
 
+# ==================== 反馈总结相关请求 ====================
+
+class SummaryFeedbackRequest(BasePublicRequest):
+    """反馈内容总结请求"""
+    order_id: str = Field(..., description="工单ID（唯一标识）")
+    brand: str = Field(..., description="品牌")
+    feedback_content: str = Field(..., description="反馈内容（需要总结的文本）")
+    callback: str = Field(default="", description="回调信息")
+
+
+# ==================== 规则执行相关请求 ====================
+
+class RuleExecutePromptConfig(BaseModel):
+    """规则执行提示词配置"""
+    type: str = Field(default="choice", description="任务类型: choice/text")
+    select_fields: List[str] = Field(default_factory=list, description="选择字段列表")
+    name_fields: List[str] = Field(default_factory=list, description="名称字段列表")
+    rule_fields: List[str] = Field(default_factory=list, description="规则字段列表")
+    filter: Optional[Dict[str, Any]] = Field(default=None, description="过滤条件")
+    name_separator: Optional[str] = Field(default=None, description="名称分隔符")
+    system_prompt_name: Optional[str] = Field(default=None, description="该规则特定的系统提示词名称")
+
+
+class RuleExecuteParam(BaseModel):
+    """规则执行参数"""
+    rule_name: str = Field(..., description="规则名称")
+    prompt: RuleExecutePromptConfig = Field(..., description="提示词配置")
+
+
+class RuleExecuteRequest(BasePublicRequest):
+    """规则执行引擎请求"""
+    session_id: str = Field(..., description="会话ID")
+    query: str = Field(..., description="用户输入文本")
+    method: Optional[str] = Field(default=None, description="LLM调用方法: plain/json_parser，不传则自动判断")
+    temperature: float = Field(default=0.7, description="温度参数")
+    step: int = Field(default=1, description="当前步骤")
+    is_last: bool = Field(default=False, description="是否为最后一步")
+    params: List[RuleExecuteParam] = Field(..., description="规则执行参数列表")
+    system_prompt: Optional[str] = Field(default=None, description="自定义系统提示词（可选）")
+    system_prompt_name: Optional[str] = Field(default=None, description="系统提示词名称（可选）")
+
+
+class RuleExecuteResultRequest(BasePublicRequest):
+    """规则执行结果查询请求"""
+    session_id: str = Field(..., description="会话ID")
+
+
 # ==================== 导出所有请求类 ====================
 
 __all__ = [
@@ -132,4 +179,11 @@ __all__ = [
     "AIFillDataRequest",
     "AIFillDataResultRequest",
     "LLMFillRequest",
+    # 反馈总结相关
+    "SummaryFeedbackRequest",
+    # 规则执行相关
+    "RuleExecuteRequest",
+    "RuleExecuteResultRequest",
+    "RuleExecuteParam",
+    "RuleExecutePromptConfig",
 ]

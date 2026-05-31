@@ -100,22 +100,18 @@ class RuleService:
         rule_code: str,
         app_name: str = ""
     ) -> Optional[RuleInfo]:
-        """根据编码获取规则（不包含已删除的）"""
+        """根据编码获取规则"""
         return await rule_info_repository.get_by_code(
             rule_code=rule_code,
-            app_name=app_name,
-            include_deleted=False
+            app_name=app_name
         )
 
     async def get_rule_by_id(
         self,
         rule_id: int
     ) -> Optional[RuleInfo]:
-        """根据ID获取规则（不包含已删除的）"""
-        return await rule_info_repository.get_by_id(
-            rule_id=rule_id,
-            include_deleted=False
-        )
+        """根据ID获取规则"""
+        return await rule_info_repository.get_by_id(rule_id=rule_id)
 
     async def list_rules(
         self,
@@ -125,12 +121,11 @@ class RuleService:
         page: int = 1,
         page_size: int = 20
     ) -> Tuple[int, List[RuleInfo]]:
-        """获取规则列表（不包含已删除的）"""
+        """获取规则列表"""
         return await rule_info_repository.list_rules(
             app_name=app_name,
             keyword=keyword,
             status=status,
-            include_deleted=False,
             page=page,
             page_size=page_size
         )
@@ -153,8 +148,7 @@ class RuleService:
         if rule.latest_version_id:
             # 使用 Repository 获取版本
             version = await rule_version_repository.get_by_id(
-                version_id=rule.latest_version_id,
-                include_deleted=False
+                version_id=rule.latest_version_id
             )
             if version:
                 result["current_version"] = await self.version_to_dict(version)
@@ -246,33 +240,19 @@ class RuleService:
         if not rule_code:
             rule_code = self.generate_rule_code(rule_name)
 
-        # 使用 Repository 检查编码是否已存在（只检查未删除的）
+        # 使用 Repository 检查编码是否已存在
         if await rule_info_repository.check_code_exists(
             rule_code=rule_code,
             app_name=app_name
         ):
             raise ValueError(f"规则编码已存在: {rule_code}")
 
-        # 检查规则名称是否已存在（只检查未删除的）
+        # 检查规则名称是否已存在
         if await rule_info_repository.check_name_exists(
             rule_name=rule_name,
             app_name=app_name
         ):
             raise ValueError(f"规则名称已存在: {rule_name}")
-
-        # 检查是否有已删除的相同编码记录，如果有则物理删除（避免唯一键冲突）
-        deleted_rule = await rule_info_repository.get_deleted_by_code(
-            rule_code=rule_code,
-            app_name=app_name
-        )
-
-        if deleted_rule:
-            logger.info("发现已删除的相同编码规则，执行物理删除",
-                       rule_id=deleted_rule.id, rule_code=rule_code)
-            # 先删除关联的版本记录
-            await rule_version_repository.delete_by_rule_id(deleted_rule.id)
-            # 再物理删除规则（使用 Repository 层）
-            await rule_info_repository.delete(deleted_rule.id)
 
         # 创建规则（tenant_id 由 Repository 自动注入）
         create_data = {
@@ -280,8 +260,7 @@ class RuleService:
             "rule_code": rule_code,
             "rule_name": rule_name,
             "desc": desc,
-            "status": 1,
-            "deleted": 0
+            "status": 1
         }
 
         rule = await rule_info_repository.create(create_data)
@@ -304,11 +283,8 @@ class RuleService:
         if not rule:
             raise ValueError("规则不存在")
 
-        # 使用 Repository 获取最新版本（不包含已删除的）
-        latest_version = await rule_version_repository.get_latest(
-            rule_id=rule.id,
-            include_deleted=False
-        )
+        # 使用 Repository 获取最新版本
+        latest_version = await rule_version_repository.get_latest(rule_id=rule.id)
 
         logger.info(
             "save_version debug",
@@ -352,8 +328,7 @@ class RuleService:
             "doc_count": storage_result["doc_count"],
             "headers": storage_result["headers"],
             "remark": remark or "",
-            "status": 1,
-            "deleted": 0
+            "status": 1
         }
 
         new_version = await rule_version_repository.create(create_data)
@@ -393,10 +368,7 @@ class RuleService:
             raise ValueError("规则不存在")
 
         # 使用 Repository 获取最新版本
-        latest_version = await rule_version_repository.get_latest(
-            rule_id=rule.id,
-            include_deleted=False
-        )
+        latest_version = await rule_version_repository.get_latest(rule_id=rule.id)
 
         version_no = (latest_version.version_no + 1) if latest_version else 1
         content_json = {"headers": headers, "data": []}
@@ -413,8 +385,7 @@ class RuleService:
             "doc_count": doc_count,
             "headers": headers,
             "remark": remark or "",
-            "status": 1,
-            "deleted": 0
+            "status": 1
         }
 
         new_version = await rule_version_repository.create(create_data)
@@ -443,17 +414,13 @@ class RuleService:
     ) -> Tuple[int, List[Dict[str, Any]]]:
         """获取版本历史"""
         # 使用 Repository 获取规则
-        rule = await rule_info_repository.get_by_code(
-            rule_code=rule_code,
-            include_deleted=False
-        )
+        rule = await rule_info_repository.get_by_code(rule_code=rule_code)
         if not rule:
             raise ValueError(f"规则不存在: {rule_code}")
 
         # 使用 Repository 获取版本列表
         total, versions = await rule_version_repository.list_versions(
             rule_id=rule.id,
-            include_deleted=False,
             page=page,
             page_size=page_size
         )
@@ -481,18 +448,14 @@ class RuleService:
     ) -> Optional[Dict[str, Any]]:
         """获取指定版本"""
         # 使用 Repository 获取规则
-        rule = await rule_info_repository.get_by_code(
-            rule_code=rule_code,
-            include_deleted=False
-        )
+        rule = await rule_info_repository.get_by_code(rule_code=rule_code)
         if not rule:
             return None
 
         # 直接根据 rule_id 和 version_no 查询版本
         version = await rule_version_repository.get_by_rule_id_and_version_no(
             rule_id=rule.id,
-            version_no=version_no,
-            include_deleted=False
+            version_no=version_no
         )
 
         if not version:
@@ -505,10 +468,7 @@ class RuleService:
         version_id: int
     ) -> Optional[RuleVersion]:
         """根据ID获取版本"""
-        return await rule_version_repository.get_by_id(
-            version_id=version_id,
-            include_deleted=False
-        )
+        return await rule_version_repository.get_by_id(version_id=version_id)
 
     @atomic()
     async def rollback_version(
@@ -528,8 +488,7 @@ class RuleService:
         # 直接根据 rule_id 和 version_no 查询版本
         target_version = await rule_version_repository.get_by_rule_id_and_version_no(
             rule_id=rule.id,
-            version_no=version_no,
-            include_deleted=False
+            version_no=version_no
         )
 
         if not target_version:
@@ -540,10 +499,7 @@ class RuleService:
             raise ValueError("无法获取版本内容")
 
         # 使用 Repository 获取最新版本
-        latest_version = await rule_version_repository.get_latest(
-            rule_id=rule.id,
-            include_deleted=False
-        )
+        latest_version = await rule_version_repository.get_latest(rule_id=rule.id)
 
         current_md5 = latest_version.content_md5 if latest_version else ""
 
@@ -568,10 +524,7 @@ class RuleService:
         使用 @atomic() 装饰器控制事务
         """
         # 使用 Repository 获取规则
-        rule = await rule_info_repository.get_by_id(
-            rule_id=rule_id,
-            include_deleted=False
-        )
+        rule = await rule_info_repository.get_by_id(rule_id=rule_id)
         if not rule:
             raise ValueError(f"规则不存在: {rule_id}")
 
@@ -604,7 +557,7 @@ class RuleService:
         app_name: str = ""
     ) -> None:
         """
-        删除规则（软删除）
+        删除规则（物理删除）
 
         使用 @atomic() 装饰器控制事务
         """
@@ -612,33 +565,22 @@ class RuleService:
         if not rule:
             raise ValueError(f"规则不存在: {rule_code}")
 
-        # 软删除规则（使用 Repository 层）
-        await rule_info_repository.update(
-            rule.id,
-            {
-                "deleted": 1,
-                "deleted_at": datetime.now()
-            }
-        )
-
-        # 软删除所有版本，同时删除 seekdb 集合
-        # 注意：这里需要获取所有版本（包括已删除的），因为可能有之前已删除的版本
+        # 获取所有版本并删除 seekdb 集合
         _, versions = await rule_version_repository.list_versions(
             rule_id=rule.id,
-            include_deleted=True,
             page=1,
             page_size=10000
         )
         for version in versions:
-            # 软删除版本（使用 Repository 层）
-            await rule_version_repository.update(
-                version.id,
-                {"deleted": 1}
-            )
-
             # 删除 seekdb 集合
             if version.seekdb_collection_name:
                 seekdb_service.delete_collection(version.seekdb_collection_name)
+
+        # 物理删除所有版本
+        await rule_version_repository.delete_by_rule_id(rule.id)
+
+        # 物理删除规则
+        await rule_info_repository.delete(rule.id)
 
         logger.info("删除规则成功", rule_id=rule.id, rule_code=rule_code)
 
@@ -653,10 +595,7 @@ class RuleService:
 
         使用 @atomic() 装饰器控制事务
         """
-        rule = await rule_info_repository.get_by_id(
-            rule_id=rule_id,
-            include_deleted=False
-        )
+        rule = await rule_info_repository.get_by_id(rule_id=rule_id)
         if not rule:
             raise ValueError(f"规则不存在: {rule_id}")
 

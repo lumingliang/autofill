@@ -136,6 +136,55 @@ class FillDataRecordService:
         record = await self.get_record_by_id(record_id)
         return record is not None
 
+    async def record_fill_data(
+        self,
+        session_id: str,
+        app_name: str,
+        data: dict,
+        phone: Optional[str] = None,
+        user_unique_id: Optional[str] = None,
+        user_name: Optional[str] = None
+    ) -> FillDataRecord:
+        """
+        记录填单数据，支持数据合并
+
+        Args:
+            session_id: 会话ID
+            app_name: 应用名称
+            data: 填单数据
+            phone: 用户手机号
+            user_unique_id: 用户唯一标识
+            user_name: 用户名称
+
+        Returns:
+            FillDataRecord 对象
+        """
+        record = await fill_data_record_repository.get_by_session_and_app(
+            session_id=session_id,
+            app_name=app_name
+        )
+
+        if record:
+            record = await fill_data_record_repository.update_record_data(
+                record=record,
+                data=data,
+                phone=phone,
+                user_unique_id=user_unique_id,
+                user_name=user_name
+            )
+        else:
+            create_data = {
+                "session_id": session_id,
+                "app_name": app_name,
+                "data": data,
+                "phone": phone or "",
+                "user_unique_id": user_unique_id or "",
+                "user_name": user_name or ""
+            }
+            record = await fill_data_record_repository.create(create_data)
+
+        return record
+
 
 # 创建全局服务实例
 fill_data_record_service = FillDataRecordService()

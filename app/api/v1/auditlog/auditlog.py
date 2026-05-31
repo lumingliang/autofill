@@ -4,7 +4,7 @@ from fastapi import APIRouter, Header, Query
 from tortoise.expressions import Q
 
 from app.core.dependency import AuthControl, is_superuser, get_effective_tenant_id
-from app.models.admin import AuditLog, User
+from app.repositories.system.audit_log_repository import audit_log_repository
 from app.schemas import SuccessExtra
 from app.schemas.apis import *
 
@@ -46,7 +46,7 @@ async def get_audit_log_list(
         q &= Q(created_at__gte=start_time)
     elif end_time:
         q &= Q(created_at__lte=end_time)
-    
+
     # 多租户筛选：仅超级管理员可按租户筛选
     effective_tenant_id = get_effective_tenant_id(current_user, tenant_id if tenant_id is not None else 0)
     if effective_tenant_id > 0:
@@ -55,7 +55,11 @@ async def get_audit_log_list(
         # 非超级管理员且没有有效租户ID，使用当前租户ID（可能为0）
         q &= Q(tenant_id=current_user.current_tenant_id)
 
-    audit_log_objs = await AuditLog.filter(q).offset((page - 1) * page_size).limit(page_size).order_by("-created_at")
-    total = await AuditLog.filter(q).count()
+    total, audit_log_objs = await audit_log_repository.list_with_filter(
+        page=page,
+        page_size=page_size,
+        search=q,
+        order=["-created_at"]
+    )
     data = [await audit_log.to_dict() for audit_log in audit_log_objs]
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)

@@ -10,7 +10,7 @@ from tortoise.expressions import Q
 from app.controllers.llm_config import llm_config_controller
 from app.core.dependency import AuthControl, is_superuser
 from app.log import logger
-from app.models.llm_config import LLMProvider
+from app.repositories.llm.llm_provider_repository import llm_provider_repository
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.llm_config import (
     LLMConfigCreate,
@@ -26,7 +26,7 @@ llm_config_router = APIRouter()
 
 async def get_llm_providers_from_db() -> List[Dict[str, Any]]:
     """从数据库获取启用的模型提供商列表"""
-    providers = await LLMProvider.filter(is_active=True).order_by("order", "id")
+    providers = await llm_provider_repository.get_active_providers()
     return [await p.to_dict() for p in providers]
 
 

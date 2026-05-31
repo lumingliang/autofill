@@ -5,6 +5,7 @@ LLM 配置 Service 层
 from typing import Optional
 
 from app.models.llm_config import LLMConfig
+from app.repositories.llm.llm_config_repository import llm_config_repository
 
 
 class LLMConfigService:
@@ -18,7 +19,7 @@ class LLMConfigService:
         Returns:
             LLMConfig 实例或 None
         """
-        return await LLMConfig.filter(is_default=True, is_active=True).first()
+        return await llm_config_repository.get_default_config()
 
 
 # 全局服务实例

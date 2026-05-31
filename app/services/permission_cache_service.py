@@ -2,11 +2,11 @@
 """
 权限缓存服务 - 统一管理用户权限缓存
 """
-from typing import List, Set, Optional
+from typing import Set, Optional
 from app.core.redis import redis_client
 from app.core.relation import RelationQuery
-from app.models.admin import Api
 from app.log import logger
+from app.repositories import api_repository, user_tenant_repository
 
 
 class PermissionCacheService:
@@ -63,8 +63,8 @@ class PermissionCacheService:
             return set()
 
         # 查询API codes
-        apis = await Api.filter(id__in=all_api_ids).values("api_code")
-        return {api["api_code"] for api in apis}
+        api_codes = await api_repository.get_codes_by_ids(all_api_ids)
+        return set(api_codes)
 
     @classmethod
     async def clear_user_cache(cls, user_id: int, tenant_id: int) -> None:
@@ -109,10 +109,9 @@ class PermissionCacheService:
             return 0
 
         # 获取这些用户关联的所有租户
-        from app.models.admin import UserTenant
         tenant_ids = set()
         for user_id in user_ids:
-            user_tenants = await UserTenant.filter(user_id=user_id).values_list("tenant_id", flat=True)
+            user_tenants = await user_tenant_repository.get_tenant_ids_by_user_id(user_id)
             tenant_ids.update(user_tenants)
 
         # 清除缓存

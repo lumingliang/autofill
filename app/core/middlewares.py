@@ -1,20 +1,16 @@
 
 import json
-import re
 import uuid
 from datetime import datetime
-from typing import Any, AsyncGenerator
+from typing import Any
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, Response, StreamingResponse
-from fastapi.routing import APIRoute
+from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
 from app.core.ctx import Ctx
 from app.core.dependency import AuthControl
-from app.core.tenant import TenantContext
 from app.log import logger, set_request_id, set_tenant_domain
 from app.models.admin import AuditLog, User
 
@@ -79,14 +75,13 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
     功能：
     1. 在请求开始时从 Header 获取 token 进行认证
-    2. 设置 TenantContext 和 Ctx（用户和租户ID）
+    2. 设置 Ctx（用户和租户ID）
     3. 将用户信息和租户ID存储到请求状态中
     4. 请求结束后清理租户上下文
 
     使用方式：
     - API Handler 直接从 request.state 获取 current_user 和 tenant_id
-    - Service/Repository 层从 Ctx 获取租户信息（推荐新代码使用）
-    - Service/Repository 层从 TenantContext 获取租户信息（兼容旧代码）
+    - Service/Repository 层从 Ctx 获取租户信息
     - 不需要在 API 层重复调用 AuthControl.is_authed()
     """
 
@@ -126,16 +121,11 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 request_tenant_id = await self._get_request_tenant_id(request, user)
                 jwt_tenant_id = getattr(user, "current_tenant_id", 0)
 
-                # 设置新的 Ctx 上下文（推荐新代码使用）
+                # 设置 Ctx 上下文
                 Ctx.set_user(user)
                 Ctx.set_jwt_tenant_id(jwt_tenant_id)
                 if user.is_superuser:
                     Ctx.set_request_tenant_id(request_tenant_id)
-
-                # 设置旧的 TenantContext 上下文（兼容旧代码）
-                TenantContext.set_user(user)
-                if user.is_superuser and request_tenant_id > 0:
-                    TenantContext.set_tenant_id(request_tenant_id)
 
                 # 存储到请求状态，供 API Handler 直接使用
                 request.state.current_user = user
@@ -151,7 +141,6 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
         # 请求结束后清理租户上下文
         Ctx.clear()
-        TenantContext.clear()
 
         return response
 

@@ -10,6 +10,13 @@ from .schemas import (
     TenantAppBaseRequest,
     # 填单数据相关
     RecordFillDataRequest,
+    # 反馈总结相关
+    SummaryFeedbackRequest,
+    # 规则执行相关
+    RuleExecuteRequest,
+    RuleExecuteResultRequest,
+    RuleExecuteParam,
+    RuleExecutePromptConfig,
 )
 
 __all__ = [
@@ -20,4 +27,11 @@ __all__ = [
     "TenantAppBaseRequest",
     # 填单数据相关
     "RecordFillDataRequest",
+    # 反馈总结相关
+    "SummaryFeedbackRequest",
+    # 规则执行相关
+    "RuleExecuteRequest",
+    "RuleExecuteResultRequest",
+    "RuleExecuteParam",
+    "RuleExecutePromptConfig",
 ]

@@ -34,53 +34,38 @@ class RuleVersionRepository(BaseRepository[RuleVersion]):
 
     async def get_by_id(
         self,
-        version_id: int,
-        include_deleted: bool = False
+        version_id: int
     ) -> Optional[RuleVersion]:
         """
         根据ID获取版本
 
         Args:
             version_id: 版本ID
-            include_deleted: 是否包含已删除的
 
         Returns:
             RuleVersion 对象或 None
         """
-        query = Q(id=version_id)
-
-        if not include_deleted:
-            query &= Q(deleted=0)
-
-        return await self.filter(query).first()
+        return await self.filter(Q(id=version_id)).first()
 
     async def get_latest(
         self,
-        rule_id: int,
-        include_deleted: bool = False
+        rule_id: int
     ) -> Optional[RuleVersion]:
         """
         获取规则的最新版本
 
         Args:
             rule_id: 规则ID
-            include_deleted: 是否包含已删除的
 
         Returns:
             RuleVersion 对象或 None
         """
-        query = Q(rule_id=rule_id)
-
-        if not include_deleted:
-            query &= Q(deleted=0)
-
-        return await self.filter(query).order_by("-version_no").first()
+        return await self.filter(Q(rule_id=rule_id)).order_by("-version_no").first()
 
     async def get_by_rule_id_and_version_no(
         self,
         rule_id: int,
-        version_no: int,
-        include_deleted: bool = False
+        version_no: int
     ) -> Optional[RuleVersion]:
         """
         根据规则ID和版本号获取版本
@@ -88,22 +73,15 @@ class RuleVersionRepository(BaseRepository[RuleVersion]):
         Args:
             rule_id: 规则ID
             version_no: 版本号
-            include_deleted: 是否包含已删除的
 
         Returns:
             RuleVersion 对象或 None
         """
-        query = Q(rule_id=rule_id, version_no=version_no)
-
-        if not include_deleted:
-            query &= Q(deleted=0)
-
-        return await self.filter(query).first()
+        return await self.filter(Q(rule_id=rule_id, version_no=version_no)).first()
 
     async def list_versions(
         self,
         rule_id: int,
-        include_deleted: bool = False,
         page: int = 1,
         page_size: int = 20
     ) -> Tuple[int, List[RuleVersion]]:
@@ -112,7 +90,6 @@ class RuleVersionRepository(BaseRepository[RuleVersion]):
 
         Args:
             rule_id: 规则ID
-            include_deleted: 是否包含已删除的
             page: 页码
             page_size: 每页数量
 
@@ -120,9 +97,6 @@ class RuleVersionRepository(BaseRepository[RuleVersion]):
             (总数, 版本列表)
         """
         query = Q(rule_id=rule_id)
-
-        if not include_deleted:
-            query &= Q(deleted=0)
 
         total = await self.filter(query).count()
         versions = await self.filter(query).order_by("-version_no").offset(

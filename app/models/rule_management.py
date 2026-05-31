@@ -17,8 +17,6 @@ class RuleInfo(BaseModel):
     config = fields.TextField(null=True, description="CSV导入配置（JSON格式）")
     curl_config = fields.TextField(null=True, description="CURL导入配置（JSON格式）")
     status = fields.IntField(default=1, description="状态：0-禁用，1-启用")
-    deleted = fields.IntField(default=0, index=True, description="是否删除：0-未删除，1-已删除")
-    deleted_at = fields.DatetimeField(null=True, description="删除时间")
     created_at = fields.DatetimeField(auto_now_add=True, index=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -40,7 +38,6 @@ class RuleVersion(BaseModel):
     headers = fields.JSONField(null=True, description="CSV 表头列表（JSON格式）")
     remark = fields.CharField(max_length=512, default="", description="版本备注，记录本次修改内容")
     status = fields.IntField(default=1, description="状态：0-废弃，1-有效")
-    deleted = fields.IntField(default=0, index=True, description="是否删除：0-未删除，1-已删除")
     created_at = fields.DatetimeField(auto_now_add=True, index=True)
 
     class Meta:

@@ -385,6 +385,18 @@ class UserService:
 
         return target_user
 
+    @atomic()
+    async def update_avatar(self, user_id: int, avatar_url: str) -> None:
+        """
+        更新用户头像
+
+        Args:
+            user_id: 用户ID
+            avatar_url: 头像URL
+        """
+        await self.get_user_by_id(user_id)
+        await user_repository.update(user_id, {"avatar": avatar_url})
+
 
 # 全局 Service 实例
 user_service = UserService()

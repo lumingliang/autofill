@@ -34,30 +34,23 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
 
     async def get_by_id(
         self,
-        rule_id: int,
-        include_deleted: bool = False
+        rule_id: int
     ) -> Optional[RuleInfo]:
         """
         根据ID获取规则
 
         Args:
             rule_id: 规则ID
-            include_deleted: 是否包含已删除的规则
 
         Returns:
             RuleInfo 对象或 None
         """
-        query = Q(id=rule_id)
-        if not include_deleted:
-            query &= Q(deleted=0)
-
-        return await self.filter(query).first()
+        return await self.filter(Q(id=rule_id)).first()
 
     async def get_by_code(
         self,
         rule_code: str,
         app_name: str = "",
-        include_deleted: bool = False,
         status: Optional[int] = None
     ) -> Optional[RuleInfo]:
         """
@@ -66,7 +59,6 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
         Args:
             rule_code: 规则编码
             app_name: 应用名称
-            include_deleted: 是否包含已删除的规则
             status: 状态筛选（可选）
 
         Returns:
@@ -76,9 +68,6 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
 
         if app_name:
             query &= Q(app_name=app_name)
-
-        if not include_deleted:
-            query &= Q(deleted=0)
 
         if status is not None:
             query &= Q(status=status)
@@ -92,7 +81,7 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
         exclude_id: Optional[int] = None
     ) -> bool:
         """
-        检查规则编码是否已存在（排除已删除的）
+        检查规则编码是否已存在
 
         Args:
             rule_code: 规则编码
@@ -100,9 +89,9 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
             exclude_id: 要排除的规则ID（用于修改时排除自身）
 
         Returns:
-            是否存在（只检查未删除的）
+            是否存在
         """
-        query = Q(rule_code=rule_code, deleted=0)
+        query = Q(rule_code=rule_code)
 
         if app_name:
             query &= Q(app_name=app_name)
@@ -118,7 +107,7 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
         exclude_id: Optional[int] = None
     ) -> bool:
         """
-        检查规则名称是否已存在（排除已删除的）
+        检查规则名称是否已存在
 
         Args:
             rule_name: 规则名称
@@ -126,9 +115,9 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
             exclude_id: 要排除的规则ID（用于修改时排除自身）
 
         Returns:
-            是否存在（只检查未删除的）
+            是否存在
         """
-        query = Q(rule_name=rule_name, deleted=0)
+        query = Q(rule_name=rule_name)
 
         if app_name:
             query &= Q(app_name=app_name)
@@ -142,7 +131,6 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
         app_name: str = "",
         keyword: str = "",
         status: Optional[int] = None,
-        include_deleted: bool = False,
         page: int = 1,
         page_size: int = 20
     ) -> Tuple[int, List[RuleInfo]]:
@@ -153,7 +141,6 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
             app_name: 应用名称
             keyword: 关键词搜索（匹配 rule_code 或 rule_name）
             status: 状态筛选
-            include_deleted: 是否包含已删除的
             page: 页码
             page_size: 每页数量
 
@@ -161,9 +148,6 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
             (总数, 规则列表)
         """
         query = Q()
-
-        if not include_deleted:
-            query &= Q(deleted=0)
 
         if app_name:
             query &= Q(app_name=app_name)
@@ -192,36 +176,14 @@ class RuleInfoRepository(BaseRepository[RuleInfo]):
             app_name: 应用名称
 
         Returns:
-            规则列表（只返回未删除且状态为启用的）
+            规则列表（只返回状态为启用的）
         """
-        query = Q(deleted=0, status=1)
+        query = Q(status=1)
 
         if app_name:
             query &= Q(app_name=app_name)
 
         return await self.filter(query).all()
-
-    async def get_deleted_by_code(
-        self,
-        rule_code: str,
-        app_name: str = ""
-    ) -> Optional[RuleInfo]:
-        """
-        获取已删除的相同编码规则（用于物理删除避免唯一键冲突）
-
-        Args:
-            rule_code: 规则编码
-            app_name: 应用名称
-
-        Returns:
-            已删除的 RuleInfo 对象或 None
-        """
-        query = Q(rule_code=rule_code, deleted=1)
-
-        if app_name:
-            query &= Q(app_name=app_name)
-
-        return await self.filter(query).first()
 
 
 # 创建全局仓库实例
