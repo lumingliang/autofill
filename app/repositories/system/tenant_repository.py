@@ -36,7 +36,11 @@ class TenantRepository(BaseRepository[Tenant]):
 
     async def get_by_domain(self, domain: str) -> Optional[Tenant]:
         """根据域名获取租户"""
-        return await self.model.filter(domain=domain).first()
+        return await self.filter(domain=domain).first()
+
+    async def get_by_ids(self, tenant_ids: list) -> list[Tenant]:
+        """根据ID列表批量获取租户"""
+        return await self.filter(id__in=tenant_ids).all()
 
 
 # 全局 Repository 实例

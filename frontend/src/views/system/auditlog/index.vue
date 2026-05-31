@@ -117,7 +117,6 @@ const pagination = reactive({
 
 // 其他数据
 const dateRange = ref<any[]>([])
-const tenantOptions = ref<any[]>([])
 
 // 计算属性
 const columns = computed(() => [
@@ -229,14 +228,7 @@ function handleDateRangeChange(dates: any, dateStrings: string[]) {
   }
 }
 
-async function loadTenants() {
-  if (!isSuperUser.value) return
-  const res: any = await api.getTenantSelect()
-  tenantOptions.value = (res.data || []).map((item: any) => ({ label: item.name, value: item.id }))
-}
-
 onMounted(() => {
   loadData()
-  loadTenants()
 })
 </script>

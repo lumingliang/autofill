@@ -34,7 +34,7 @@ class RoleRepository(BaseRepository[Role]):
 
     async def get_by_name(self, name: str):
         """根据名称获取角色（应用租户过滤）"""
-        return await self.get_queryset().filter(name=name).first()
+        return await self.filter(name=name).first()
 
     async def list_by_name(
         self,
@@ -55,7 +55,7 @@ class RoleRepository(BaseRepository[Role]):
         Returns:
             Tuple[int, List[Role]]: (总数, 角色列表)
         """
-        query = self.get_queryset()
+        query = self.filter()
 
         if role_name:
             query = query.filter(name__contains=role_name)
@@ -80,7 +80,7 @@ class RoleRepository(BaseRepository[Role]):
         Returns:
             bool: 是否存在
         """
-        return await self.get_queryset().filter(
+        return await self.filter(
             id__in=role_ids,
             tenant_id=tenant_id
         ).exists()

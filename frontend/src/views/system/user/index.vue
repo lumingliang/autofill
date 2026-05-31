@@ -200,7 +200,6 @@ const pagination = reactive({
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const tenantOptions = ref<any[]>([])
 const roleOptions = ref<any[]>([])
 const deptOptions = ref<any[]>([])
 
@@ -288,13 +287,6 @@ async function loadData() {
   } finally {
     loading.value = false
   }
-}
-
-async function loadTenants() {
-  // 超级管理员和租户管理员都需要加载租户列表
-  if (!userStore.isSuperUser && !userStore.isTenantAdmin) return
-  const res: any = await api.getTenantSelect()
-  tenantOptions.value = (res.data || []).map((item: any) => ({ label: item.name, value: item.id }))
 }
 
 async function loadRoles(tenantId?: number) {
@@ -588,7 +580,6 @@ function handleDeptClick(_selectedKeys: any, e: any) {
 
 onMounted(() => {
   loadData()
-  loadTenants()
   if (!userStore.isSuperUser && userStore.currentTenantId) {
     loadRoles(userStore.currentTenantId)
     loadDepts(userStore.currentTenantId)

@@ -32,7 +32,7 @@ class RoleApiRepository(BaseRepository[RoleApi]):
         Returns:
             List[int]: API ID列表
         """
-        rows = await self.get_queryset().filter(role_id=role_id).values("api_id")
+        rows = await self.filter(role_id=role_id).values("api_id")
         return [r["api_id"] for r in rows]
 
     async def get_role_ids_by_api_id(self, api_id: int) -> List[int]:
@@ -45,7 +45,7 @@ class RoleApiRepository(BaseRepository[RoleApi]):
         Returns:
             List[int]: 角色ID列表
         """
-        rows = await self.get_queryset().filter(api_id=api_id).values("role_id")
+        rows = await self.filter(api_id=api_id).values("role_id")
         return [r["role_id"] for r in rows]
 
     async def batch_get_api_ids_by_role_ids(self, role_ids: List[int]) -> dict[int, List[int]]:
@@ -60,7 +60,7 @@ class RoleApiRepository(BaseRepository[RoleApi]):
         Returns:
             dict[int, List[int]]: 角色ID到API ID列表的映射
         """
-        rows = await self.get_queryset().filter(role_id__in=role_ids).values("role_id", "api_id")
+        rows = await self.filter(role_id__in=role_ids).values("role_id", "api_id")
         result: dict[int, List[int]] = {}
         for r in rows:
             result.setdefault(r["role_id"], []).append(r["api_id"])
@@ -75,7 +75,7 @@ class RoleApiRepository(BaseRepository[RoleApi]):
             api_ids: API ID列表
             tenant_id: 租户ID
         """
-        await self.get_queryset().filter(role_id=role_id, tenant_id=tenant_id).delete()
+        await self.filter(role_id=role_id, tenant_id=tenant_id).delete()
 
         if api_ids:
             await self.model.bulk_create(

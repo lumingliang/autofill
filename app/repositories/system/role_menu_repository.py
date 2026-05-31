@@ -31,7 +31,7 @@ class RoleMenuRepository(BaseRepository[RoleMenu]):
         Returns:
             List[int]: 菜单ID列表
         """
-        rows = await self.get_queryset().filter(role_id=role_id).values("menu_id")
+        rows = await self.filter(role_id=role_id).values("menu_id")
         return [r["menu_id"] for r in rows]
 
     async def get_role_ids_by_menu_id(self, menu_id: int) -> List[int]:
@@ -44,7 +44,7 @@ class RoleMenuRepository(BaseRepository[RoleMenu]):
         Returns:
             List[int]: 角色ID列表
         """
-        rows = await self.get_queryset().filter(menu_id=menu_id).values("role_id")
+        rows = await self.filter(menu_id=menu_id).values("role_id")
         return [r["role_id"] for r in rows]
 
     async def batch_get_menu_ids_by_role_ids(self, role_ids: List[int]) -> dict[int, List[int]]:
@@ -57,7 +57,7 @@ class RoleMenuRepository(BaseRepository[RoleMenu]):
         Returns:
             dict[int, List[int]]: 角色ID到菜单ID列表的映射
         """
-        rows = await self.get_queryset().filter(role_id__in=role_ids).values("role_id", "menu_id")
+        rows = await self.filter(role_id__in=role_ids).values("role_id", "menu_id")
         result: dict[int, List[int]] = {}
         for r in rows:
             result.setdefault(r["role_id"], []).append(r["menu_id"])
@@ -72,7 +72,7 @@ class RoleMenuRepository(BaseRepository[RoleMenu]):
             menu_ids: 菜单ID列表
             tenant_id: 租户ID
         """
-        await self.get_queryset().filter(role_id=role_id, tenant_id=tenant_id).delete()
+        await self.filter(role_id=role_id, tenant_id=tenant_id).delete()
 
         if menu_ids:
             await self.model.bulk_create(

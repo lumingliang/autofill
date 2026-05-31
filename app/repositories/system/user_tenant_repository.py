@@ -24,7 +24,7 @@ class UserTenantRepository(BaseRepository[UserTenant]):
 
     async def get_user_ids_by_tenant(self) -> List[int]:
         """获取当前租户下的所有用户ID（自动应用租户过滤）"""
-        return await self.get_queryset().values_list("user_id", flat=True)
+        return await self.filter().values_list("user_id", flat=True)
 
     async def exists_by_user_id(self, user_id: int) -> bool:
         """
@@ -36,7 +36,7 @@ class UserTenantRepository(BaseRepository[UserTenant]):
         Returns:
             bool: 是否存在
         """
-        return await self.get_queryset().filter(user_id=user_id).exists()
+        return await self.filter(user_id=user_id).exists()
 
     async def get_tenant_ids_by_user_id(self, user_id: int) -> List[int]:
         """
@@ -48,7 +48,7 @@ class UserTenantRepository(BaseRepository[UserTenant]):
         Returns:
             List[int]: 租户ID列表
         """
-        rows = await self.get_queryset().filter(user_id=user_id).values("tenant_id")
+        rows = await self.filter(user_id=user_id).values("tenant_id")
         return [r["tenant_id"] for r in rows]
 
     async def batch_get_tenant_ids_by_user_ids(self, user_ids: List[int]) -> dict[int, List[int]]:
@@ -61,7 +61,7 @@ class UserTenantRepository(BaseRepository[UserTenant]):
         Returns:
             dict[int, List[int]]: 用户ID到租户ID列表的映射
         """
-        rows = await self.get_queryset().filter(user_id__in=user_ids).values("user_id", "tenant_id")
+        rows = await self.filter(user_id__in=user_ids).values("user_id", "tenant_id")
         result: dict[int, List[int]] = {}
         for r in rows:
             result.setdefault(r["user_id"], []).append(r["tenant_id"])
@@ -115,7 +115,7 @@ class UserTenantRepository(BaseRepository[UserTenant]):
 
         # 只查询相关用户的数据，减少查询范围
         user_ids = list(set(uid for uid, _ in user_id_tenant_id_pairs))
-        existing = await self.get_queryset().filter(user_id__in=user_ids).values("user_id", "tenant_id")
+        existing = await self.filter(user_id__in=user_ids).values("user_id", "tenant_id")
         existing_set = {(r["user_id"], r["tenant_id"]) for r in existing}
 
         to_create = []

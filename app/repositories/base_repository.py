@@ -55,22 +55,6 @@ class BaseRepository(Generic[ModelType]):
     def __init__(self, model: Type[ModelType]):
         self.model = model
 
-    def get_queryset(self) -> QuerySet[ModelType]:
-        """
-        获取已应用租户过滤的 QuerySet
-
-        使用示例：
-            return await self.get_queryset().filter(ancestor=ancestor_id).values_list("descendant", flat=True)
-            return await self.get_queryset().filter(user_id=user_id).values("role_id")
-
-        Returns:
-            QuerySet[ModelType]: 已应用租户过滤的 QuerySet
-        """
-        tenant_filter = self._get_tenant_filter()
-        if tenant_filter:
-            return self.model.filter(**tenant_filter)
-        return self.model.all()
-
     def _get_tenant_filter(self) -> Dict[str, Any]:
         """
         获取租户过滤条件

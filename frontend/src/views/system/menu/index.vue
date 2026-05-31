@@ -2,10 +2,7 @@
   <div class="menu-page crud-page">
     <a-card>
       <div class="table-actions">
-        <a-button v-permission="'post/api/v1/menu/create'" type="primary" @click="handleClickAdd">
-          <PlusOutlined />
-          新建根菜单
-        </a-button>
+        <!-- 隐藏新建根菜单按钮，只允许通过子菜单方式添加 -->
       </div>
 
       <a-table
@@ -196,17 +193,14 @@ async function loadData() {
   loading.value = true
   try {
     const res: any = await api.getMenus({})
-    tableData.value = res.data || []
+    const data = res.data || []
+    tableData.value = data
+    const menu = { id: 0, name: '根目录', children: [] }
+    menu.children = data
+    menuOptions.value = [menu]
   } finally {
     loading.value = false
   }
-}
-
-async function getTreeSelect() {
-  const res: any = await api.getMenus({})
-  const menu = { id: 0, name: '根目录', children: [] }
-  menu.children = res.data || []
-  menuOptions.value = [menu]
 }
 
 function handleClickAdd() {
@@ -314,7 +308,6 @@ async function handleUpdateHidden(row: any) {
 
 onMounted(() => {
   loadData()
-  getTreeSelect()
 })
 </script>
 

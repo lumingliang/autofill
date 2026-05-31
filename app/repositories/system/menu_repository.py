@@ -5,7 +5,9 @@
 Menu 模型没有 tenant_id 字段，关闭自动租户过滤。
 """
 
-from typing import List, Set
+from typing import List, Optional, Set
+
+from tortoise.expressions import Q
 
 from app.models.admin import Menu
 from app.repositories.base_repository import BaseRepository
@@ -29,17 +31,17 @@ class MenuRepository(BaseRepository[Menu]):
 
     async def get_all_ids(self) -> List[int]:
         """获取所有菜单ID"""
-        return await self.model.all().values_list("id", flat=True)
+        return await self.filter().values_list("id", flat=True)
 
     async def get_by_ids(self, menu_ids: List[int]) -> List[Menu]:
         """根据ID列表获取菜单"""
         if not menu_ids:
             return []
-        return await self.model.filter(id__in=menu_ids).all()
+        return await self.filter(id__in=menu_ids).all()
 
     async def get_all(self) -> List[Menu]:
         """获取所有菜单"""
-        return await self.model.all()
+        return await self.filter().all()
 
     async def get_user_menu_ids(self, user_id: int) -> Set[int]:
         """
@@ -65,6 +67,71 @@ class MenuRepository(BaseRepository[Menu]):
         for rid, mids in rows.items():
             menu_ids.update(mids)
         return menu_ids
+
+    async def get_by_path(self, path: str) -> Optional[Menu]:
+        """
+        根据路径获取菜单
+
+        Args:
+            path: 菜单路径
+
+        Returns:
+            Optional[Menu]: 菜单对象，不存在返回None
+        """
+        return await self.filter(path=path).first()
+
+    async def get_children_count(self, parent_id: int) -> int:
+        """
+        获取子菜单数量
+
+        Args:
+            parent_id: 父菜单ID
+
+        Returns:
+            int: 子菜单数量
+        """
+        return await self.filter(parent_id=parent_id).count()
+
+    async def get_parent_menus(self) -> List[Menu]:
+        """
+        获取所有父级菜单（parent_id=0）
+
+        Returns:
+            List[Menu]: 父级菜单列表
+        """
+        return await self.filter(parent_id=0).order_by("order").all()
+
+    async def list_with_permission(
+        self,
+        user_id: int,
+        is_superuser: bool,
+        page: int = 1,
+        page_size: int = 10
+    ) -> tuple[int, List[Menu]]:
+        """
+        根据用户权限获取菜单列表
+
+        Args:
+            user_id: 用户ID
+            is_superuser: 是否为超级管理员
+            page: 页码
+            page_size: 每页数量
+
+        Returns:
+            tuple[int, List[Menu]]: (总数, 菜单列表)
+        """
+        if is_superuser:
+            total = await self.filter().count()
+            menus = await self.filter().order_by("order").offset((page - 1) * page_size).limit(page_size)
+            return total, list(menus)
+
+        menu_ids = await self.get_user_menu_ids(user_id)
+        if not menu_ids:
+            return 0, []
+
+        total = len(menu_ids)
+        menus = await self.filter(id__in=list(menu_ids)).order_by("order").offset((page - 1) * page_size).limit(page_size)
+        return total, list(menus)
 
 
 # 全局 Repository 实例

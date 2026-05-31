@@ -15,8 +15,11 @@ class DeptClosureRepository(BaseRepository[DeptClosure]):
     部门闭包 Repository
 
     继承 BaseRepository 获得通用 CRUD 能力。
-    DeptClosure 是关联表，用于存储部门层级关系。
+    DeptClosure 是关联表，用于存储部门层级关系，没有 tenant_id 字段。
     """
+
+    # 关闭租户过滤，DeptClosure 没有 tenant_id 字段
+    enable_tenant_filter = False
 
     def __init__(self):
         super().__init__(DeptClosure)

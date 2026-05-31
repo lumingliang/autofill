@@ -92,7 +92,6 @@ const quickLoginTarget = ref('')
 const tenantLoading = ref(false)
 const tenantOptions = ref<Array<{ label: string; value: number }>>([])
 const selectedTenantId = ref<number | null>(null)
-const isTenantLoaded = ref(false) // 防止重复加载
 
 // 初始化选中的租户ID
 watch(
@@ -105,8 +104,8 @@ watch(
 
 // 加载租户列表 - 统一使用后端接口
 async function loadTenants(keyword: string = '') {
-  // 如果已经加载过且没有搜索关键词，则不再加载
-  if (isTenantLoaded.value && !keyword) {
+  // 如果已经有数据且没有搜索关键词，则不再加载
+  if (tenantOptions.value.length > 0 && !keyword) {
     return
   }
 
@@ -118,9 +117,6 @@ async function loadTenants(keyword: string = '') {
         label: `${t.name} (${t.domain})`,
         value: t.id,
       }))
-      if (!keyword) {
-        isTenantLoaded.value = true
-      }
     }
   } catch (error) {
     console.error('加载租户列表失败', error)

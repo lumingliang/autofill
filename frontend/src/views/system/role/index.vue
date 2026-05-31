@@ -130,9 +130,6 @@ const pagination = reactive({
   total: 0,
 })
 
-// 租户选项
-const tenantOptions = ref<{ label: string; value: number }[]>([])
-
 // 表格列
 const columns = computed(() => [
   { title: '角色名', dataIndex: 'name', key: 'name', width: 150 },
@@ -186,13 +183,6 @@ async function loadData() {
   } finally {
     loading.value = false
   }
-}
-
-// 加载租户选项
-async function loadTenants() {
-  if (!userStore.isSuperUser) return
-  const res: any = await api.getTenantSelect()
-  tenantOptions.value = (res.data || []).map((item: any) => ({ label: item.name, value: item.id }))
 }
 
 // 查询
@@ -409,6 +399,5 @@ async function handleSaveAssignUsers() {
 
 onMounted(() => {
   loadData()
-  loadTenants()
 })
 </script>

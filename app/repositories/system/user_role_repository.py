@@ -32,7 +32,7 @@ class UserRoleRepository(BaseRepository[UserRole]):
         Returns:
             List[int]: 角色ID列表
         """
-        rows = await self.get_queryset().filter(user_id=user_id).values("role_id")
+        rows = await self.filter(user_id=user_id).values("role_id")
         return [r["role_id"] for r in rows]
 
     async def get_user_ids_by_role_id(self, role_id: int) -> List[int]:
@@ -45,7 +45,7 @@ class UserRoleRepository(BaseRepository[UserRole]):
         Returns:
             List[int]: 用户ID列表
         """
-        rows = await self.get_queryset().filter(role_id=role_id).values("user_id")
+        rows = await self.filter(role_id=role_id).values("user_id")
         return [r["user_id"] for r in rows]
 
     async def batch_get_role_ids_by_user_ids(self, user_ids: List[int]) -> dict[int, List[int]]:
@@ -58,7 +58,7 @@ class UserRoleRepository(BaseRepository[UserRole]):
         Returns:
             dict[int, List[int]]: 用户ID到角色ID列表的映射
         """
-        rows = await self.get_queryset().filter(user_id__in=user_ids).values("user_id", "role_id")
+        rows = await self.filter(user_id__in=user_ids).values("user_id", "role_id")
         result: dict[int, List[int]] = {}
         for r in rows:
             result.setdefault(r["user_id"], []).append(r["role_id"])
@@ -76,7 +76,7 @@ class UserRoleRepository(BaseRepository[UserRole]):
             role_ids: 角色ID列表
         """
         # 删除现有记录（自动应用租户过滤）
-        await self.get_queryset().filter(user_id=user_id).delete()
+        await self.filter(user_id=user_id).delete()
 
         # 批量创建新记录（从 Ctx 获取租户ID）
         if role_ids:
@@ -95,7 +95,7 @@ class UserRoleRepository(BaseRepository[UserRole]):
             user_id: 用户ID
             role_id: 角色ID
         """
-        await self.get_queryset().filter(user_id=user_id, role_id=role_id).delete()
+        await self.filter(user_id=user_id, role_id=role_id).delete()
 
     async def batch_add_user_roles(self, user_id_role_id_pairs: List[Tuple[int, int, int]]) -> None:
         """
@@ -109,7 +109,7 @@ class UserRoleRepository(BaseRepository[UserRole]):
 
         # 只查询相关用户的数据，减少查询范围
         user_ids = list(set(uid for uid, _, _ in user_id_role_id_pairs))
-        existing = await self.get_queryset().filter(user_id__in=user_ids).values("user_id", "role_id")
+        existing = await self.filter(user_id__in=user_ids).values("user_id", "role_id")
         existing_set = {(r["user_id"], r["role_id"]) for r in existing}
 
         to_create = []

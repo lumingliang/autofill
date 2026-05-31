@@ -85,7 +85,6 @@ const columns = computed(() => [
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const deptOptions = ref<any[]>([])
-const tenantOptions = ref<any[]>([])
 
 // 弹窗数据
 const modalTitle = computed(() => crudTableRef.value?.modalAction === 'add' ? '新增部门' : '编辑部门')
@@ -107,31 +106,17 @@ const modalRules = computed(() => ({
 async function loadData() {
   loading.value = true
   try {
-    const params: any = {}
-    if (queryParams.tenant_id) params.tenant_id = queryParams.tenant_id
-    const res: any = await api.getDepts(params)
-    tableData.value = res.data || []
+    const res: any = await api.getDepts()
+    const data = res.data || []
+    tableData.value = data
+    deptOptions.value = data
   } finally {
     loading.value = false
   }
 }
 
-async function loadDepts() {
-  const params: any = {}
-  if (queryParams.tenant_id) params.tenant_id = queryParams.tenant_id
-  const res: any = await api.getDepts(params)
-  deptOptions.value = res.data || []
-}
-
-async function loadTenants() {
-  if (!userStore.isSuperUser) return
-  const res: any = await api.getTenantSelect()
-  tenantOptions.value = (res.data || []).map((item: any) => ({ label: item.name, value: item.id }))
-}
-
 function handleSearch() {
   loadData()
-  loadDepts()
 }
 
 function handleReset() {
@@ -177,7 +162,6 @@ async function handleSave(form: any, action: 'add' | 'edit') {
       window.$message?.success(action === 'add' ? '新增成功' : '编辑成功')
       crudTableRef.value?.closeModal()
       loadData()
-      loadDepts()
     }
   } catch (error: any) {
     console.error('保存失败', error)
@@ -192,7 +176,6 @@ async function handleDelete(record: any) {
     if (res.code === 200) {
       window.$message?.success('删除成功')
       loadData()
-      loadDepts()
     }
   } catch (error) {
     console.error('删除失败', error)
@@ -201,7 +184,5 @@ async function handleDelete(record: any) {
 
 onMounted(() => {
   loadData()
-  loadDepts()
-  loadTenants()
 })
 </script>

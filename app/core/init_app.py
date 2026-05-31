@@ -8,7 +8,6 @@ from tortoise.expressions import Q
 from app.core.kafka.consumer import shutdown_kafka_consumers
 
 from app.api import api_router
-from app.controllers.api import api_controller
 from app.core.exceptions import (
     BusinessException,
     BusinessExceptionHandle,
@@ -156,12 +155,6 @@ async def init_menus():
     await menu_registry.sync_to_database()
 
 
-async def init_apis(app: FastAPI):
-    apis = await api_controller.model.exists()
-    if not apis:
-        await api_controller.refresh_api(app)
-
-
 async def init_db():
     """
     初始化数据库连接
@@ -217,8 +210,8 @@ async def shutdown_kafka():
 
 async def init_data(app: FastAPI):
     await init_db()
-    await init_superuser()
-    await init_menus()
-    await init_apis(app)
+    # await init_superuser()
+    # await init_menus()
+    # await init_apis(app)
     # 不需要初始化角色，手动配置
     # await init_roles()
