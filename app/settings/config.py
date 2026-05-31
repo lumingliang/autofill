@@ -75,7 +75,43 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = 5
     FILE_URL_PREFIX: str = "/uploads"
     BASE_URL: str = "http://localhost:8000"
-    
+
+    # API管理配置 - 排除的API tags（这些tags的API不会被纳入权限管理）
+    # 默认排除公开API、文件上传等不需要权限控制的接口
+    EXCLUDE_API_TAGS: list = ["公开接口", "文件上传", "public", "upload"]
+
+    # 审计日志配置 - 排除的API路径（这些路径不记录审计日志的入参和出参）
+    # 用于排除导出、导入等大内容接口
+    AUDIT_LOG_EXCLUDE_PATHS: list = ["/api/v1/autofill/rule/export", "/api/v1/autofill/rule/import"]
+
+    # 日志参数长度限制配置（防止日志过大）
+    # 单个字段值最大长度（字符数），超过则截断
+    LOG_MAX_FIELD_LENGTH: int = 2000
+    # 请求/响应体最大长度（字符数），超过则截断
+    LOG_MAX_BODY_LENGTH: int = 50000  # 50KB
+    # 响应体大小限制（用于判断是否记录响应内容）
+    LOG_RESPONSE_SIZE_LIMIT: int = 100000  # 100KB
+
+    # 中间件配置 - 日志跳过路径（这些路径不记录系统日志）
+    LOG_SKIP_PATHS: list = ["/docs", "/openapi.json", "/redoc", "/health", "/uploads/"]
+
+    # 中间件配置 - 敏感字段列表（日志中会被替换为***）
+    LOG_SENSITIVE_FIELDS: list = ["password", "token", "secret", "key", "auth", "authorization", "cookie"]
+
+    # 中间件配置 - 租户上下文排除路径（这些路径跳过租户认证）
+    TENANT_EXCLUDE_PATHS: list = [
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        "/health",
+        "/uploads/",
+        "/api/autofill/llm/rule/execute",
+        "/api/autofill/llm/rule/execute/result",
+    ]
+
+    # 中间件配置 - 审计日志特殊路径
+    AUDIT_LOG_SPECIAL_PATHS: list = ["/api/v1/auditlog/list"]
+
     # 日志配置
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "./logs/app.log"
@@ -208,7 +244,43 @@ class Settings(BaseSettings):
                         "enable_fallback": so_config.get("enable_fallback", True),
                         "max_attempt_methods": so_config.get("max_attempt_methods", 6)
                     }
-            
+
+                # 加载API管理配置（排除的tags）
+                if "api_management" in config:
+                    api_config = config["api_management"]
+                    if "exclude_tags" in api_config:
+                        instance.EXCLUDE_API_TAGS = api_config["exclude_tags"]
+
+                # 加载审计日志配置（排除的路径）
+                if "audit_log" in config:
+                    audit_config = config["audit_log"]
+                    if "exclude_paths" in audit_config:
+                        instance.AUDIT_LOG_EXCLUDE_PATHS = audit_config["exclude_paths"]
+
+                # 加载日志参数长度限制配置
+                if "logging" in config:
+                    log_config = config["logging"]
+                    instance.LOG_MAX_FIELD_LENGTH = log_config.get("max_field_length", instance.LOG_MAX_FIELD_LENGTH)
+                    instance.LOG_MAX_BODY_LENGTH = log_config.get("max_body_length", instance.LOG_MAX_BODY_LENGTH)
+                    instance.LOG_RESPONSE_SIZE_LIMIT = log_config.get("response_size_limit", instance.LOG_RESPONSE_SIZE_LIMIT)
+                    # 加载中间件配置
+                    if "skip_paths" in log_config:
+                        instance.LOG_SKIP_PATHS = log_config["skip_paths"]
+                    if "sensitive_fields" in log_config:
+                        instance.LOG_SENSITIVE_FIELDS = log_config["sensitive_fields"]
+
+                # 加载租户中间件配置
+                if "tenant_middleware" in config:
+                    tenant_config = config["tenant_middleware"]
+                    if "exclude_paths" in tenant_config:
+                        instance.TENANT_EXCLUDE_PATHS = tenant_config["exclude_paths"]
+
+                # 加载审计日志中间件配置
+                if "audit_log_middleware" in config:
+                    audit_mw_config = config["audit_log_middleware"]
+                    if "special_paths" in audit_mw_config:
+                        instance.AUDIT_LOG_SPECIAL_PATHS = audit_mw_config["special_paths"]
+
             except Exception as e:
                 print(f"Warning: Failed to load TOML config: {e}")
         

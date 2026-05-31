@@ -238,6 +238,11 @@ class TenantService:
             "tenant_id": tenant_id
         })
 
+        # 如果用户没有当前租户ID，则设置为这个租户
+        if not user.current_tenant_id:
+            user.current_tenant_id = tenant_id
+            await user.save()
+
     @atomic()
     async def remove_user_from_tenant(self, tenant_id: int, user_id: int) -> None:
         """从租户移除用户"""
@@ -281,6 +286,8 @@ class TenantService:
             page_size=len(user_ids)
         )
         existing_user_ids = {user.id for user in existing_users}
+        # 构建用户ID到用户对象的映射，用于后续更新current_tenant_id
+        user_id_to_user = {user.id: user for user in existing_users}
 
         # 批量查询用户是否已在租户中
         user_tenant_list = await user_tenant_repository.get_all_by_tenant_id(tenant_id)
@@ -305,6 +312,13 @@ class TenantService:
                     "user_id": user_id,
                     "tenant_id": tenant_id
                 })
+
+                # 如果用户没有当前租户ID，则设置为这个租户
+                user = user_id_to_user.get(user_id)
+                if user and not user.current_tenant_id:
+                    user.current_tenant_id = tenant_id
+                    await user.save()
+
                 success_count += 1
             except Exception as e:
                 failed_count += 1

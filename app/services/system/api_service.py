@@ -19,6 +19,7 @@ from app.core.ctx import Ctx
 from app.log import logger
 from app.models.admin import Api
 from app.repositories import api_repository
+from app.settings import settings
 from tortoise.expressions import Q
 
 
@@ -161,20 +162,22 @@ class ApiService:
     def _should_manage_api(self, route: APIRoute) -> bool:
         """
         判断是否应该将该路由纳入 API 管理
-        - 只管理后台 CURD API (以 /api/v1 开头)
-        - 排除公开 API (Dify/三方调用，使用 API Key 认证)
+        - 排除包含特定 tags 的 API（可配置，如公开接口、文件上传等）
+        - 只管理需要权限控制的后台 API
         """
         if not isinstance(route, APIRoute):
             return False
         if len(route.dependencies) == 0:
             return False
-        path = route.path_format
-        if path.startswith("/api/autofill/"):
+
+        # 使用 tags 进行排除过滤（可配置）
+        route_tags = set(route.tags) if route.tags else set()
+        exclude_tags = set(settings.EXCLUDE_API_TAGS)
+
+        # 如果路由的 tags 与排除列表有交集，则不纳入管理
+        if route_tags & exclude_tags:
             return False
-        if path.startswith("/api/llm/"):
-            return False
-        if not path.startswith("/api/v1/"):
-            return False
+
         return True
 
     def generate_api_code(self, path: str, method: str) -> str:

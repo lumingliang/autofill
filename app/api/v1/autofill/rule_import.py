@@ -302,7 +302,7 @@ async def preview_file_import(file_request: FilePreviewRequest):
     csv_headers, csv_data = _parse_csv_content(file_request.content)
 
     primary_keys = []
-    existing_config = _parse_import_config(rule.config)
+    existing_config = _parse_import_config(rule.config) or {}
     if existing_config:
         primary_keys = existing_config.get("primary_keys", [])
 
@@ -312,6 +312,9 @@ async def preview_file_import(file_request: FilePreviewRequest):
 
     merged_headers = _merge_headers(existing_headers, csv_headers)
     sync_fields = [h for h in merged_headers if h not in primary_keys]
+
+    # 从配置中读取 allow_add_new，默认为 True
+    allow_add_new = existing_config.get("allow_add_new", True)
 
     return Success(
         data={
@@ -323,7 +326,7 @@ async def preview_file_import(file_request: FilePreviewRequest):
             "is_first_import": is_first_import,
             "primary_keys": primary_keys,
             "sync_fields": sync_fields,
-            "allow_add_new": True,
+            "allow_add_new": allow_add_new,
         }
     )
 
@@ -335,10 +338,13 @@ async def get_import_config(query: ImportConfigQuery = Depends()):
     if not rule:
         return Fail(code=404, msg="规则不存在")
 
-    config = _parse_import_config(rule.config)
-    primary_keys = config.get("primary_keys", []) if config else []
+    config = _parse_import_config(rule.config) or {}
 
-    return Success(data={"primary_keys": primary_keys})
+    return Success(data={
+        "primary_keys": config.get("primary_keys", []),
+        "sync_fields": config.get("sync_fields", []),
+        "allow_add_new": config.get("allow_add_new", True),
+    })
 
 
 @router.post("/rule/import/file", summary="导入CSV文件")
@@ -357,11 +363,13 @@ async def import_csv_file(
 
         config_dict = _parse_import_config(rule.config) or {}
         primary_keys = config_dict.get("primary_keys", [])
+        allow_add_new = config_dict.get("allow_add_new", True)
 
         import_result = await _execute_csv_import_core(
             rule=rule,
             csv_content=csv_content,
             primary_keys=primary_keys,
+            allow_add_new=allow_add_new,
         )
 
         if not import_result["success"]:

@@ -87,15 +87,20 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app, exclude_paths: list[str] = None):
         super().__init__(app)
-        self.exclude_paths = exclude_paths or [
-            "/docs",
-            "/openapi.json",
-            "/redoc",
-            "/health",
-            "/uploads/",
-            "/api/autofill/llm/rule/execute",
-            "/api/autofill/llm/rule/execute/result",
-        ]
+        # 从配置加载排除路径，如果传入则使用传入的
+        from app.settings import settings
+        if exclude_paths is not None:
+            self.exclude_paths = exclude_paths
+        else:
+            self.exclude_paths = settings.TENANT_EXCLUDE_PATHS or [
+                "/docs",
+                "/openapi.json",
+                "/redoc",
+                "/health",
+                "/uploads/",
+                "/api/autofill/llm/rule/execute",
+                "/api/autofill/llm/rule/execute/result",
+            ]
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
@@ -207,26 +212,39 @@ class RequestLoggingMiddleware:
     4. 与loguru集成，复用日志配置
     """
 
-    # 跳过日志记录的路径前缀
-    SKIP_PATHS = {"/docs", "/openapi.json", "/redoc", "/health", "/uploads/"}
-
-    # 敏感字段列表（大小写不敏感）
-    SENSITIVE_FIELDS = {"password", "token", "secret", "key", "auth", "authorization", "cookie"}
-
-    # 响应体大小限制（字符数）
+    # 响应体大小限制（字符数）- 已从配置加载
     MAX_RESPONSE_LOG_SIZE = 10000  # 10KB
 
     def __init__(self, app: ASGIApp):
         self.app = app
+        # 从配置加载
+        from app.settings import settings
+        self.skip_paths = set(settings.LOG_SKIP_PATHS or [])
+        self.sensitive_fields = set(settings.LOG_SENSITIVE_FIELDS or [])
+        self.exclude_paths = set(settings.AUDIT_LOG_EXCLUDE_PATHS or [])
+        self.max_field_length = settings.LOG_MAX_FIELD_LENGTH
+        self.max_body_length = settings.LOG_MAX_BODY_LENGTH
+        self.max_response_log_size = settings.LOG_RESPONSE_SIZE_LIMIT
+
+    def _should_skip_logging(self, path: str) -> bool:
+        """检查是否应该跳过日志记录"""
+        # 检查配置跳过路径
+        if any(path.startswith(p) for p in self.skip_paths):
+            return True
+        # 检查配置排除路径
+        for exclude_path in self.exclude_paths:
+            if path.startswith(exclude_path):
+                return True
+        return False
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        # 跳过健康检查和静态资源
+        # 跳过健康检查、静态资源和配置的排除路径
         path = scope.get("path", "")
-        if any(path.startswith(p) for p in self.SKIP_PATHS):
+        if self._should_skip_logging(path):
             await self.app(scope, receive, send)
             return
 
@@ -357,12 +375,18 @@ class RequestLoggingMiddleware:
             if not content_type.startswith("application/json"):
                 return None
 
+            # 先检查原始body大小，超过限制直接返回提示
+            if len(body) > self.max_response_log_size:
+                return {"_note": f"Response too large ({len(body)} bytes), skipped logging"}
+
             data = json.loads(body)
-            # 应用大小限制
+            # 应用大小限制和字段截断
             body_str = json.dumps(data, ensure_ascii=False)
-            if len(body_str) > self.MAX_RESPONSE_LOG_SIZE:
-                return {"_note": f"Response too large ({len(body_str)} bytes)"}
-            return data
+            if len(body_str) > self.max_body_length:
+                return {"_note": f"Response body too large ({len(body_str)} chars), skipped detailed logging"}
+
+            # 对响应数据进行敏感字段过滤和长度截断
+            return self._sanitize(data)
         except Exception:
             return None
 
@@ -381,47 +405,93 @@ class RequestLoggingMiddleware:
             return client[0]
         return "unknown"
 
+    def _truncate_value(self, value: Any) -> Any:
+        """截断过长的字符串值"""
+        if isinstance(value, str) and len(value) > self.max_field_length:
+            return value[:self.max_field_length] + f"... [truncated, total {len(value)} chars]"
+        return value
+
     def _sanitize(self, data: Any) -> Any:
-        """递归过滤敏感数据"""
+        """递归过滤敏感数据并截断过长的值"""
         if isinstance(data, dict):
-            return {
-                k: "***" if any(s in k.lower() for s in self.SENSITIVE_FIELDS) else self._sanitize(v)
-                for k, v in data.items()
-            }
+            result = {}
+            for k, v in data.items():
+                if any(s in k.lower() for s in self.sensitive_fields):
+                    result[k] = "***"
+                else:
+                    result[k] = self._sanitize(v)
+            return result
         elif isinstance(data, list):
             return [self._sanitize(item) for item in data]
-        return data
+        else:
+            return self._truncate_value(data)
 
 
 class HttpAuditLogMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, methods: list[str], exclude_paths: list[str]):
         super().__init__(app)
         self.methods = methods
-        self.exclude_paths = exclude_paths
-        self.audit_log_paths = ["/api/v1/auditlog/list"]
-        self.max_body_size = 1024 * 1024  # 1MB 响应体大小限制
-    
+        # 合并传入的排除路径和配置文件的排除路径
+        from app.settings import settings
+        self.exclude_paths = list(exclude_paths) + list(settings.AUDIT_LOG_EXCLUDE_PATHS or [])
+        # 从配置加载特殊路径和敏感字段
+        self.audit_log_paths = settings.AUDIT_LOG_SPECIAL_PATHS or ["/api/v1/auditlog/list"]
+        self.sensitive_fields = set(settings.LOG_SENSITIVE_FIELDS or ["password", "token", "secret", "key", "auth", "authorization", "cookie"])
+        # 从配置加载大小限制
+        self.max_body_size = settings.LOG_RESPONSE_SIZE_LIMIT  # 100KB
+        self.max_field_length = settings.LOG_MAX_FIELD_LENGTH  # 2000字符
+        self.max_body_length = settings.LOG_MAX_BODY_LENGTH    # 50KB
+
+    def _truncate_value(self, value: Any) -> Any:
+        """截断过长的字符串值"""
+        if isinstance(value, str) and len(value) > self.max_field_length:
+            return value[:self.max_field_length] + f"... [truncated, total {len(value)} chars]"
+        return value
+
+    def _sanitize_and_truncate(self, data: Any) -> Any:
+        """递归过滤敏感数据并截断过长的值"""
+        if isinstance(data, dict):
+            result = {}
+            for k, v in data.items():
+                if any(s in k.lower() for s in self.sensitive_fields):
+                    result[k] = "***"
+                else:
+                    result[k] = self._sanitize_and_truncate(v)
+            return result
+        elif isinstance(data, list):
+            return [self._sanitize_and_truncate(item) for item in data]
+        else:
+            return self._truncate_value(data)
+
     async def get_request_args(self, request: Request, request_body: bytes = None) -> dict:
         args = {}
         # 获取查询参数
         for key, value in request.query_params.items():
-            args[key] = value
-        
+            args[key] = self._truncate_value(value)
+
         # 获取路径参数
         if hasattr(request.state, 'path_params'):
-            args.update(request.state.path_params)
-        
+            for k, v in request.state.path_params.items():
+                args[k] = self._truncate_value(v)
+
         # 获取请求体
         if request.method in ["POST", "PUT", "PATCH"] and request_body:
             content_type = request.headers.get("content-type", "")
             if "application/json" in content_type:
                 try:
-                    body_data = json.loads(request_body)
-                    if isinstance(body_data, dict):
-                        args.update(body_data)
+                    # 检查请求体大小
+                    if len(request_body) > self.max_body_length:
+                        args["_note"] = f"Request body too large ({len(request_body)} bytes), truncated"
+                        # 尝试解析并截断
+                        body_data = json.loads(request_body)
+                        args.update(self._sanitize_and_truncate(body_data))
+                    else:
+                        body_data = json.loads(request_body)
+                        if isinstance(body_data, dict):
+                            args.update(self._sanitize_and_truncate(body_data))
                 except Exception:
                     pass
-        
+
         return args
     
     def should_log(self, request: Request, response: Response) -> bool:
@@ -484,7 +554,23 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         response_content = ""
         try:
             if len(response_body) < self.max_body_size:
-                response_content = response_body.decode('utf-8')
+                response_text = response_body.decode('utf-8')
+                # 尝试解析JSON并应用敏感字段过滤和截断
+                try:
+                    response_json = json.loads(response_text)
+                    truncated_response = self._sanitize_and_truncate(response_json)
+                    # 限制最终字符串长度
+                    response_str = json.dumps(truncated_response, ensure_ascii=False)
+                    if len(response_str) > self.max_body_length:
+                        response_content = json.dumps({"_note": f"Response too large, truncated to {self.max_body_length} chars"})
+                    else:
+                        response_content = response_str
+                except json.JSONDecodeError:
+                    # 非JSON响应，直接截断字符串
+                    if len(response_text) > self.max_body_length:
+                        response_content = response_text[:self.max_body_length] + "... [truncated]"
+                    else:
+                        response_content = response_text
         except Exception:
             pass
         

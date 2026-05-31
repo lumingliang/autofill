@@ -83,12 +83,47 @@ def create_app() -> FastAPI:
     web_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web")
     if os.path.exists(web_dir):
         from fastapi.responses import FileResponse
-        # 挂载 /web 路径（前端构建的资源引用路径，包含所有静态资源）
-        app.mount("/web", StaticFiles(directory=web_dir, html=True), name="web")
-        # 根路径重定向到 /web
+        from fastapi import Request
+
+        # 根路径返回 index.html
         @app.get("/", include_in_schema=False)
         async def root_redirect():
             return FileResponse(os.path.join(web_dir, "index.html"))
+
+        # 处理前端静态文件和 SPA 路由
+        @app.get("/web/{path:path}", include_in_schema=False)
+        async def serve_web_files(request: Request, path: str):
+            """
+            处理前端静态文件和 SPA 路由
+            - 如果请求的是存在的文件（如 CSS、JS、图片），直接返回文件
+            - 否则返回 index.html，由前端路由处理（SPA 模式）
+            """
+            # 安全路径处理：防止目录遍历攻击
+            safe_path = os.path.normpath(path)
+            if safe_path.startswith("..") or safe_path.startswith("/"):
+                safe_path = safe_path.lstrip("/").lstrip(".")
+            
+            file_path = os.path.join(web_dir, safe_path)
+            
+            # 确保路径在 web_dir 范围内（防止目录遍历）
+            real_file_path = os.path.realpath(file_path)
+            real_web_dir = os.path.realpath(web_dir)
+            if not real_file_path.startswith(real_web_dir):
+                index_file = os.path.join(web_dir, "index.html")
+                if os.path.exists(index_file):
+                    return FileResponse(index_file)
+                return {"error": "Invalid path"}
+
+            # 检查文件是否存在且是文件（不是目录）
+            if os.path.exists(real_file_path) and os.path.isfile(real_file_path):
+                return FileResponse(real_file_path)
+
+            # 文件不存在，返回 index.html（SPA 路由）
+            index_file = os.path.join(web_dir, "index.html")
+            if os.path.exists(index_file):
+                return FileResponse(index_file)
+
+            return {"error": "Frontend not found"}
 
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui_html():

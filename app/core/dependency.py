@@ -68,6 +68,11 @@ class AuthControl:
             current_tenant_id = decode_data.get("current_tenant_id")
             if current_tenant_id:
                 user.current_tenant_id = current_tenant_id
+            else:
+                # 如果JWT中没有当前租户ID，查询用户的默认租户ID（第一个关联的租户）
+                tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user.id)
+                if tenant_ids:
+                    user.current_tenant_id = tenant_ids[0]
             tenant_domain = decode_data.get("tenant_domain")
             user.tenant_domain = tenant_domain if tenant_domain else ""
             CTX_USER_ID.set(int(user_id))

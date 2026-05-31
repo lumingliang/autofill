@@ -1,21 +1,73 @@
+# Python
 __pycache__/
-.idea/
-venv/
-.mypy_cache/
-.vscode
-.ruff_cache/
-.pytest_cache/
-# migrations/  # 注释掉，因为我们现在需要提交迁移文件
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+._.DS_Store
+.trae/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Uploads and data
+uploads/
+avatars/
+data/
+logs/
+*.log
+
+# Documentation
+docs/
+
+# Database
 db.sqlite3
 db.sqlite3-journal
 db.sqlite3-shm
 db.sqlite3-wal
-
-.DS_Store
-._.DS_Store
-uploads/
-logs/
 
 # Backup files
 *.tar.gz
@@ -23,21 +75,31 @@ logs/
 *.tar
 *.bak
 *.backup
-node_modules/
-.autofill-autofill/
 
 # Archive directory
 autofill-archive/
-docs/
 
-# Configuration files
+# Configuration files (local development only)
 config.toml
+.env
 
 # Trae IDE
 .trae/
 
 # Temp directories
 llmtemp/
+tmp/
+temp/
+*.tmp
 
 # SeekDB data directory
-data/seekdb.db/
+data/
+
+# Local development files
+.autofill-autofill/
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+*.cover
