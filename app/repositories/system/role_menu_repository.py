@@ -6,6 +6,7 @@
 
 from typing import List
 
+from app.core.ctx import Ctx
 from app.models.admin import RoleMenu
 from app.repositories.base_repository import BaseRepository
 
@@ -63,17 +64,22 @@ class RoleMenuRepository(BaseRepository[RoleMenu]):
             result.setdefault(r["role_id"], []).append(r["menu_id"])
         return result
 
-    async def replace_role_menus(self, role_id: int, menu_ids: List[int], tenant_id: int) -> None:
+    async def replace_role_menus(self, role_id: int, menu_ids: List[int]) -> None:
         """
         替换角色的菜单关联（先删除再批量插入）
 
         Args:
             role_id: 角色ID
             menu_ids: 菜单ID列表
-            tenant_id: 租户ID
-        """
-        await self.filter(role_id=role_id, tenant_id=tenant_id).delete()
 
+        注意：tenant_id 从 Ctx 获取，不需要外部传递
+        """
+        tenant_id = Ctx.get_effective_tenant_id()
+
+        # 删除现有关联
+        await self.filter(role_id=role_id).delete()
+
+        # 批量创建新关联
         if menu_ids:
             await self.model.bulk_create(
                 [self.model(role_id=role_id, menu_id=mid, tenant_id=tenant_id) for mid in set(menu_ids)]

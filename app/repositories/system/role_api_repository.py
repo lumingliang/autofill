@@ -66,17 +66,22 @@ class RoleApiRepository(BaseRepository[RoleApi]):
             result.setdefault(r["role_id"], []).append(r["api_id"])
         return result
 
-    async def replace_role_apis(self, role_id: int, api_ids: List[int], tenant_id: int) -> None:
+    async def replace_role_apis(self, role_id: int, api_ids: List[int]) -> None:
         """
         替换角色的 API 关联（先删除再批量插入）
 
         Args:
             role_id: 角色ID
             api_ids: API ID列表
-            tenant_id: 租户ID
-        """
-        await self.filter(role_id=role_id, tenant_id=tenant_id).delete()
 
+        注意：tenant_id 从 Ctx 获取，不需要外部传递
+        """
+        tenant_id = Ctx.get_effective_tenant_id()
+
+        # 删除现有关联
+        await self.filter(role_id=role_id).delete()
+
+        # 批量创建新关联
         if api_ids:
             await self.model.bulk_create(
                 [self.model(role_id=role_id, api_id=aid, tenant_id=tenant_id) for aid in set(api_ids)]

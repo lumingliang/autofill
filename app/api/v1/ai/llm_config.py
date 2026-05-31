@@ -210,7 +210,7 @@ async def sync_to_gateway(
     id: Optional[int] = Query(None, description="配置ID，不传则同步所有活跃配置"),
 ):
     """同步配置到 LiteLLM 网关"""
-    current_user = await Ctx.get_current_user()
+    current_user = Ctx.get_user()
 
     # 权限检查 - 只允许超级管理员
     if not is_superuser(current_user):
@@ -226,7 +226,7 @@ async def sync_to_gateway(
 @llm_config_router.post("/llm_config/sync_from_gateway", summary="从 LiteLLM 网关同步配置")
 async def sync_from_gateway():
     """从 LiteLLM 网关同步模型配置到本地数据库"""
-    current_user = await Ctx.get_current_user()
+    current_user = Ctx.get_user()
 
     # 权限检查 - 只允许超级管理员
     if not is_superuser(current_user):
@@ -239,7 +239,7 @@ async def sync_from_gateway():
 @llm_config_router.get("/llm_config/gateway/models", summary="获取 LiteLLM 网关模型列表")
 async def get_gateway_models():
     """获取 LiteLLM 网关中的模型列表"""
-    current_user = await Ctx.get_current_user()
+    current_user = Ctx.get_user()
 
     # 权限检查 - 只允许超级管理员
     if not is_superuser(current_user):

@@ -190,14 +190,13 @@ class RoleService:
         更新角色的菜单和API权限
 
         使用 @atomic() 事务控制
+        注意：Repository 层会自动处理 tenant_id，不需要传递
         """
-        role = await self.get_role_by_id(role_id)
+        # 验证角色存在（会自动应用租户过滤）
+        await self.get_role_by_id(role_id)
 
-        # 从 role 获取 tenant_id
-        tenant_id = role.tenant_id
-
-        # 批量替换菜单关联
-        await role_menu_repository.replace_role_menus(role_id, menu_ids, tenant_id=tenant_id)
+        # 批量替换菜单关联（Repository 自动获取 tenant_id）
+        await role_menu_repository.replace_role_menus(role_id, menu_ids)
 
         # 通过 api_code 查询 API IDs
         api_ids = []
@@ -205,8 +204,8 @@ class RoleService:
             api_objs = await api_repository.get_by_codes(api_codes)
             api_ids = [a.id for a in api_objs]
 
-        # 批量替换API关联
-        await role_api_repository.replace_role_apis(role_id, api_ids, tenant_id=tenant_id)
+        # 批量替换API关联（Repository 自动获取 tenant_id）
+        await role_api_repository.replace_role_apis(role_id, api_ids)
 
         # 清除该角色下所有用户的权限缓存
         await permission_cache_service.clear_role_users_cache(role_id)

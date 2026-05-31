@@ -262,6 +262,7 @@ class CurlImportApplyRequest(BaseModel):
     primary_keys: List[str] = Field(default_factory=list, description="主键字段列表")
     sync_fields: List[str] = Field(default_factory=list, description="同步字段列表")
     curl_config: CurlImportConfig = Field(default_factory=dict, description="CURL导入配置")
+    allow_add_new: bool = Field(True, description="是否允许新增数据")
 
 
 

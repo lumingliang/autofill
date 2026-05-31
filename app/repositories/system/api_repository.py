@@ -27,43 +27,49 @@ class ApiRepository(BaseRepository[Api]):
         super().__init__(Api)
 
     async def get_all_ids(self) -> List[int]:
-        return await self.model.all().values_list("id", flat=True)
+        """获取所有API ID列表"""
+        return await self.filter().values_list("id", flat=True)
 
     async def get_all(self) -> List[Api]:
-        return await self.model.all()
+        """获取所有API"""
+        return await self.filter().all()
 
     async def get_all_method_path_pairs(self) -> List[Tuple[str, str]]:
         """获取所有API的 (method, path) 列表"""
-        apis = await self.model.all()
+        apis = await self.filter().all()
         return [(api.method, api.path) for api in apis]
 
     async def get_by_ids(self, api_ids: List[int]) -> List[Api]:
+        """根据ID列表获取API"""
         if not api_ids:
             return []
-        return await self.model.filter(id__in=api_ids).all()
+        return await self.filter(id__in=api_ids).all()
 
     async def get_by_method_path(self, method: str, path: str) -> Optional[Api]:
         """根据 method 和 path 获取 API"""
-        return await self.model.filter(method=method, path=path).first()
+        return await self.filter(method=method, path=path).first()
 
     async def get_by_codes(self, api_codes: List[str]) -> List[Api]:
+        """根据 api_code 列表获取API"""
         if not api_codes:
             return []
-        return await self.model.filter(api_code__in=api_codes).all()
+        return await self.filter(api_code__in=api_codes).all()
 
     async def get_codes_by_ids(self, api_ids: List[int]) -> List[str]:
+        """根据ID列表获取 api_code 列表"""
         if not api_ids:
             return []
-        rows = await self.model.filter(id__in=api_ids).values("api_code")
+        rows = await self.filter(id__in=api_ids).values("api_code")
         return [r["api_code"] for r in rows]
 
     async def delete_by_ids(self, api_ids: List[int]) -> None:
         """根据ID列表删除API"""
         if not api_ids:
             return
-        await self.model.filter(id__in=api_ids).delete()
+        await self.filter(id__in=api_ids).delete()
 
     async def get_user_api_ids(self, user_id: int) -> Set[int]:
+        """获取用户的所有API ID"""
         if not user_id:
             return set()
 

@@ -43,7 +43,7 @@ async def get_audit_log_list(
     认证：已在中间件处理
     """
     # 从上下文获取当前用户
-    current_user = await Ctx.get_current_user()
+    current_user = Ctx.get_user()
 
     # 调用 Service 层处理业务逻辑
     total, audit_log_objs = await audit_log_service.list_audit_logs(

@@ -254,7 +254,8 @@ class RequestLoggingMiddleware:
         headers = dict(scope.get("headers", []))
         client_ip = self._get_client_ip_from_scope(scope, headers)
         user_agent = headers.get(b"user-agent", b"").decode("utf-8", errors="ignore")
-        tenant_domain = "root"  # 简化处理，后续可从token解析
+        tenant_id = Ctx.get_effective_tenant_id()
+        tenant_domain = str(tenant_id) if tenant_id > 0 else "root"
 
         # 设置租户域名到上下文变量
         set_tenant_domain(tenant_domain)
@@ -577,10 +578,12 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         # 获取当前用户信息（优先从请求状态获取，其次重新认证）
         user_id = None
         username = None
+        tenant_id = 0
         if hasattr(request.state, 'current_user') and request.state.current_user:
             user_obj = request.state.current_user
             user_id = user_obj.id
             username = user_obj.username
+            tenant_id = getattr(user_obj, 'current_tenant_id', 0)
         else:
             # 降级处理：重新认证
             try:
@@ -590,6 +593,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                     if user_obj:
                         user_id = user_obj.id
                         username = user_obj.username
+                        tenant_id = getattr(user_obj, 'current_tenant_id', 0)
             except Exception:
                 pass
         
@@ -602,6 +606,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             AuditLog.create,
             user_id=user_id,
             username=username or "",
+            tenant_id=tenant_id,
             method=request.method,
             path=request.url.path,
             ip=self.get_client_ip(request),

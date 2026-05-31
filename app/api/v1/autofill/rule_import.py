@@ -514,6 +514,7 @@ async def apply_curl_import(curl_apply_request: CurlImportApplyRequest):
             primary_keys=curl_apply_request.primary_keys,
             sync_fields=curl_apply_request.sync_fields,
             remark=curl_apply_request.remark or "CURL导入",
+            allow_add_new=curl_apply_request.allow_add_new,
         )
 
         if not import_result["success"]:

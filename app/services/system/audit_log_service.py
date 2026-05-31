@@ -91,16 +91,6 @@ class AuditLogService:
         elif end_time:
             q &= Q(created_at__lte=end_time)
 
-        # 多租户筛选：仅超级管理员可按租户筛选
-        effective_tenant_id = self._get_effective_tenant_id(
-            current_user, tenant_id if tenant_id is not None else 0
-        )
-        if effective_tenant_id > 0:
-            q &= Q(tenant_id=effective_tenant_id)
-        elif not is_superuser(current_user):
-            # 非超级管理员且没有有效租户ID，使用当前租户ID
-            q &= Q(tenant_id=current_user.current_tenant_id)
-
         # 调用 Repository 层查询
         total, logs = await audit_log_repository.list_with_filter(
             page=page,

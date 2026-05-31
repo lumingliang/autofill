@@ -67,7 +67,13 @@ class LiteLLMSyncService:
         # 构建请求体
         payload = {
             "model_name": config.name,
-            "litellm_params": params
+            "litellm_params": params,
+            "model_info": {
+                "mode": "chat",
+                "max_tokens": 4096,
+                "supports_vision": False,
+                "supports_function_calling": True
+            }
         }
 
         return payload
@@ -116,6 +122,7 @@ class LiteLLMSyncService:
         """
         try:
             payload = self._build_model_payload(config)
+            logger.info(f"Updating model '{config.name}' with payload: {payload}")
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -130,6 +137,7 @@ class LiteLLMSyncService:
             return True
 
         except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error for model '{config.name}': status={e.response.status_code}, response={e.response.text}")
             # 如果模型不存在（404），尝试添加
             if e.response.status_code == 404:
                 logger.warning(f"Model '{config.name}' not found in LiteLLM, trying to add instead")

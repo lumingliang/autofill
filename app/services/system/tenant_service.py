@@ -150,13 +150,12 @@ class TenantService:
         })
 
         # 批量关联所有菜单和API
+        # 注意：batch_add_role_menus 和 batch_add_role_apis 会从 Ctx 自动获取 tenant_id
         await RelationQuery.batch_add_role_menus(
-            [(admin_role.id, m_id) for m_id in all_menus],
-            tenant_id=tenant.id
+            [(admin_role.id, m_id) for m_id in all_menus]
         )
         await RelationQuery.batch_add_role_apis(
-            [(admin_role.id, a_id) for a_id in all_apis],
-            tenant_id=tenant.id
+            [(admin_role.id, a_id) for a_id in all_apis]
         )
 
         return tenant, admin_role

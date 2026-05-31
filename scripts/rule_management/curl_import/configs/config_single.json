@@ -1,0 +1,44 @@
+{
+  "description": "单请求树形结构展平 - 测试接口",
+  "output_file": "test_server/single_output.csv",
+  "global_vars": {
+    "BASE_URL": "http://localhost:6666"
+  },
+  "data_root": "$.data",
+  "levels": [
+    {
+      "name": "level1",
+      "source": "request",
+      "request_index": 0,
+      "fields": [
+        {"header": "name_level1", "jsonpath": "$.option_value"},
+        {"header": "summary_level1", "jsonpath": "$.summary"},
+        {"header": "id_level1", "jsonpath": "$.id"},
+        {"header": "code_level1", "jsonpath": "$.code"}
+      ],
+      "children_path": "$.children"
+    },
+    {
+      "name": "level2",
+      "source": "children",
+      "fields": [
+        {"header": "name_level2", "jsonpath": "$.option_value"},
+        {"header": "summary_level2", "jsonpath": "$.summary"},
+        {"header": "id_level2", "jsonpath": "$.id"}
+      ],
+      "children_path": "$.children"
+    },
+    {
+      "name": "level3",
+      "source": "children",
+      "fields": [
+        {"header": "name_level3", "jsonpath": "$.option_value"},
+        {"header": "summary_level3", "jsonpath": "$.summary"}
+      ],
+      "children_path": null
+    }
+  ],
+  "curl_commands": [
+    "curl -X POST \"{BASE_URL}/api/test/tree\" -H \"Content-Type: application/json\" -d '{\"class_name\": \"事件类型\"}'"
+  ]
+}
