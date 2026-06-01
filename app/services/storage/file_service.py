@@ -391,7 +391,7 @@ class FileService:
         with open(path, "rb") as f:
             return f.read()
 
-    async def save_file(self, relative_path: str, content: bytes) -> str:
+    async def save_file_content(self, relative_path: str, content: bytes) -> str:
         """
         保存文件内容（同步方法）
 
