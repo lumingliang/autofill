@@ -136,9 +136,13 @@ const maskApiKey = (apiKey: string) => {
     return apiKey.substring(0, 10) + '...' + apiKey.substring(apiKey.length - 4)
 }
 
-const copyApiKey = (apiKey: string) => {
-    copyToClipboard(apiKey)
-    message.success('API Key 已复制到剪贴板')
+const copyApiKey = async (apiKey: string) => {
+    try {
+        await copyToClipboard(apiKey)
+        message.success('API Key 已复制到剪贴板')
+    } catch {
+        message.error('复制失败')
+    }
 }
 
 // 加载数据

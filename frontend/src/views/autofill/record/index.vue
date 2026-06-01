@@ -94,7 +94,7 @@
               <div v-if="step.request?.query" style="margin-bottom: 16px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                   <h4 style="margin: 0;">Query内容（用户对话）</h4>
-                  <a-button type="primary" size="small" @click="copyToClipboard(step.request.query)">
+                  <a-button type="primary" size="small" @click="handleCopy(step.request.query)">
                     复制
                   </a-button>
                 </div>
@@ -129,7 +129,7 @@
 import api from '@/api'
 import CrudTable from '@/components/CrudTable/index.vue'
 import { useUserStore } from '@/store'
-import { formatDateTime } from '@/utils'
+import { copyToClipboard, formatDateTime } from '@/utils'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 
@@ -266,12 +266,13 @@ const formatFieldsForTable = (fields: any) => {
 }
 
 // 复制到剪贴板
-const copyToClipboard = (text: string) => {
-  navigator.clipboard.writeText(text).then(() => {
+const handleCopy = async (text: string) => {
+  try {
+    await copyToClipboard(text)
     message.success('已复制到剪贴板')
-  }).catch(() => {
+  } catch {
     message.error('复制失败')
-  })
+  }
 }
 
 // 计算属性

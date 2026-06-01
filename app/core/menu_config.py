@@ -131,7 +131,15 @@ autofill_menus = [
                 component="autofill/app",
                 keepalive=False,
             ),
-
+            MenuConfig(
+                name="Dify Agent",
+                path="dify_agent",
+                menu_type=MenuType.MENU,
+                icon="RobotOutlined",
+                order=2,
+                component="autofill/dify_agent",
+                keepalive=False,
+            ),
             MenuConfig(
                 name="填单记录",
                 path="record",

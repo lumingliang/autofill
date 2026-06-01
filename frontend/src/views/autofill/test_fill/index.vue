@@ -8,8 +8,7 @@
                         <a-col :span="12">
                             <a-form-item label="应用" required>
                                 <a-select v-model:value="ruleForm.app_name" placeholder="请选择应用"
-                                    :options="ruleAppOptions" :loading="loadingRuleApps"
-                                    style="width: 100%"
+                                    :options="ruleAppOptions" :loading="loadingRuleApps" style="width: 100%"
                                     @change="handleRuleAppChange" />
                             </a-form-item>
                         </a-col>
@@ -27,9 +26,8 @@
                     <a-row :gutter="16">
                         <a-col :span="8">
                             <a-form-item label="系统提示词">
-                                <a-select v-model:value="ruleForm.system_prompt_name"
-                                    placeholder="请选择系统提示词（多个规则共用）" :options="systemPromptOptions" allow-clear
-                                    style="width: 100%" />
+                                <a-select v-model:value="ruleForm.system_prompt_name" placeholder="请选择系统提示词（多个规则共用）"
+                                    :options="systemPromptOptions" allow-clear style="width: 100%" />
                             </a-form-item>
                         </a-col>
                     </a-row>
@@ -79,8 +77,8 @@
                                     <a-col :span="24">
                                         <a-form-item label="Filter条件">
                                             <div class="filter-conditions">
-                                                <div v-for="(filter, fIndex) in param.filterConditions"
-                                                    :key="fIndex" class="filter-row">
+                                                <div v-for="(filter, fIndex) in param.filterConditions" :key="fIndex"
+                                                    class="filter-row">
                                                     <a-select v-model:value="filter.column" placeholder="选择字段"
                                                         :options="param.columnOptions" style="width: 200px" />
                                                     <a-input v-model:value="filter.value" placeholder="输入值"
@@ -90,8 +88,7 @@
                                                         删除
                                                     </a-button>
                                                 </div>
-                                                <a-button type="dashed" size="small"
-                                                    @click="addFilterCondition(index)">
+                                                <a-button type="dashed" size="small" @click="addFilterCondition(index)">
                                                     <PlusOutlined />
                                                     添加条件
                                                 </a-button>
@@ -129,9 +126,8 @@
                                 <a-row v-if="param.sampleData && param.sampleData.length > 0">
                                     <a-col :span="24">
                                         <a-form-item label="CSV示例数据">
-                                            <a-table :dataSource="param.sampleData"
-                                                :columns="param.sampleColumns" size="small" :pagination="false"
-                                                bordered />
+                                            <a-table :dataSource="param.sampleData" :columns="param.sampleColumns"
+                                                size="small" :pagination="false" bordered />
                                         </a-form-item>
                                     </a-col>
                                 </a-row>
@@ -141,8 +137,7 @@
 
                     <a-form-item>
                         <a-space>
-                            <a-button type="primary" size="large" :loading="ruleExecuting"
-                                @click="handleRuleExecute">
+                            <a-button type="primary" size="large" :loading="ruleExecuting" @click="handleRuleExecute">
                                 <PlayCircleOutlined />
                                 执行规则
                             </a-button>
@@ -167,8 +162,7 @@
                                 {{ ruleExecuteResult.data?.step }}
                             </a-descriptions-item>
                             <a-descriptions-item label="状态">
-                                <a-tag
-                                    :color="ruleExecuteResult.data?.status === 'completed' ? 'green' : 'blue'">
+                                <a-tag :color="ruleExecuteResult.data?.status === 'completed' ? 'green' : 'blue'">
                                     {{ ruleExecuteResult.data?.status }}
                                 </a-tag>
                             </a-descriptions-item>
@@ -182,29 +176,25 @@
                         <h4>规则执行详情：</h4>
                         <div v-for="(param, index) in ruleForm.params" :key="index" class="rule-result">
                             <h5>规则: {{ param.rule_name }}</h5>
-                            <div v-if="ruleExecuteResult.data?.results?.[param.rule_name]"
-                                class="result-content">
+                            <div v-if="ruleExecuteResult.data?.results?.[param.rule_name]" class="result-content">
                                 <p><strong>LLM返回:</strong> {{
                                     ruleExecuteResult.data.results[param.rule_name].llm_res }}</p>
-                                <div
-                                    v-if="Object.keys(ruleExecuteResult.data.results[param.rule_name]).length > 1">
+                                <div v-if="Object.keys(ruleExecuteResult.data.results[param.rule_name]).length > 1">
                                     <p><strong>提取字段:</strong></p>
                                     <a-descriptions :column="2" bordered size="small">
                                         <template
                                             v-for="(value, itemKey) in ruleExecuteResult.data.results[param.rule_name]"
-                                            :key="itemKey">
+                                            :key="String(itemKey)">
                                             <a-descriptions-item
-                                                v-if="itemKey !== 'llm_res' && itemKey !== 'error'"
+                                                v-if="String(itemKey) !== 'llm_res' && String(itemKey) !== 'error'"
                                                 :label="String(itemKey)">
                                                 {{ value }}
                                             </a-descriptions-item>
                                         </template>
                                     </a-descriptions>
                                 </div>
-                                <a-alert v-if="ruleExecuteResult.data.results[param.rule_name].error"
-                                    type="error"
-                                    :message="ruleExecuteResult.data.results[param.rule_name].error"
-                                    show-icon />
+                                <a-alert v-if="ruleExecuteResult.data.results[param.rule_name].error" type="error"
+                                    :message="ruleExecuteResult.data.results[param.rule_name].error" show-icon />
                             </div>
                         </div>
 
@@ -220,16 +210,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
-import { message } from 'ant-design-vue'
-import {
-    PlusOutlined,
-    PlayCircleOutlined,
-    CopyOutlined,
-} from '@ant-design/icons-vue'
-import { useUserStore } from '@/store'
 import api from '@/api'
 import JsonViewer from '@/components/JsonViewer/index.vue'
+import { useUserStore } from '@/store'
+import { copyToClipboard } from '@/utils'
+import {
+    CopyOutlined,
+    PlayCircleOutlined,
+    PlusOutlined,
+} from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 const userStore = useUserStore()
 const isSuperUser = computed(() => userStore.isSuperUser)
@@ -489,7 +480,7 @@ const handleExportCurl = async () => {
         const curlCommand = res?.data?.curl_command
 
         if (curlCommand) {
-            await navigator.clipboard.writeText(curlCommand)
+            await copyToClipboard(curlCommand)
             message.success('Curl命令已复制到剪贴板')
         } else {
             message.error('导出失败：未返回Curl命令')

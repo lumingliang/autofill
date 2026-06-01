@@ -41,6 +41,7 @@
 import { CopyOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
+import { copyToClipboard } from '@/utils'
 
 interface Props {
   // 数据
@@ -124,7 +125,7 @@ const toggleExpand = () => {
 // 复制
 const handleCopy = async () => {
   try {
-    await navigator.clipboard.writeText(formattedJson.value)
+    await copyToClipboard(formattedJson.value)
     message.success('已复制到剪贴板')
   } catch (e) {
     message.error('复制失败')

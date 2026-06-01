@@ -185,4 +185,11 @@ export default {
   executeRuleTest: (data: any = {}) => request.post('/autofill/rule_test/execute', data),
   exportRuleTestCurl: (data: any = {}) => request.post('/autofill/rule_test/export_curl', data),
 
+  // Dify Agent 管理
+  getDifyAgentList: (params: any = {}) => request.get('/autofill/dify-agent/list', { params }),
+  getDifyAgentById: (params: any = {}) => request.get('/autofill/dify-agent/get', { params }),
+  createDifyAgent: (data: any = {}) => request.post('/autofill/dify-agent/create', data),
+  updateDifyAgent: (data: any = {}) => request.post('/autofill/dify-agent/update', data),
+  deleteDifyAgent: (params: any = {}) => request.delete('/autofill/dify-agent/delete', { params }),
+
 }
