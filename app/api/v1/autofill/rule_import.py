@@ -389,17 +389,17 @@ async def apply_import(import_request: ImportApplyRequest):
     if not rule:
         return Fail(code=404, msg="规则不存在")
 
-    if import_request.config.primary_keys:
-        await _save_primary_keys_config(rule, import_request.config.primary_keys)
+    if import_request.primary_keys:
+        await _save_primary_keys_config(rule, import_request.primary_keys)
 
     try:
         import_result = await _execute_csv_import_core(
             rule=rule,
             csv_content=import_request.content,
-            primary_keys=import_request.config.primary_keys or [],
-            sync_fields=import_request.config.sync_fields or [],
+            primary_keys=import_request.primary_keys or [],
+            sync_fields=import_request.sync_fields or [],
             remark=import_request.remark,
-            allow_add_new=import_request.config.allow_add_new,
+            allow_add_new=import_request.allow_add_new,
         )
 
         if not import_result["success"]:

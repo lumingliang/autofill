@@ -243,17 +243,6 @@ async def rollback_version(
         return Fail(code=400, msg=str(e))
 
 
-@router.post("/rule/import", summary="导入CSV（兼容旧接口）")
-async def import_csv_compat(
-    file: UploadFile = File(..., description="CSV文件"),
-    rule_id: int = Form(..., description="规则ID"),
-):
-    """导入CSV文件，执行增量导入并保存为新版本"""
-    # 延迟导入避免循环导入
-    from app.api.v1.autofill.rule_import import import_csv_file
-    return await import_csv_file(file, rule_id)
-
-
 @router.get("/rule/export", summary="导出CSV")
 async def export_csv(
     query: RuleExportQuery = Depends(),

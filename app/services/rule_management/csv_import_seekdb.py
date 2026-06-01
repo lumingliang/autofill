@@ -106,14 +106,14 @@ class CsvImportSeekdbService:
         existing_headers: List[str],
         primary_keys: List[str],
         sync_fields: List[str]
-    ) -> List[str]:
+    ) -> Tuple[List[str], Set[str], Set[str]]:
         """
-        构建允许的字段列表
+        构建允许的字段列表，返回三类字段
 
         规则：
-        1. 如果有旧CSV（existing_headers不为空），使用旧表头 + sync_fields（去重）
-        2. 如果没有旧CSV，只使用主键 + sync_fields
-        3. 以 'id' 结尾的字段放在列表最后
+        1. 第一类：主键字段 (primary_keys)
+        2. 第二类：sync_fields_set 中的字段（需要同步更新的字段）
+        3. 第三类：旧表中除上述两类之外的字段（保留但不同步）
 
         Args:
             existing_headers: 已有表头字段列表（旧CSV的表头）
@@ -121,62 +121,79 @@ class CsvImportSeekdbService:
             sync_fields: 需要同步的字段列表
 
         Returns:
-            排序后的允许字段列表（非id字段在前，id字段在后）
+            (all_fields_list, pk_and_sync_fields_set, other_fields_set)
+            - all_fields_list: 所有字段的有序列表
+            - pk_and_sync_fields_set: 主键 + sync_fields 的集合（需要从新表取值的字段）
+            - other_fields_set: 第三类字段的集合（需要从旧表取值或置空的字段）
         """
-        # 确定基础字段列表
-        if existing_headers:
-            # 有旧CSV：使用旧表头 + sync_fields
-            all_fields = set(existing_headers) | set(sync_fields or [])
-        else:
-            # 没有旧CSV：只使用主键 + sync_fields
-            all_fields = set(primary_keys) | set(sync_fields or [])
+        primary_keys_set = set(primary_keys or [])
+        sync_fields_set = set(sync_fields or [])
 
-        # 确保主键一定包含在字段列表中
-        all_fields = all_fields | set(primary_keys)
+        # 第一类 + 第二类：主键 + sync_fields
+        pk_and_sync_fields_set = primary_keys_set | sync_fields_set
+
+        # 第三类：旧表中除主键和sync_fields之外的字段
+        other_fields_set = set()
+        if existing_headers:
+            other_fields_set = set(existing_headers) - pk_and_sync_fields_set
+
+        # 所有字段
+        all_fields = pk_and_sync_fields_set | other_fields_set
 
         # 分离id字段和非id字段
         id_fields = [f for f in all_fields if f.lower().endswith('id')]
         non_id_fields = [f for f in all_fields if not f.lower().endswith('id')]
 
-        # 保持原有顺序：非id字段按existing_headers或primary_keys+sync_fields中的顺序
+        # 构建有序列表
+        # 顺序：非id主键 -> 非id sync_fields -> 非id其他字段 -> id字段
         ordered_non_id = []
+        ordered_id = []
         seen = set()
 
-        # 确定字段顺序的来源
+        # 先添加非id主键
+        for f in primary_keys:
+            if f not in seen and f in non_id_fields:
+                ordered_non_id.append(f)
+                seen.add(f)
+
+        # 再添加非id sync_fields（排除已在主键中的）
+        for f in (sync_fields or []):
+            if f not in seen and f in non_id_fields:
+                ordered_non_id.append(f)
+                seen.add(f)
+
+        # 添加非id其他字段（按existing_headers顺序）
         if existing_headers:
-            # 有旧CSV：先按旧表头顺序
-            field_order = existing_headers
-        else:
-            # 没有旧CSV：按 primary_keys + sync_fields 顺序
-            field_order = list(primary_keys) + list(sync_fields or [])
+            for f in existing_headers:
+                if f in other_fields_set and f not in seen and f in non_id_fields:
+                    ordered_non_id.append(f)
+                    seen.add(f)
 
-        # 按顺序添加非id字段
-        for f in field_order:
-            if f in non_id_fields and f not in seen:
-                ordered_non_id.append(f)
-                seen.add(f)
-
-        # 再添加sync_fields中的新非id字段（如果有的话）
-        for f in list(sync_fields or []):
-            if f in non_id_fields and f not in seen:
-                ordered_non_id.append(f)
-                seen.add(f)
-
-        # id字段排序：先primary_keys中的id，然后是其他id
-        ordered_id = []
+        # id字段放最后：先主键中的id，然后是sync_fields中的id，最后是其他id
         seen_id = set()
 
+        # 主键中的id
         for f in primary_keys:
             if f in id_fields and f not in seen_id:
                 ordered_id.append(f)
                 seen_id.add(f)
 
-        for f in all_fields:
+        # sync_fields中的id
+        for f in (sync_fields or []):
             if f in id_fields and f not in seen_id:
                 ordered_id.append(f)
                 seen_id.add(f)
 
-        return ordered_non_id + ordered_id
+        # 其他id字段（按existing_headers顺序）
+        if existing_headers:
+            for f in existing_headers:
+                if f in other_fields_set and f in id_fields and f not in seen_id:
+                    ordered_id.append(f)
+                    seen_id.add(f)
+
+        ordered_fields = ordered_non_id + ordered_id
+
+        return ordered_fields, pk_and_sync_fields_set, other_fields_set
 
     @staticmethod
     async def execute_import(
@@ -368,8 +385,8 @@ class CsvImportSeekdbService:
         result_rows: List[Dict[str, Any]] = []
         processed_old_keys: Set[str] = set()
 
-        # 使用公共方法构建允许的字段列表
-        allowed_fields_list = CsvImportSeekdbService.build_allowed_fields(
+        # 使用公共方法构建允许的字段列表，返回三类字段
+        allowed_fields_list, pk_and_sync_fields_set, other_fields_set = CsvImportSeekdbService.build_allowed_fields(
             existing_headers=existing_headers,
             primary_keys=primary_keys,
             sync_fields=list(sync_fields_set)
@@ -378,19 +395,25 @@ class CsvImportSeekdbService:
 
         for key, csv_row in csv_index.items():
             if key in existing_index:
-                # 更新现有数据：只保留 allowed_fields，优先用 CSV 中的值
+                # 更新现有数据：
+                # 1. 主键 + sync_fields_set 的字段，使用新表的值
+                # 2. 第三类字段直接使用旧表的值
                 old_row = existing_index[key]
                 new_row: Dict[str, Any] = {}
                 has_real_update = False
 
                 for field in allowed_fields_list:
-                    old_val = old_row.get(field, "")
-                    new_val = csv_row.get(field, "")
-                    new_row[field] = new_val
-
-                    # 对比新旧值，检查是否真的有更新
-                    if str(old_val) != str(new_val):
-                        has_real_update = True
+                    if field in pk_and_sync_fields_set:
+                        # 第一类 + 第二类：使用新表的值
+                        old_val = old_row.get(field, "")
+                        new_val = csv_row.get(field, "")
+                        new_row[field] = new_val
+                        # 对比新旧值，检查是否真的有更新
+                        if str(old_val) != str(new_val):
+                            has_real_update = True
+                    else:
+                        # 第三类：使用旧表的值
+                        new_row[field] = old_row.get(field, "")
 
                 result_rows.append(new_row)
                 processed_old_keys.add(key)
@@ -399,11 +422,17 @@ class CsvImportSeekdbService:
                 if has_real_update:
                     stats.updated_count += 1
             elif allow_add_new:
-                # 只有允许新增时，才添加新行
-                # 严格控制：只包含主键 + sync_fields 中的字段
+                # 允许新增时：
+                # 1. 主键 + sync_fields_set 的字段，使用新表的值
+                # 2. 第三类字段设置为空
                 new_row: Dict[str, Any] = {}
                 for field in allowed_fields_list:
-                    new_row[field] = csv_row.get(field, "")
+                    if field in pk_and_sync_fields_set:
+                        # 第一类 + 第二类：使用新表的值
+                        new_row[field] = csv_row.get(field, "")
+                    else:
+                        # 第三类：设置为空
+                        new_row[field] = ""
                 result_rows.append(new_row)
                 stats.added_count += 1
             else:

@@ -124,7 +124,6 @@ const props = defineProps<{
   ruleId?: number
   ruleCode?: string
   ruleName?: string
-  tenantId?: number
   existingHeaders?: string[]
   primaryKeys?: string[]
   syncFields?: string[]
@@ -254,7 +253,6 @@ const handlePreview = async () => {
   try {
     const res: any = await api.previewCurlImport({
       rule_id: props.ruleId,
-      tenant_id: props.tenantId,
       curl_config: config
     })
 
@@ -288,7 +286,6 @@ const autoSaveCurlConfig = async () => {
     const config = curlConfig.value || {}
     await api.saveCurlImportConfig({
       rule_id: props.ruleId,
-      tenant_id: props.tenantId,
       curl_config: config
     })
     // 不显示成功消息，静默保存
@@ -320,8 +317,6 @@ const handleImport = async () => {
         // 执行CURL导入，后端会生成临时文件并走文件导入流程
         const res: any = await api.applyCurlImport({
           rule_id: props.ruleId,
-          tenant_id: props.tenantId,
-          current_md5: currentMd5.value,
           primary_keys: props.primaryKeys,
           sync_fields: props.syncFields || [],
           curl_config: curlConfig.value,
@@ -353,7 +348,6 @@ const loadCurrentVersion = async () => {
   try {
     const res: any = await api.getRuleVersions({
       rule_id: props.ruleId,
-      tenant_id: props.tenantId,
       page: 1,
       page_size: 1
     })
@@ -376,8 +370,7 @@ const loadSavedConfig = async () => {
 
   try {
     const res: any = await api.getCurlImportConfig({
-      rule_id: props.ruleId,
-      tenant_id: props.tenantId
+      rule_id: props.ruleId
     })
 
     if (res.code === 200 && res.data) {

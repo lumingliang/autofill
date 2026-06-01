@@ -53,7 +53,6 @@ class RuleCreate(BaseModel):
     rule_name: str = Field(..., max_length=128, description="规则名称")
     desc: str = Field("", max_length=512, description="规则描述")
     app_name: str = Field("", max_length=64, description="应用名称")
-    tenant_id: int = Field(0, description="租户ID，超级管理员必须指定")
 
 
 class RuleUpdate(BaseModel):
@@ -63,7 +62,6 @@ class RuleUpdate(BaseModel):
     desc: str = Field("", max_length=512, description="规则描述")
     status: int = Field(-1, description="状态：0-禁用，1-启用，-1表示不修改")
     app_name: str = Field("", max_length=64, description="应用名称")
-    tenant_id: int = Field(0, description="租户ID")
 
 
 class RuleVersionSave(BaseModel):
@@ -72,7 +70,6 @@ class RuleVersionSave(BaseModel):
     content_json: Dict[str, Any] = Field(..., description="规则内容JSON格式")
     current_md5: str = Field(..., max_length=32, description="当前版本MD5，用于乐观锁")
     remark: str = Field("", max_length=512, description="版本备注")
-    tenant_id: int = Field(0, description="租户ID")
     is_major: bool = Field(False, description="是否主版本")
 
 
@@ -85,7 +82,6 @@ class RuleVersionRollback(BaseModel):
 class RuleInfoOut(BaseModel):
     """规则信息输出"""
     id: int
-    tenant_id: int = 0
     app_name: str = ""
     rule_code: str = ""
     rule_name: str = ""
@@ -102,7 +98,6 @@ class RuleInfoOut(BaseModel):
 class RuleVersionOut(BaseModel):
     """规则版本输出"""
     id: int
-    tenant_id: int = 0
     app_name: str = ""
     version_no: int = 0
     content_md5: str = ""
@@ -152,7 +147,6 @@ class CsvImportConfig(BaseModel):
 class FilePreviewRequest(BaseModel):
     """文件导入预览请求"""
     rule_id: int = Field(..., description="规则ID")
-    tenant_id: int = Field(0, description="租户ID")
     content: str = Field(..., description="CSV内容")
     primary_keys: List[str] = Field(default_factory=list, description="主键字段列表（可选，提供时自动保存）")
 
@@ -167,20 +161,14 @@ class FilePreviewResponse(BaseModel):
     config: CsvImportConfig = Field(default_factory=CsvImportConfig, description="当前配置")
 
 
-class ImportConfigSave(BaseModel):
-    """保存导入配置请求"""
-    rule_id: int = Field(..., description="规则ID")
-    tenant_id: int = Field(0, description="租户ID")
-    config: CsvImportConfig = Field(..., description="导入配置")
-
-
 class ImportApplyRequest(BaseModel):
     """执行CSV导入请求"""
     rule_id: int = Field(..., description="规则ID")
-    tenant_id: int = Field(0, description="租户ID")
     content: str = Field(..., description="CSV内容")
     remark: str = Field("", max_length=512, description="版本备注")
-    config: CsvImportConfig = Field(..., description="导入配置")
+    primary_keys: List[str] = Field(default_factory=list, description="主键字段列表")
+    sync_fields: List[str] = Field(default_factory=list, description="需要同步更新的字段列表")
+    allow_add_new: bool = Field(True, description="是否允许新增数据")
 
 
 class ImportApplyResponse(BaseModel):
@@ -234,7 +222,6 @@ class CurlImportConfig(BaseModel):
 class CurlImportPreviewRequest(BaseModel):
     """CURL导入预览请求"""
     rule_id: int = Field(..., description="规则ID")
-    tenant_id: int = Field(0, description="租户ID")
     curl_config: CurlImportConfig = Field(..., description="CURL导入配置")
 
 
@@ -250,14 +237,12 @@ class CurlImportPreviewResponse(BaseModel):
 class CurlImportSaveConfigRequest(BaseModel):
     """保存CURL导入配置请求 - 只保存curl_config，主键和同步字段在公共配置中管理"""
     rule_id: int = Field(..., description="规则ID")
-    tenant_id: int = Field(0, description="租户ID")
     curl_config: CurlImportConfig = Field(..., description="CURL导入配置")
 
 
 class CurlImportApplyRequest(BaseModel):
     """执行CURL导入请求"""
     rule_id: int = Field(..., description="规则ID")
-    tenant_id: int = Field(0, description="租户ID")
     remark: str = Field("", max_length=512, description="版本备注")
     primary_keys: List[str] = Field(default_factory=list, description="主键字段列表")
     sync_fields: List[str] = Field(default_factory=list, description="同步字段列表")

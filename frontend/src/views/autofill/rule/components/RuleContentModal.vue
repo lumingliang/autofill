@@ -2,7 +2,7 @@
     <a-modal v-model:open="visible" :title="`编辑规则内容 - ${ruleName || ruleCode}`" width="90%" :footer="null"
         :destroy-on-close="true" @cancel="handleCancel">
         <ExcelCsvEditor ref="editorRef" :rule-id="ruleId" :rule-code="ruleCode" :rule-name="ruleName"
-            :tenant-id="tenantId" @saved="handleSaved" />
+            @saved="handleSaved" />
     </a-modal>
 </template>
 
@@ -15,7 +15,6 @@ const props = defineProps<{
     ruleId?: number
     ruleCode?: string
     ruleName?: string
-    tenantId?: number
 }>()
 
 const emit = defineEmits<{

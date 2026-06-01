@@ -85,7 +85,6 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     TenantSelector: typeof import('./src/components/TenantSelector/index.vue')['default']
-    VxeCsvEditor: typeof import('./src/components/VxeCsvEditor/index.vue')['default']
     YamlEditor: typeof import('./src/components/YamlEditor/index.vue')['default']
   }
 }

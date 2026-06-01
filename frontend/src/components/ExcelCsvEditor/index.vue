@@ -193,7 +193,7 @@
           <!-- 从CURL导入 -->
           <a-tab-pane key="curl" tab="从CURL导入">
             <CurlImport ref="curlImportRef" :rule-id="ruleId" :rule-code="ruleCode" :rule-name="ruleName"
-              :tenant-id="tenantId" :existing-headers="headers" :primary-keys="primaryKeys" :sync-fields="syncFields"
+              :existing-headers="headers" :primary-keys="primaryKeys" :sync-fields="syncFields"
               :allow-add-new="allowAddNew"
               @preview="handleCurlPreview" @imported="handleCurlImportSuccess" />
           </a-tab-pane>
@@ -266,7 +266,6 @@ const props = defineProps<{
   ruleId?: number
   ruleCode?: string
   ruleName?: string
-  tenantId?: number
 }>()
 
 const emit = defineEmits<{
@@ -505,9 +504,6 @@ const loadRuleDetail = async () => {
   if (!props.ruleId) return
   try {
     const params: any = { id: props.ruleId }
-    if (props.tenantId) {
-      params.tenant_id = props.tenantId
-    }
     const res: any = await api.getRuleDetail(params)
     if (res.code === 200 && res.data) {
       const { current_version } = res.data
@@ -631,9 +627,6 @@ const confirmSave = async () => {
       current_md5: currentMd5.value,
       remark: saveForm.remark,
     }
-    if (props.tenantId) {
-      requestData.tenant_id = props.tenantId
-    }
 
     const res: any = await api.saveRuleVersion(requestData)
 
@@ -694,8 +687,7 @@ const handleImport = async () => {
   if (props.ruleId) {
     try {
       const configRes: any = await api.getImportConfig({
-        rule_id: props.ruleId,
-        tenant_id: props.tenantId
+        rule_id: props.ruleId
       })
       if (configRes.code === 200 && configRes.data) {
         primaryKeys.value = configRes.data.primary_keys || []
@@ -755,7 +747,6 @@ const handleCsvContentChange = async () => {
     // 预览时传入当前主键配置，后端会自动保存
     const res: any = await api.previewFileImport({
       rule_id: props.ruleId,
-      tenant_id: props.tenantId,
       content: csvContent.value,
       primary_keys: primaryKeys.value  // 传入当前主键配置，后端自动保存
     })
@@ -866,14 +857,10 @@ const confirmFileImport = async () => {
   try {
     const importData = {
       rule_id: props.ruleId,
-      tenant_id: props.tenantId,
       content: csvContent.value,
-      current_md5: currentMd5.value,
-      allow_add_new: allowAddNew.value,
-      config: {
-        primary_keys: primaryKeys.value,
-        sync_fields: syncFields.value
-      }
+      primary_keys: primaryKeys.value,
+      sync_fields: syncFields.value,
+      allow_add_new: allowAddNew.value
     }
 
     const res: any = await api.applyImport(importData)
@@ -924,9 +911,6 @@ const handleExport = async () => {
     if (currentVersion.value?.version_no) {
       params.version_no = currentVersion.value.version_no
     }
-    if (props.tenantId) {
-      params.tenant_id = props.tenantId
-    }
     const res = await api.exportRuleCsv(params)
     const blob = new Blob([res.data], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
@@ -948,9 +932,6 @@ const handleExport = async () => {
 const showVersionHistory = async () => {
   try {
     const params: any = { rule_id: props.ruleId }
-    if (props.tenantId) {
-      params.tenant_id = props.tenantId
-    }
     const res: any = await api.getRuleVersions(params)
     if (res.code === 200) {
       versionList.value = res.data || []
@@ -968,9 +949,6 @@ const showVersionHistory = async () => {
 const handleViewVersion = async (record: any) => {
   try {
     const params: any = { rule_id: props.ruleId, version_no: record.version_no }
-    if (props.tenantId) {
-      params.tenant_id = props.tenantId
-    }
     const res: any = await api.getRuleVersionByNo(params)
     if (res.code === 200 && res.data) {
       const version = res.data
@@ -1012,9 +990,6 @@ const handleRollback = async (record: any) => {
         const data: any = {
           rule_id: props.ruleId,
           version_no: record.version_no,
-        }
-        if (props.tenantId) {
-          data.tenant_id = props.tenantId
         }
         const res: any = await api.rollbackRuleVersion(data)
         if (res.code === 200) {
