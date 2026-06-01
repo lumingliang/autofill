@@ -5,8 +5,6 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
-from app.log import logger
-
 
 def parse_text_function_call(content: str, tools: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """

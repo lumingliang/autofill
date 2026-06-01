@@ -47,7 +47,7 @@ dependencies = [
     "python-dotenv==1.0.1",
     
     # Logging
-    "loguru==0.7.3",
+    "structlog==25.3.0",
     
     # LLM & LangChain
     "langchain==0.3.23",

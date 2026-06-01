@@ -14,7 +14,6 @@ import io
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple, Iterator
 
-from app.log import logger
 from app.services.storage.seekdb_service import seekdb_service, DEFAULT_QUERY_LIMIT
 
 
@@ -470,16 +469,6 @@ class CsvImportSeekdbService:
             collection.add(ids=ids, metadatas=metadatas, embeddings=embeddings)
 
         stats.total_count = len(result_rows)
-
-        logger.info(
-            "CSV 导入到 seekdb",
-            collection_name=collection_name,
-            added_count=stats.added_count,
-            updated_count=stats.updated_count,
-            skipped_count=stats.skipped_count,
-            total_count=stats.total_count,
-            version_no=version_no
-        )
 
         return {
             "added_count": stats.added_count,

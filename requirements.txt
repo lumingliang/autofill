@@ -33,7 +33,7 @@ pillow==11.0.0
 toml==0.10.2
 
 # Logging
-loguru==0.7.3
+structlog==25.3.0
 
 # LLM & LangChain
 langchain==0.3.23

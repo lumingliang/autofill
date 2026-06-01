@@ -1,19 +1,28 @@
 """
-统一日志模块 - FastAPI + Loguru + JSON 格式
+统一日志模块 - 基于 structlog 的结构化日志
+主要字段：request_id, tenant_id, elapsed_time, exception(filename:lineno)
 """
-import json
+import inspect
 import logging
-import os
 import sys
 from contextvars import ContextVar
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from loguru import logger
+import structlog
 
 from app.settings import settings
 
+
+def get_local_timestamp() -> str:
+    """获取本地时区时间戳"""
+    return datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
+
 # 请求追踪 ID 上下文变量
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
-tenant_domain_var: ContextVar[str] = ContextVar("tenant_domain", default="")
+tenant_id_var: ContextVar[int] = ContextVar("tenant_id", default=0)
+# 标记请求日志是否已被记录
+request_logged_var: ContextVar[bool] = ContextVar("request_logged", default=False)
 
 
 def get_request_id() -> str:
@@ -24,144 +33,202 @@ def set_request_id(request_id: str):
     request_id_var.set(request_id)
 
 
-def get_tenant_domain() -> str:
-    return tenant_domain_var.get()
+def get_tenant_id() -> int:
+    return tenant_id_var.get()
 
 
-def set_tenant_domain(tenant_domain: str):
-    tenant_domain_var.set(tenant_domain)
+def set_tenant_id(tenant_id: int):
+    tenant_id_var.set(tenant_id)
 
 
-def patch_record(record):
-    """在序列化前修改记录，添加自定义字段"""
-    exc = record.get("exception")
+def is_request_logged() -> bool:
+    """检查当前请求是否已经被记录过日志"""
+    return request_logged_var.get()
 
-    # 获取异常发生的位置（最底层帧）
-    exc_location = None
-    if exc:
-        tb = exc.traceback
-        while tb:
-            exc_location = f"{tb.tb_frame.f_code.co_filename}:{tb.tb_lineno}"
+
+def set_request_logged(logged: bool = True):
+    """设置当前请求的日志记录状态"""
+    request_logged_var.set(logged)
+
+
+def get_exception_location(exc_info):
+    """获取异常发生的位置（业务代码中的位置）
+    
+    遍历 traceback 链，找到最底层的业务代码帧（即异常实际抛出的位置）
+    排除第三方库和框架内部的帧
+    """
+    if not exc_info or exc_info[2] is None:
+        return None
+    
+    tb = exc_info[2]
+    last_business_frame = None
+    
+    # 遍历整个 traceback 链，找到最底层的业务代码帧
+    while tb:
+        filename = tb.tb_frame.f_code.co_filename
+        lineno = tb.tb_lineno
+        
+        # 排除第三方库和框架内部代码
+        if '/site-packages/' in filename or 'lib/python' in filename:
             tb = tb.tb_next
-
-    # 构建 JSON 数据
-    log_data = {
-        "time": record["time"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
-        "level": record["level"].name,
-        "location": f"{record['file'].path}:{record['line']}" if hasattr(record['file'], 'path') else f"{record['name']}:{record['line']}",
-        "message": record["message"],
-    }
-
-    # 添加异常信息
-    if exc:
-        log_data["error"] = {
-            "type": exc.type.__name__,
-            "message": str(exc.value),
-            "location": exc_location
-        }
-
-    # 添加请求追踪信息
-    req_id = get_request_id()
-    if req_id:
-        log_data["request_id"] = req_id
-
-    tenant_domain = get_tenant_domain()
-    if tenant_domain:
-        log_data["tenant_domain"] = tenant_domain
-
-    # 添加 extra 中绑定的其他字段（如 request_params, response 等）
-    # 排除内部使用的 _json 字段
-    extra_data = {k: v for k, v in record["extra"].items() if not k.startswith("_")}
-    if extra_data:
-        log_data.update(extra_data)
-
-    # 存储序列化后的 JSON
-    record["extra"]["_json"] = json.dumps(log_data, ensure_ascii=False, default=str)
-
-    # 清除异常信息，防止 loguru 输出 traceback 到控制台
-    if record.get("exception"):
-        record["exception"] = None
-
-
-# 应用 patch
-logger = logger.patch(patch_record)
-
-
-# 拦截 uvicorn 原生日志
-class InterceptHandler(logging.Handler):
-    def emit(self, record):
-        try:
-            level = logger.level(record.levelname).name
-        except ValueError:
-            level = record.levelno
+            continue
         
-        # 自动回溯真实调用代码行
-        frame, depth = logging.currentframe(), 2
-        while frame.f_code.co_filename == logging.__file__:
+        # 记录业务代码帧（继续遍历以找到最底层的）
+        last_business_frame = (filename, lineno)
+        tb = tb.tb_next
+    
+    # 返回最底层的业务代码位置
+    if last_business_frame:
+        return f"{last_business_frame[0]}:{last_business_frame[1]}"
+    
+    # 如果没有找到业务代码位置，返回最底层帧
+    tb = exc_info[2]
+    while tb.tb_next:
+        tb = tb.tb_next
+    return f"{tb.tb_frame.f_code.co_filename}:{tb.tb_lineno}"
+
+
+def get_caller_location(skip_frames: int = 2) -> str:
+    """获取调用者的文件位置和行号
+
+    Args:
+        skip_frames: 跳过的帧数，默认为2（跳过当前函数和调用者）
+
+    Returns:
+        str: 文件路径:行号
+    """
+    frame = inspect.currentframe()
+    try:
+        # 跳过指定帧数
+        for _ in range(skip_frames):
+            if frame is None:
+                return "unknown:0"
             frame = frame.f_back
-            depth += 1
+
+        if frame is None:
+            return "unknown:0"
+
+        filename = frame.f_code.co_filename
+        lineno = frame.f_lineno
+        return f"{filename}:{lineno}"
+    finally:
+        del frame
+
+
+def add_context_info(logger, method_name, event_dict):
+    """添加上下文信息到日志事件"""
+    event_dict["request_id"] = get_request_id()
+    tenant_id = get_tenant_id()
+    if tenant_id:
+        event_dict["tenant_id"] = tenant_id
+    return event_dict
+
+
+def add_caller_location(logger, method_name, event_dict):
+    """添加调用者位置信息到日志事件
+    
+    通过检查调用栈，找到实际调用日志记录的业务代码位置
+    """
+    frame = inspect.currentframe()
+    try:
+        # 向上遍历调用栈，跳过框架和日志相关的帧
+        # 需要跳过的模块前缀
+        skip_prefixes = (
+            '/site-packages/',
+            'lib/python',
+            '/app/log/',
+            '/logging/',
+            '/structlog/',
+        )
         
-        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        # 从当前帧开始向上遍历
+        while frame:
+            filename = frame.f_code.co_filename
+            lineno = frame.f_lineno
+            
+            # 检查是否需要跳过
+            should_skip = any(p in filename for p in skip_prefixes)
+            
+            if not should_skip:
+                # 找到业务代码帧
+                event_dict["location"] = f"{filename}:{lineno}"
+                return event_dict
+            
+            frame = frame.f_back
+        
+        # 如果没有找到业务代码帧，不添加位置信息
+        return event_dict
+    finally:
+        del frame
 
 
 def setup_logger():
-    """初始化日志配置"""
-    # 清空 loguru 默认处理器
-    logger.remove()
-
-    # JSON 格式模板
-    json_format = "{extra[_json]}\n"
+    """初始化 structlog 配置"""
+    # 配置标准库 logging 处理器
+    handlers = []
     
-    # 1. 控制台 JSON 输出
     if settings.LOG_CONSOLE_OUTPUT:
-        logger.add(
-            sys.stdout,
-            level=settings.LOG_LEVEL,
-            format=json_format,
-            enqueue=True,
-            backtrace=False,
-            diagnose=False,
-        )
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
+        handlers.append(console_handler)
     
-    # 2. 文件 JSON 日志
     if settings.LOG_FILE_OUTPUT:
-        log_dir = os.path.dirname(settings.LOG_FILE)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        
-        logger.add(
-            settings.LOG_FILE,
-            level=settings.LOG_LEVEL,
-            format=json_format,
-            rotation=settings.LOG_MAX_BYTES * 1024 * 1024,
-            retention=settings.LOG_BACKUP_COUNT,
-            encoding="utf-8",
-            enqueue=True,
-            compression="gz",
-            backtrace=False,
-            diagnose=False,
-        )
+        file_handler = logging.FileHandler(settings.LOG_FILE, encoding="utf-8")
+        file_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
+        handlers.append(file_handler)
     
-    # 全局接管 uvicorn/fastapi 日志（排除 uvicorn.access，由 RequestLoggingMiddleware 处理）
+    # 配置根日志器
     logging.basicConfig(
-        handlers=[InterceptHandler()],
-        level=logging.INFO,
-        force=True
+        level=getattr(logging, settings.LOG_LEVEL.upper()),
+        handlers=handlers,
+        format="%(message)s",
+        force=True,
     )
-
-    # 清除 uvicorn 原有 handler，防止重复输出
-    for log_name in ["uvicorn", "uvicorn.error", "fastapi"]:
-        _logger = logging.getLogger(log_name)
-        _logger.handlers.clear()
-        _logger.propagate = True
-
-    # 禁用 uvicorn.access 日志，避免与 RequestLoggingMiddleware 重复
-    uvicorn_access = logging.getLogger("uvicorn.access")
-    uvicorn_access.handlers.clear()
-    uvicorn_access.addHandler(logging.NullHandler())
-    uvicorn_access.propagate = False
     
-    return logger
+    # 配置 structlog
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            add_context_info,
+            add_caller_location,  # 添加调用者位置信息
+            structlog.processors.TimeStamper(fmt="iso", utc=False),
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.UnicodeDecoder(),
+            structlog.processors.JSONRenderer(ensure_ascii=False),
+        ],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+    
+    # 抑制 uvicorn 和 fastapi 的访问日志（由 RequestLoggingMiddleware 统一处理）
+    logging.getLogger("uvicorn.access").handlers = []
+    logging.getLogger("uvicorn.access").propagate = False
+    
+    # 抑制 uvicorn.error 的默认异常输出（避免控制台打印完整 traceback）
+    # 异常已由我们的全局异常处理器记录到日志文件
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    uvicorn_error.handlers = []
+    uvicorn_error.propagate = False
 
 
-__all__ = ["logger", "setup_logger", "set_request_id", "get_request_id", "set_tenant_domain", "get_tenant_domain"]
+# 获取 logger 实例
+logger = structlog.get_logger()
+
+
+__all__ = [
+    "logger",
+    "setup_logger",
+    "set_request_id",
+    "get_request_id",
+    "set_tenant_id",
+    "get_tenant_id",
+    "get_exception_location",
+    "get_caller_location",
+]

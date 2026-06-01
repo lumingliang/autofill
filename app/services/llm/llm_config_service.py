@@ -10,7 +10,6 @@ LLM 配置 Service 层
 - 使用 @atomic() 装饰器控制事务
 - 不直接查询 Model 层，通过 Repository 层访问数据
 """
-import logging
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +19,7 @@ from fastapi import HTTPException
 from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
+from app.log import logger
 from app.models.llm_config import LLMConfig
 from app.repositories.llm.llm_config_repository import llm_config_repository
 from app.services.llm.litellm_sync_service import litellm_sync_service
@@ -39,9 +39,6 @@ class LLMConfigService:
     - 使用 @atomic() 装饰器控制事务
     - 不直接操作数据库，通过 Repository 层访问数据
     """
-
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
 
     async def get_by_id(self, id: int) -> LLMConfig:
         """根据ID获取配置"""
@@ -237,7 +234,7 @@ class LLMConfigService:
             elif action == "delete":
                 await litellm_sync_service.remove_config(config.name)
         except Exception as e:
-            self.logger.warning(f"Failed to sync config to LiteLLM: {e}")
+            logger.warning(f"Failed to sync config to LiteLLM: {e}")
 
     async def get_default_config(self) -> Optional[LLMConfig]:
         """获取默认配置"""
@@ -362,7 +359,7 @@ class LLMConfigService:
                     "message": "所有活跃配置已同步到 LiteLLM 网关" if success else "同步过程中出现错误"
                 }
         except Exception as e:
-            self.logger.error(f"Failed to sync to gateway: {e}")
+            logger.error(f"Failed to sync to gateway: {e}")
             return {
                 "success": False,
                 "message": f"同步失败: {str(e)}"
@@ -379,7 +376,7 @@ class LLMConfigService:
             result = await litellm_sync_service.sync_from_gateway()
             return result
         except Exception as e:
-            self.logger.error(f"Failed to sync from gateway: {e}")
+            logger.error(f"Failed to sync from gateway: {e}")
             return {
                 "total": 0,
                 "created": 0,
@@ -400,7 +397,7 @@ class LLMConfigService:
             models = await litellm_sync_service.get_models_from_gateway()
             return models
         except Exception as e:
-            self.logger.error(f"Failed to get gateway models: {e}")
+            logger.error(f"Failed to get gateway models: {e}")
             raise HTTPException(status_code=500, detail=f"获取网关模型失败: {str(e)}")
 
 

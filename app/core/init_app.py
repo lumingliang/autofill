@@ -62,8 +62,6 @@ def make_middlewares():
             allow_headers=settings.CORS_ALLOW_HEADERS,
         ),
         Middleware(RequestIdMiddleware),  # 请求追踪 ID 中间件（最先执行）
-        Middleware(RequestLoggingMiddleware),  # 请求日志记录中间件
-        Middleware(BackGroundTaskMiddleware),
         Middleware(
             TenantContextMiddleware,
             exclude_paths=[
@@ -75,7 +73,9 @@ def make_middlewares():
                 "/api/autofill/llm/rule/execute",
                 "/api/autofill/llm/rule/execute/result",
             ],
-        ),
+        ),  # 租户上下文中间件（需要在 RequestLoggingMiddleware 之前执行）
+        Middleware(RequestLoggingMiddleware),  # 请求日志记录中间件
+        Middleware(BackGroundTaskMiddleware),
         Middleware(
             HttpAuditLogMiddleware,
             methods=["GET", "POST", "PUT", "DELETE"],
