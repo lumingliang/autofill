@@ -88,3 +88,81 @@ console_output = true
 file_output = true
 format = "json"
 enable_request_id = true
+# 日志参数长度限制配置（防止日志过大）
+# 单个字段值最大长度（字符数），超过则截断
+max_field_length = 2000
+# 请求/响应体最大长度（字符数），超过则截断
+max_body_length = 50000  # 50KB
+# 响应体大小限制（用于判断是否记录响应内容）
+response_size_limit = 100000  # 100KB
+# 系统日志跳过路径（这些路径不记录系统日志）
+skip_paths = ["/docs", "/openapi.json", "/redoc", "/health", "/uploads/"]
+# 敏感字段列表（日志中会被替换为***）
+sensitive_fields = [
+  "password",
+  "token",
+  "secret",
+  "key",
+  "auth",
+  "authorization",
+  "cookie"
+]
+
+# 租户上下文中间件配置
+[tenant_middleware]
+# 租户上下文中间件排除路径（这些路径跳过租户认证）
+exclude_paths = [
+  "/docs",
+  "/openapi.json",
+  "/redoc",
+  "/health",
+  "/uploads/",
+  "/api/autofill/llm/rule/execute",
+  "/api/autofill/llm/rule/execute/result"
+]
+
+# 审计日志中间件配置
+[audit_log_middleware]
+# 审计日志特殊路径（用于特殊处理）
+special_paths = ["/api/v1/auditlog/list"]
+
+# LiteLLM 网关配置
+[litellm]
+# LiteLLM 网关地址
+base_url = "http://localhost:4000"
+# LiteLLM 网关 API Key（用于管理接口）
+master_key = "sk-litellm-master-key"
+# 默认超时时间（秒）
+timeout = 60
+
+# 结构化输出配置
+[structured_output]
+# 方法失败阈值，达到此值后自动标记为不支持
+failed_threshold = 2
+# 是否自动更新模型能力状态
+auto_update_capabilities = true
+# 默认方法优先级（可被请求参数覆盖）
+default_method_priority = [
+  "with_structured_output",
+  "bind_tools_stream",
+  "custom_fc_non_stream",
+  "custom_fc_stream",
+  "pydantic_parser",
+  "json_parser"
+]
+# 是否启用方法降级
+enable_fallback = true
+# 最大尝试方法数（防止无限循环）
+max_attempt_methods = 6
+
+# API权限管理配置
+[api_management]
+# API权限管理配置 - 排除的tags（这些tags的API不会被纳入权限管理）
+# 默认排除公开API、文件上传等不需要权限控制的接口
+exclude_tags = ["公开接口", "文件上传", "public", "upload"]
+
+# 审计日志配置
+[audit_log]
+# 审计日志配置 - 排除的API路径（这些路径不记录审计日志的入参和出参）
+# 用于排除导出、导入等大内容接口
+exclude_paths = ["/api/v1/autofill/rule/export", "/api/v1/autofill/rule/import"]
