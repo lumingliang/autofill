@@ -144,7 +144,6 @@ const modalLoading = ref(false)
 const modalForm = reactive({
   name: '',
   desc: '',
-  tenant_id: undefined as number | undefined,
 })
 const modalRules = computed(() => ({
   name: { required: true, message: '请输入角色名称', trigger: ['input', 'blur'] },
@@ -194,7 +193,6 @@ function handleSearch() {
 // 重置
 function handleReset() {
   queryParams.role_name = ''
-  queryParams.tenant_id = undefined
   handleSearch()
 }
 
@@ -215,7 +213,7 @@ function handleAdd() {
   }
 
   modalTitle.value = '新增角色'
-  Object.assign(modalForm, { name: '', desc: '', tenant_id: userStore.currentTenantId })
+  Object.assign(modalForm, { name: '', desc: '' })
   crudTableRef.value?.openAddModal()
 }
 

@@ -45,6 +45,7 @@ from app.utils.password import get_password_hash
 
 from .middlewares import (
     BackGroundTaskMiddleware,
+    ExceptionHandlingMiddleware,
     HttpAuditLogMiddleware,
     RequestIdMiddleware,
     RequestLoggingMiddleware,
@@ -61,7 +62,9 @@ def make_middlewares():
             allow_methods=settings.CORS_ALLOW_METHODS,
             allow_headers=settings.CORS_ALLOW_HEADERS,
         ),
-        Middleware(RequestIdMiddleware),  # 请求追踪 ID 中间件（最先执行）
+        # 异常捕获中间件放在最外层，确保能捕获所有异常
+        Middleware(ExceptionHandlingMiddleware),
+        Middleware(RequestIdMiddleware),  # 请求追踪 ID 中间件
         Middleware(
             TenantContextMiddleware,
             exclude_paths=[

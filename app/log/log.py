@@ -55,7 +55,7 @@ def get_exception_location(exc_info):
     """获取异常发生的位置（业务代码中的位置）
     
     遍历 traceback 链，找到最底层的业务代码帧（即异常实际抛出的位置）
-    排除第三方库和框架内部的帧
+    排除第三方库、框架内部和中间件代码的帧
     """
     if not exc_info or exc_info[2] is None:
         return None
@@ -63,29 +63,44 @@ def get_exception_location(exc_info):
     tb = exc_info[2]
     last_business_frame = None
     
+    # 需要排除的路径前缀
+    skip_prefixes = (
+        '/site-packages/',
+        'lib/python',
+        '/app/core/middlewares.py',  # 排除中间件本身
+        '/app/core/exceptions.py',   # 排除异常处理器
+        '/app/log/log.py',           # 排除日志模块
+    )
+    
     # 遍历整个 traceback 链，找到最底层的业务代码帧
     while tb:
         filename = tb.tb_frame.f_code.co_filename
         lineno = tb.tb_lineno
+        function_name = tb.tb_frame.f_code.co_name
         
-        # 排除第三方库和框架内部代码
-        if '/site-packages/' in filename or 'lib/python' in filename:
+        # 排除第三方库、框架内部和中间件代码
+        should_skip = any(p in filename for p in skip_prefixes)
+        
+        if should_skip:
             tb = tb.tb_next
             continue
         
         # 记录业务代码帧（继续遍历以找到最底层的）
-        last_business_frame = (filename, lineno)
+        last_business_frame = (filename, lineno, function_name)
         tb = tb.tb_next
     
     # 返回最底层的业务代码位置
     if last_business_frame:
-        return f"{last_business_frame[0]}:{last_business_frame[1]}"
+        return f"{last_business_frame[0]}:{last_business_frame[1]} in {last_business_frame[2]}()"
     
     # 如果没有找到业务代码位置，返回最底层帧
     tb = exc_info[2]
     while tb.tb_next:
         tb = tb.tb_next
-    return f"{tb.tb_frame.f_code.co_filename}:{tb.tb_lineno}"
+    filename = tb.tb_frame.f_code.co_filename
+    lineno = tb.tb_lineno
+    function_name = tb.tb_frame.f_code.co_name
+    return f"{filename}:{lineno} in {function_name}()"
 
 
 def get_caller_location(skip_frames: int = 2) -> str:
@@ -127,8 +142,13 @@ def add_context_info(logger, method_name, event_dict):
 def add_caller_location(logger, method_name, event_dict):
     """添加调用者位置信息到日志事件
     
-    通过检查调用栈，找到实际调用日志记录的业务代码位置
+    通过检查调用栈，找到实际调用日志记录的业务代码位置。
+    如果 event_dict 中已存在 location 字段（如异常日志已设置），则保留原有值。
     """
+    # 如果 location 已存在（如异常日志已设置），保留原有值
+    if "location" in event_dict:
+        return event_dict
+    
     frame = inspect.currentframe()
     try:
         # 向上遍历调用栈，跳过框架和日志相关的帧
@@ -207,15 +227,25 @@ def setup_logger():
         cache_logger_on_first_use=True,
     )
     
-    # 抑制 uvicorn 和 fastapi 的访问日志（由 RequestLoggingMiddleware 统一处理）
-    logging.getLogger("uvicorn.access").handlers = []
-    logging.getLogger("uvicorn.access").propagate = False
-    
-    # 抑制 uvicorn.error 的默认异常输出（避免控制台打印完整 traceback）
-    # 异常已由我们的全局异常处理器记录到日志文件
+    # 完全禁用 uvicorn 的所有日志
+    # 访问日志由 RequestLoggingMiddleware 统一处理
+    # 异常日志由 ExceptionHandlingMiddleware 统一处理
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.handlers = [logging.NullHandler()]
+    uvicorn_access.propagate = False
+    uvicorn_access.setLevel(logging.CRITICAL + 1)  # 设置比 CRITICAL 更高的级别，完全禁用
+
+    # 禁用 uvicorn.error 的异常输出
     uvicorn_error = logging.getLogger("uvicorn.error")
-    uvicorn_error.handlers = []
+    uvicorn_error.handlers = [logging.NullHandler()]
     uvicorn_error.propagate = False
+    uvicorn_error.setLevel(logging.CRITICAL + 1)  # 设置比 CRITICAL 更高的级别，完全禁用
+
+    # 禁用 uvicorn 根日志器
+    uvicorn_root = logging.getLogger("uvicorn")
+    uvicorn_root.handlers = [logging.NullHandler()]
+    uvicorn_root.propagate = False
+    uvicorn_root.setLevel(logging.CRITICAL + 1)
 
 
 # 获取 logger 实例

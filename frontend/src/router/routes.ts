@@ -1,6 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
 import { markRaw } from 'vue'
-import Login from '@/views/login/index.vue'
 import Layout from '@/layout/index.vue'
 
 export const WHITE_LIST = ['/login', '/404', '/403']
@@ -42,7 +41,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
-    component: markRaw(Login),
+    component: () => import('@/views/login/index.vue'),
     meta: { title: '登录', hidden: true },
   },
   {

@@ -286,7 +286,7 @@ async def export_rule_test_curl(
 
     logger.info(
         f"Rule test curl exported: session_id={session_id}, app_name={app_name}, "
-        f"tenant_id={effective_tenant_id}, method={method}"
+        f"method={method}"
     )
 
     return Success(data={

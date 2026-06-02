@@ -239,10 +239,8 @@ const modalForm = reactive<any>({
   confirmPassword: '',
   is_superuser: false,
   is_active: true,
-  tenant_id: undefined,
   dept_id: undefined,
   role_ids: [],
-  assigned_tenant_ids: [],
 })
 
 const modalRules = computed(() => ({
@@ -289,16 +287,14 @@ async function loadData() {
   }
 }
 
-async function loadRoles(tenantId?: number) {
+async function loadRoles() {
   const params: any = { page: 1, page_size: 9999 }
-  if (tenantId) params.tenant_id = tenantId
   const res: any = await api.getRoleList(params)
   roleOptions.value = res.data || []
 }
 
-async function loadDepts(tenantId?: number) {
+async function loadDepts() {
   const params: any = {}
-  if (tenantId) params.tenant_id = tenantId
   const res: any = await api.getDepts(params)
   deptOptions.value = res.data || []
 }
@@ -336,19 +332,14 @@ function handleAddUser() {
     confirmPassword: '',
     is_superuser: false,
     is_active: true,
-    tenant_id: undefined,
     dept_id: undefined,
     role_ids: [],
   })
   roleOptions.value = []
   deptOptions.value = []
 
-  // 使用当前选中的租户加载角色和部门
-  const tenantId = userStore.currentTenantId
-  if (tenantId) {
-    loadRoles(tenantId)
-    loadDepts(tenantId)
-  }
+  loadRoles()
+  loadDepts()
   modalVisible.value = true
 }
 
@@ -370,22 +361,15 @@ async function handleEditUser(record: any) {
     is_superuser: record.is_superuser,
     is_active: record.is_active,
     dept_id: record.dept?.id || null,
-    tenant_id: undefined,
     role_ids: [],
   })
   roleOptions.value = []
   deptOptions.value = []
 
-  // 使用当前选中的租户加载角色和部门
-  const tenantId = userStore.currentTenantId
-  if (tenantId) {
-    await loadRoles(tenantId)
-    await loadDepts(tenantId)
-    // 从record.roles中提取当前租户下的角色ID
-    modalForm.role_ids = record.roles
-      ?.filter((r: any) => r.tenant_id === tenantId)
-      ?.map((r: any) => r.id) || []
-  }
+  await loadRoles()
+  await loadDepts()
+  // 从record.roles中提取角色ID
+  modalForm.role_ids = record.roles?.map((r: any) => r.id) || []
 
   modalVisible.value = true
 }
@@ -397,14 +381,9 @@ async function handleSave() {
 
     // 编辑用户时使用单租户角色更新接口
     if (modalAction.value === 'edit') {
-      // 使用当前选中的租户ID
       const params: any = {
         user_id: modalForm.id,
         role_ids: modalForm.role_ids || [],
-      }
-      // 超管账号传当前选中的租户ID
-      if (userStore.isSuperUser) {
-        params.tenant_id = userStore.currentTenantId
       }
       const res: any = await api.updateUserTenantRoles(params)
       if (res.code === 200) {
@@ -422,14 +401,8 @@ async function handleSave() {
     delete data.confirmPassword
     delete data.dept
 
-    // 租户ID：使用当前选中的租户
-    data.tenant_id = userStore.currentTenantId
-
     // 角色ID
     data.role_ids = modalForm.role_ids || []
-
-    // 删除前端临时字段
-    delete data.assigned_tenant_ids
 
     const res: any = await api.createUser(data)
     if (res.code === 200) {
@@ -535,31 +508,11 @@ async function handleUpdateDisable(row: any) {
   }
 }
 
-async function handleModalTenantChange(tenantId: number) {
+async function handleModalTenantChange() {
   modalForm.role_ids = []
   modalForm.dept_id = undefined
-  if (tenantId) {
-    await loadRoles(tenantId)
-    await loadDepts(tenantId)
-
-    // 编辑模式下，回显用户在该租户下已分配的角色
-    if (modalAction.value === 'edit' && modalForm.id) {
-      try {
-        const res: any = await api.getUserTenantAssignedRoles({
-          user_id: modalForm.id,
-          tenant_id: tenantId,
-        })
-        if (res.code === 200) {
-          modalForm.role_ids = res.data || []
-        }
-      } catch (error) {
-        console.error('获取用户角色失败', error)
-      }
-    }
-  } else {
-    roleOptions.value = []
-    deptOptions.value = []
-  }
+  await loadRoles()
+  await loadDepts()
 }
 
 let lastClickedNodeId: number | null = null
@@ -580,9 +533,9 @@ function handleDeptClick(_selectedKeys: any, e: any) {
 
 onMounted(() => {
   loadData()
-  if (!userStore.isSuperUser && userStore.currentTenantId) {
-    loadRoles(userStore.currentTenantId)
-    loadDepts(userStore.currentTenantId)
+  if (!userStore.isSuperUser) {
+    loadRoles()
+    loadDepts()
   }
 })
 </script>

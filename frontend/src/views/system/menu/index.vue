@@ -5,15 +5,8 @@
         <!-- 隐藏新建根菜单按钮，只允许通过子菜单方式添加 -->
       </div>
 
-      <a-table
-        class="crud-table"
-        :columns="columns"
-        :data-source="tableData"
-        :loading="loading"
-        :pagination="false"
-        row-key="id"
-        :scroll="{ x: 'max-content' }"
-      >
+      <a-table class="crud-table" :columns="columns" :data-source="tableData" :loading="loading" :pagination="false"
+        row-key="id" :scroll="{ x: 'max-content' }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'menu_type'">
             <a-tag :color="record.menu_type === 'catalog' ? 'blue' : 'green'">
@@ -24,44 +17,28 @@
             <component :is="getIcon(record.icon)" v-if="record.icon" />
           </template>
           <template v-if="column.key === 'keepalive'">
-            <a-switch
-              :checked="record.keepalive"
-              size="small"
-              :loading="!!record.publishingKeepalive"
-              @change="() => handleUpdateKeepalive(record)"
-            />
+            <a-switch :checked="record.keepalive" size="small" :loading="!!record.publishingKeepalive"
+              @change="() => handleUpdateKeepalive(record)" />
           </template>
           <template v-if="column.key === 'is_hidden'">
-            <a-switch
-              :checked="record.is_hidden"
-              size="small"
-              :loading="!!record.publishingHidden"
-              @change="() => handleUpdateHidden(record)"
-            />
+            <a-switch :checked="record.is_hidden" size="small" :loading="!!record.publishingHidden"
+              @change="() => handleUpdateHidden(record)" />
           </template>
           <template v-if="column.key === 'created_at'">
             {{ formatDateTime(record.created_at) }}
           </template>
           <template v-if="column.key === 'action'">
             <a-space>
-              <a-button
-                v-permission="'post/api/v1/menu/create'"
-                type="link"
-                size="small"
+              <a-button v-permission="'post/api/v1/menu/create'" type="link" size="small"
                 :style="{ display: record.children && record.menu_type !== 'menu' ? '' : 'none' }"
-                @click="handleAddChild(record)"
-              >
+                @click="handleAddChild(record)">
                 子菜单
               </a-button>
-              <a-button v-permission="'post/api/v1/menu/update'" type="link" size="small" @click="handleEdit(record)">编辑</a-button>
+              <a-button v-permission="'post/api/v1/menu/update'" type="link" size="small"
+                @click="handleEdit(record)">编辑</a-button>
               <a-popconfirm title="确定删除该菜单吗？" @confirm="handleDelete(record)">
-                <a-button
-                  v-permission="'delete/api/v1/menu/delete'"
-                  type="link"
-                  danger
-                  size="small"
-                  :style="{ display: record.children && record.children.length > 0 ? 'none' : '' }"
-                >
+                <a-button v-permission="'delete/api/v1/menu/delete'" type="link" danger size="small"
+                  :style="{ display: record.children && record.children.length > 0 ? 'none' : '' }">
                   删除
                 </a-button>
               </a-popconfirm>
@@ -72,20 +49,10 @@
     </a-card>
 
     <!-- 新增/编辑 弹窗 -->
-    <a-modal
-      v-model:open="modalVisible"
-      :title="modalTitle"
-      :confirm-loading="modalLoading"
-      @ok="handleSave"
-      @cancel="modalVisible = false"
-    >
-      <a-form
-        ref="modalFormRef"
-        :model="modalForm"
-        :rules="modalRules"
-        :label-col="{ span: 6 }"
-        :wrapper-col="{ span: 16 }"
-      >
+    <a-modal v-model:open="modalVisible" :title="modalTitle" :confirm-loading="modalLoading" @ok="handleSave"
+      @cancel="modalVisible = false">
+      <a-form ref="modalFormRef" :model="modalForm" :rules="modalRules" :label-col="{ span: 6 }"
+        :wrapper-col="{ span: 16 }">
         <a-form-item label="菜单类型" name="menu_type">
           <a-radio-group v-model:value="modalForm.menu_type">
             <a-radio value="catalog">目录</a-radio>
@@ -93,13 +60,9 @@
           </a-radio-group>
         </a-form-item>
         <a-form-item label="上级菜单" name="parent_id">
-          <a-tree-select
-            v-model:value="modalForm.parent_id"
-            :tree-data="menuOptions"
-            :field-names="{ label: 'name', value: 'id', children: 'children' }"
-            placeholder="请选择上级菜单"
-            tree-default-expand-all
-          />
+          <a-tree-select v-model:value="modalForm.parent_id" :tree-data="menuOptions"
+            :field-names="{ label: 'name', value: 'id', children: 'children' }" placeholder="请选择上级菜单"
+            tree-default-expand-all />
         </a-form-item>
         <a-form-item label="菜单名称" name="name">
           <a-input v-model:value="modalForm.name" placeholder="请输入唯一菜单名称" />
@@ -111,11 +74,8 @@
           <a-input v-model:value="modalForm.component" placeholder="请输入组件路径，例如：/system/user" />
         </a-form-item>
         <a-form-item label="跳转路径" name="redirect">
-          <a-input
-            v-model:value="modalForm.redirect"
-            :disabled="modalForm.parent_id !== 0"
-            :placeholder="modalForm.parent_id !== 0 ? '只有一级菜单可以设置跳转路径' : '请输入跳转路径'"
-          />
+          <a-input v-model:value="modalForm.redirect" :disabled="modalForm.parent_id !== 0"
+            :placeholder="modalForm.parent_id !== 0 ? '只有一级菜单可以设置跳转路径' : '请输入跳转路径'" />
         </a-form-item>
         <a-form-item label="菜单图标" name="icon">
           <IconSelector v-model:value="modalForm.icon" />
@@ -135,12 +95,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
-import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import api from '@/api'
+import IconSelector from '@/components/IconSelector/index.vue'
 import { formatDateTime } from '@/utils'
 import * as Icons from '@ant-design/icons-vue'
-import IconSelector from '@/components/IconSelector/index.vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 defineOptions({ name: '菜单管理' })
 
@@ -253,7 +212,6 @@ async function handleSave() {
       window.$message?.success(modalAction.value === 'add' ? '新增成功' : '编辑成功')
       modalVisible.value = false
       loadData()
-      getTreeSelect()
     }
   } catch (error: any) {
     if (error.errorFields) return
@@ -269,7 +227,6 @@ async function handleDelete(record: any) {
     if (res.code === 200) {
       window.$message?.success('删除成功')
       loadData()
-      getTreeSelect()
     }
   } catch (error) {
     console.error('删除失败', error)

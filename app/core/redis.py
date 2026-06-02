@@ -27,7 +27,8 @@ class RedisClient:
                 max_connections=20,
                 encoding="utf-8"
             )
-            self._client = redis.Redis(connection_pool=pool)
+            # Disable HELLO command for older Redis servers (< 6.0)
+            self._client = redis.Redis(connection_pool=pool, protocol=2)
         return self._client
     
     async def get_json(self, key: str) -> Any:

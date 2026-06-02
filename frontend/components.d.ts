@@ -84,7 +84,6 @@ declare module 'vue' {
     OptionsMarkdownEditor: typeof import('./src/components/OptionsMarkdownEditor/index.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
-    TenantSelector: typeof import('./src/components/TenantSelector/index.vue')['default']
     YamlEditor: typeof import('./src/components/YamlEditor/index.vue')['default']
   }
 }

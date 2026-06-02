@@ -10,6 +10,21 @@ export default defineConfig({
   // 设置基础路径，所有资源都会带上此前缀
   // 在容器部署时需要设置为 '/web/'，本地开发时设置为 '/'
   base: process.env.DOCKER_BUILD === 'true' ? '/web/' : '/',
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('ant-design-vue')) {
+              return 'ant-design-vue';
+            }
+            return 'vendor';
+          }
+        },
+      },
+    },
+  },
   plugins: [
     vue(),
     UnoCSS({

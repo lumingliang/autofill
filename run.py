@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import warnings
@@ -15,6 +16,13 @@ warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.
 import uvicorn
 
 if __name__ == "__main__":
+    # 在导入 app 前禁用 uvicorn 日志
+    for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error", "uvicorn.asgi"]:
+        logger = logging.getLogger(logger_name)
+        logger.handlers = [logging.NullHandler()]
+        logger.propagate = False
+        logger.setLevel(logging.CRITICAL + 1)
+
     # 完全禁用 Uvicorn 日志，全部使用我们自己的日志组件
     # 日志配置已在 app/log/log.py 中初始化
     uvicorn.run(

@@ -90,7 +90,6 @@ const deptOptions = ref<any[]>([])
 const modalTitle = computed(() => crudTableRef.value?.modalAction === 'add' ? '新增部门' : '编辑部门')
 const modalLoading = ref(false)
 const modalForm = reactive({
-  tenant_id: undefined,
   parent_id: undefined,
   name: '',
   desc: '',
@@ -133,8 +132,6 @@ function handleAdd() {
   }
 
   isDisabled.value = false
-  // 设置当前选中的租户ID
-  modalForm.tenant_id = userStore.currentTenantId
   crudTableRef.value?.openAddModal()
 }
 
@@ -148,8 +145,6 @@ function handleEdit(record: any) {
 
   isDisabled.value = record.parent_id === 0
   Object.assign(modalForm, record)
-  // 确保使用当前选中的租户ID
-  modalForm.tenant_id = userStore.currentTenantId
   crudTableRef.value?.openEditModal(record)
 }
 

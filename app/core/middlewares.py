@@ -1,4 +1,6 @@
 import json
+import sys
+import traceback
 import uuid
 from datetime import datetime
 from typing import Any
@@ -10,8 +12,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
 from app.core.ctx import Ctx
 from app.core.dependency import AuthControl
-from app.log import logger, set_request_id, set_tenant_id, get_caller_location, is_request_logged, set_request_logged
+from app.log import logger, set_request_id, set_tenant_id, get_caller_location, is_request_logged, set_request_logged, get_exception_location
 from app.models.admin import AuditLog, User
+from app.settings import settings
 
 from .bgtask import BgTasks
 
@@ -44,6 +47,85 @@ class BackGroundTaskMiddleware(SimpleBaseMiddleware):
 
     async def after_request(self, request):
         await BgTasks.execute_tasks()
+
+
+class ExceptionHandlingMiddleware(BaseHTTPMiddleware):
+    """
+    异常捕获和记录中间件 - 统一捕获和记录所有异常
+
+    功能：
+    1. 捕获所有未处理的异常
+    2. 记录异常信息到日志（包含代码位置、堆栈等）
+    3. 重新抛出异常给异常处理器构建响应
+
+    注意：此中间件应该在所有中间件的最外层，确保能捕获所有异常
+    """
+
+    def __init__(self, app):
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            # 获取异常信息
+            exc_type = type(exc).__name__
+            exc_msg = str(exc)
+
+            # 获取异常发生的代码位置
+            exc_info = sys.exc_info()
+            location = get_exception_location(exc_info)
+
+            # 构建精简但有用的 traceback（只包含业务代码）
+            tb_lines = []
+            tb = exc_info[2]
+            
+            # 需要排除的路径前缀
+            skip_prefixes = (
+                '/site-packages/',
+                'lib/python',
+                '/app/core/middlewares.py',
+                '/app/core/exceptions.py',
+                '/app/log/log.py',
+            )
+            
+            while tb:
+                filename = tb.tb_frame.f_code.co_filename
+                lineno = tb.tb_lineno
+                function_name = tb.tb_frame.f_code.co_name
+                
+                # 排除第三方库和框架内部代码
+                should_skip = any(p in filename for p in skip_prefixes)
+                
+                if not should_skip:
+                    # 简化路径，只显示从项目根目录开始的部分
+                    if '/app/' in filename:
+                        short_filename = filename[filename.find('/app/'):]
+                    else:
+                        short_filename = filename
+                    tb_lines.append(f"  File \"{short_filename}\", line {lineno}, in {function_name}")
+                
+                tb = tb.tb_next
+            
+            # 构建精简的 traceback 字符串
+            concise_traceback = f"{exc_type}: {exc_msg}\n" + "\n".join(tb_lines) if tb_lines else f"{exc_type}: {exc_msg}"
+
+            # 构建日志数据
+            log_data = {
+                "event": "exception",
+                "method": request.method,
+                "path": str(request.url.path),
+                "exception_type": exc_type,
+                "exception_msg": exc_msg,
+                "location": location,
+                "traceback": concise_traceback,
+            }
+
+            # 记录异常日志
+            logger.error(**log_data)
+
+            # 重新抛出异常，让异常处理器处理响应
+            raise
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
