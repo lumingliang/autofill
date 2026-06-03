@@ -31,9 +31,9 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '批量测试', icon: 'icon-park-outline:test', order: 10 },
     children: [
       {
-        path: 'list',
+        path: '',
         name: '批量测试列表',
-        component: () => import('@/views/autofill/batch_test/list.vue'),
+        component: () => import('@/views/autofill/batch_test/index.vue'),
         meta: { title: '任务列表', icon: 'icon-park-outline:list' },
       },
     ],
