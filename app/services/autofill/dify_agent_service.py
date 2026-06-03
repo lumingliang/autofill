@@ -8,12 +8,14 @@ Dify Agent 服务层
 - 禁止直接查询 Model 层
 - 禁止将 tenant_id 传递给 Repository 方法
 """
-from typing import Optional
+from typing import Any, Dict, Optional
 
+import httpx
 from fastapi import HTTPException
 from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
+from app.log import logger
 from app.models.dify_agent import DifyAgent
 from app.repositories.autofill import dify_agent_repository
 from app.schemas.dify_agent import DifyAgentCreate, DifyAgentUpdate
@@ -190,6 +192,79 @@ class DifyAgentService:
             Agent 列表
         """
         return await dify_agent_repository.list_active_agents()
+
+    async def forward_to_dify(
+        self,
+        agent_id: int,
+        query: str,
+        session_id: str,
+        inputs: Optional[dict] = None,
+        conversation_id: Optional[str] = None,
+        response_mode: str = "blocking"
+    ) -> Dict[str, Any]:
+        """
+        转发请求到 Dify Agent
+
+        Args:
+            agent_id: Dify Agent ID
+            query: 用户输入
+            session_id: 会话ID（作为user参数传递给Dify）
+            inputs: 输入参数
+            conversation_id: 对话ID
+            response_mode: 响应模式 (blocking/streaming)
+
+        Returns:
+            Dify 返回的完整结果
+
+        注意：
+        - 超时时间设置为 300 秒（5分钟，Dify 响应可能较慢）
+        - 返回结果中的 data 字段会被展平合并到任务数据中
+        """
+        # 获取 Agent 配置
+        agent = await dify_agent_repository.get_by_id(agent_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent 不存在")
+
+        if not agent.is_active:
+            raise HTTPException(status_code=403, detail="Agent 已禁用")
+
+        # 构建 Dify 请求
+        dify_payload = {
+            "query": query,
+            "inputs": inputs or {},
+            "response_mode": response_mode,
+            "user": session_id
+        }
+
+        if conversation_id:
+            dify_payload["conversation_id"] = conversation_id
+
+        try:
+            # 转发请求到 Dify（超时 300 秒）
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                response = await client.post(
+                    agent.agent_url,
+                    json=dify_payload,
+                    headers={
+                        "Authorization": f"Bearer {agent.api_key}",
+                        "Content-Type": "application/json",
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            logger.debug(f"[DifyAgentService] Dify 响应: {result}")
+            return result
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[DifyAgentService] Dify 请求失败: {e.response.status_code}, {e.response.text}")
+            raise HTTPException(status_code=e.response.status_code, detail=f"Dify 请求失败: {e.response.text}")
+        except httpx.TimeoutException:
+            logger.error("[DifyAgentService] Dify 请求超时")
+            raise HTTPException(status_code=504, detail="Dify 请求超时")
+        except Exception as e:
+            logger.error(f"[DifyAgentService] 请求失败: {e}")
+            raise HTTPException(status_code=500, detail=f"请求失败: {str(e)}")
 
 
 # 服务实例

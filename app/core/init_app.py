@@ -191,13 +191,31 @@ async def init_roles():
 
 async def init_kafka_consumers():
     """初始化 Kafka 消费者"""
-    # AI填单功能已删除，Kafka消费者初始化暂时为空
-    pass
+    from app.core.kafka.batch_test_consumer import handle_batch_test_message
+    from app.core.kafka.consumer import get_consumer_manager
+
+    manager = get_consumer_manager()
+
+    # 注册批量测试消费者
+    manager.register_consumer(
+        name="batch_test_consumer",
+        topics=["batch-test-execute"],
+        message_handler=handle_batch_test_message
+    )
+
+    # 获取当前事件循环并启动所有消费者
+    loop = asyncio.get_event_loop()
+    manager.start_all(loop=loop)
+
+    logger.info("Kafka 消费者初始化完成")
 
 
 async def shutdown_kafka():
     """关闭 Kafka 消费者"""
-    pass
+    from app.core.kafka.consumer import get_consumer_manager
+    manager = get_consumer_manager()
+    manager.stop_all()
+    logger.info("Kafka 消费者已关闭")
 
 
 async def init_data(app: FastAPI):

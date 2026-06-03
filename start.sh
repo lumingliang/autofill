@@ -166,7 +166,7 @@ start_backend() {
         log_info "启动 FastAPI 服务 (端口: $BACKEND_PORT)..."
         log_info "后端日志文件: $BACKEND_LOG_FILE"
         
-        "$HOME/miniforge3/envs/$CONDA_ENV/bin/python" run.py &
+        "$HOME/miniforge3/envs/$CONDA_ENV/bin/python" run.py > "$BACKEND_LOG_FILE" 2>&1 &
         local pid=$!
         save_pid "$pid" "$BACKEND_PID_FILE"
 

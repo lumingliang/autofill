@@ -149,6 +149,15 @@ autofill_menus = [
                 component="autofill/record",
                 keepalive=False,
             ),
+            MenuConfig(
+                name="批量测试",
+                path="batch_test",
+                menu_type=MenuType.MENU,
+                icon="ExperimentOutlined",
+                order=8,
+                component="autofill/batch_test",
+                keepalive=False,
+            ),
 
             MenuConfig(
                 name="规则管理",

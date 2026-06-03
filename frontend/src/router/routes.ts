@@ -25,6 +25,20 @@ export const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: '/batch-test',
+    name: '批量测试',
+    component: markRaw(Layout),
+    meta: { title: '批量测试', icon: 'icon-park-outline:test', order: 10 },
+    children: [
+      {
+        path: 'list',
+        name: '批量测试列表',
+        component: () => import('@/views/autofill/batch_test/list.vue'),
+        meta: { title: '任务列表', icon: 'icon-park-outline:list' },
+      },
+    ],
+  },
+  {
     path: '/profile',
     name: '个人中心',
     component: markRaw(Layout),

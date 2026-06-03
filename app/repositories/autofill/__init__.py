@@ -2,6 +2,7 @@
 Autofill 模块 Repository 层
 """
 from .app_management_repository import AppManagementRepository, app_management_repository
+from .batch_test_repository import BatchTestRepository, batch_test_repository
 from .dify_agent_repository import DifyAgentRepository, dify_agent_repository
 from .fill_data_record_repository import FillDataRecordRepository, fill_data_record_repository
 from .system_prompt_repository import SystemPromptRepository, system_prompt_repository
@@ -9,6 +10,8 @@ from .system_prompt_repository import SystemPromptRepository, system_prompt_repo
 __all__ = [
     "AppManagementRepository",
     "app_management_repository",
+    "BatchTestRepository",
+    "batch_test_repository",
     "DifyAgentRepository",
     "dify_agent_repository",
     "FillDataRecordRepository",

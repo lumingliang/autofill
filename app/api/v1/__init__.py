@@ -6,6 +6,7 @@ from .apis import apis_router
 from .auditlog import auditlog_router
 from .autofill import (
     app_router,
+    batch_test_router,
     dify_agent_router,
     record_router,
     rule_router,
@@ -54,6 +55,9 @@ v1_router.include_router(system_prompt_router, prefix="/autofill", dependencies=
 
 # Dify Agent 管理模块
 v1_router.include_router(dify_agent_router, prefix="/autofill", dependencies=[DependPermission], tags=["Dify Agent 管理"])
+
+# 批量测试模块
+v1_router.include_router(batch_test_router, prefix="/batch-test", dependencies=[DependPermission], tags=["批量测试管理"])
 
 # AI 模块 - LLM 配置管理
 v1_router.include_router(llm_config_router, prefix="/ai", dependencies=[DependPermission], tags=["LLM配置管理"])

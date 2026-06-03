@@ -374,6 +374,36 @@ class SeekDBService:
             logger.error(f"获取文档数量失败: {collection_name}, error: {e}")
             return 0
 
+    def delete_collection_by_prefix(self, prefix: str) -> int:
+        """
+        根据前缀删除集合
+
+        Args:
+            prefix: 集合名称前缀
+
+        Returns:
+            删除的集合数量
+        """
+        try:
+            client = self._get_client()
+            # 获取所有集合
+            collections = client.list_collections()
+            deleted_count = 0
+
+            for collection_name in collections:
+                if collection_name.startswith(prefix):
+                    try:
+                        client.delete_collection(collection_name)
+                        logger.info(f"删除 seekdb 集合: {collection_name}")
+                        deleted_count += 1
+                    except Exception as e:
+                        logger.warning(f"删除 seekdb 集合失败: {collection_name}, error: {e}")
+
+            return deleted_count
+        except Exception as e:
+            logger.error(f"根据前缀删除集合失败: {prefix}, error: {e}")
+            return 0
+
 
 # 全局服务实例
 seekdb_service = SeekDBService()
