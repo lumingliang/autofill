@@ -33,7 +33,7 @@ class RelationQuery:
     @staticmethod
     async def replace_user_roles(user_id: int, role_ids: List[int]) -> None:
         """替换用户的角色关联（先删除再批量插入）"""
-        tenant_id = Ctx.get_tenant_id()
+        tenant_id = Ctx.get_request_tenant_id()
         await UserRole.filter(user_id=user_id, tenant_id=tenant_id).delete()
 
         if role_ids:
@@ -84,7 +84,7 @@ class RelationQuery:
     @staticmethod
     async def replace_role_menus(role_id: int, menu_ids: List[int]) -> None:
         """替换角色的菜单关联（先删除再批量插入）"""
-        tenant_id = Ctx.get_tenant_id()
+        tenant_id = Ctx.get_request_tenant_id()
         await RoleMenu.filter(role_id=role_id, tenant_id=tenant_id).delete()
 
         if menu_ids:
@@ -98,7 +98,7 @@ class RelationQuery:
         if not role_id_menu_id_pairs:
             return
 
-        tenant_id = Ctx.get_tenant_id()
+        tenant_id = Ctx.get_request_tenant_id()
         # 只查询相关角色的数据，减少查询范围
         role_ids = list(set(rid for rid, _ in role_id_menu_id_pairs))
         existing = await RoleMenu.filter(role_id__in=role_ids, tenant_id=tenant_id).values("role_id", "menu_id")
@@ -137,7 +137,7 @@ class RelationQuery:
     @staticmethod
     async def replace_role_apis(role_id: int, api_ids: List[int]) -> None:
         """替换角色的 API 关联（先删除再批量插入）"""
-        tenant_id = Ctx.get_tenant_id()
+        tenant_id = Ctx.get_request_tenant_id()
         await RoleApi.filter(role_id=role_id, tenant_id=tenant_id).delete()
 
         if api_ids:
@@ -151,7 +151,7 @@ class RelationQuery:
         if not role_id_api_id_pairs:
             return
 
-        tenant_id = Ctx.get_tenant_id()
+        tenant_id = Ctx.get_request_tenant_id()
         # 只查询相关角色的数据，减少查询范围
         role_ids = list(set(rid for rid, _ in role_id_api_id_pairs))
         existing = await RoleApi.filter(role_id__in=role_ids, tenant_id=tenant_id).values("role_id", "api_id")

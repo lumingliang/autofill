@@ -31,13 +31,6 @@
         </a-form-item>
       </a-form>
     </div>
-
-    <!-- 租户选择弹窗 -->
-    <a-modal v-model:open="showTenantModal" :mask-closable="false" title="选择租户" @ok="handleSelectTenant"
-      @cancel="handleCancelTenant">
-      <p class="mb-4 text-gray-600">您属于多个租户，请选择要登录的租户：</p>
-      <a-select v-model:value="selectedTenantId" :options="tenantOptions" placeholder="请选择租户" style="width: 100%" />
-    </a-modal>
   </div>
 </template>
 
@@ -67,12 +60,6 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
-// 租户选择相关
-const showTenantModal = ref(false)
-const tenantOptions = ref<any[]>([])
-const selectedTenantId = ref<number | null>(null)
-const pendingToken = ref('')
-
 // 页面加载时检查是否有待处理的token（快捷登录/返回原用户）
 onMounted(() => {
   const pendingAuth = localStorage.getItem('pending_auth')
@@ -83,32 +70,11 @@ onMounted(() => {
   initLoginInfo()
 })
 
-// 加载租户列表并显示选择弹窗
-async function loadTenantsAndShowModal(token: string) {
-  pendingToken.value = token
-  try {
-    // 设置临时token以调用租户接口
-    setToken(token)
-    const res: any = await api.getTenantSelect()
-    if (res.code === 200 && res.data?.length > 1) {
-      tenantOptions.value = res.data.map((t: any) => ({ label: `${t.name} (${t.domain})`, value: t.id }))
-      showTenantModal.value = true
-      loading.value = false
-      return true
-    }
-    // 如果只有一个租户或没有租户，直接完成登录
-    return false
-  } catch (error) {
-    console.error('加载租户列表失败', error)
-    return false
-  }
-}
-
 // 处理待验证的登录信息
 async function handlePendingAuth(authData: string) {
   try {
     loading.value = true
-    const { token, currentTenantId, isQuickLogin, targetUser } = typeof authData === 'string' ? JSON.parse(authData) : authData
+    const { token, isQuickLogin, targetUser } = typeof authData === 'string' ? JSON.parse(authData) : authData
 
     // 清除待验证数据
     localStorage.removeItem('pending_auth')
@@ -117,14 +83,6 @@ async function handlePendingAuth(authData: string) {
     if (isQuickLogin) {
       localStorage.setItem('quick_login_mode', 'true')
       localStorage.setItem('quick_login_target', targetUser)
-    }
-
-    // 检查是否需要选择租户
-    if (!currentTenantId) {
-      const needSelect = await loadTenantsAndShowModal(token)
-      if (needSelect) {
-        return
-      }
     }
 
     // 直接完成登录
@@ -152,15 +110,7 @@ async function handleLogin() {
     const res: any = await api.login({ username, password: password.toString() })
     localStorage.setItem('loginInfo', JSON.stringify({ username, password }))
 
-    const { access_token, current_tenant_id } = res.data
-
-    // 检查是否需要选择租户
-    if (!current_tenant_id) {
-      const needSelect = await loadTenantsAndShowModal(access_token)
-      if (needSelect) {
-        return
-      }
-    }
+    const { access_token } = res.data
 
     await completeLogin(access_token)
   } catch (e: any) {
@@ -168,35 +118,6 @@ async function handleLogin() {
     window.$message?.error(e.message || '登录失败')
     loading.value = false
   }
-}
-
-// 选择租户后完成登录
-async function handleSelectTenant() {
-  if (!selectedTenantId.value) {
-    window.$message?.warning('请选择租户')
-    return false
-  }
-
-  try {
-    loading.value = true
-    setToken(pendingToken.value)
-    const res: any = await api.selectTenant({ tenant_id: selectedTenantId.value })
-    await completeLogin(res.data.access_token)
-    return true
-  } catch (e: any) {
-    console.error('select tenant error', e)
-    window.$message?.error(e.message || '选择租户失败')
-    removeToken()
-    loading.value = false
-    return false
-  }
-}
-
-function handleCancelTenant() {
-  removeToken()
-  pendingToken.value = ''
-  tenantOptions.value = []
-  selectedTenantId.value = null
 }
 
 // 完成登录（统一入口）

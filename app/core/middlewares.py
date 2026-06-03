@@ -12,6 +12,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
 from app.core.ctx import Ctx
 from app.core.dependency import AuthControl
+from app.core.relation import RelationQuery
 from app.log import logger, set_request_id, set_tenant_id, get_caller_location, is_request_logged, set_request_logged, get_exception_location
 from app.models.admin import AuditLog, User
 from app.settings import settings
@@ -149,75 +150,112 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 class TenantContextMiddleware(BaseHTTPMiddleware):
     """
-    租户上下文中间件
+    租户上下文中间件 - 统一处理接口鉴权和租户验证
 
-    功能：
-    1. 在请求开始时从 Header 获取 token 进行认证
-    2. 设置 Ctx（用户和租户ID）
-    3. 将用户信息和租户ID存储到请求状态中
-    4. 请求结束后清理租户上下文
+    接口分类：
+    1. Public 接口 (app/api/public/ 目录下): 只走 autofill_auth，中间件不处理
+    2. 后台接口无需鉴权: 不需要 is_authed 验证
+    3. 后台接口需鉴权: is_authed + 租户归属验证
+
+    权限分类：
+    - base 接口: 不需要 has_permission
+    - 其他接口: 需要 has_permission
     """
 
-    def __init__(self, app, exclude_paths: list[str] = None):
+    def __init__(self, app):
         super().__init__(app)
         from app.settings import settings
-        if exclude_paths is not None:
-            self.exclude_paths = exclude_paths
-        else:
-            self.exclude_paths = settings.TENANT_EXCLUDE_PATHS or [
-                "/docs",
-                "/openapi.json",
-                "/redoc",
-                "/health",
-                "/uploads/",
-                "/api/autofill/llm/rule/execute",
-                "/api/autofill/llm/rule/execute/result",
-            ]
+
+        # 加载配置
+        self.public_paths = settings.PUBLIC_API_PATHS or []
+        self.no_auth_paths = settings.NO_AUTH_PATHS or ["/api/v1/base/access_token"]
+        self.base_prefixes = settings.BASE_API_PREFIXES or ["/api/v1/base/"]
+
+    def _is_public_api(self, path: str) -> bool:
+        """检查是否是 Public 接口（在 app/api/public/ 目录下）"""
+        return path in self.public_paths
+
+    def _is_no_auth_path(self, path: str) -> bool:
+        """检查是否是无需鉴权的路径"""
+        return path in self.no_auth_paths
+
+    def _is_base_api(self, path: str) -> bool:
+        """检查是否是 base 接口（不需要 has_permission）"""
+        return any(path.startswith(prefix) for prefix in self.base_prefixes)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
 
-        if any(path.startswith(p) for p in self.exclude_paths):
+        # 2. Public 接口直接放行（由 autofill_auth 处理）
+        if self._is_public_api(path):
             return await call_next(request)
 
-        request.state.current_user = None
-        request.state.tenant_id = 0
-        request.state.is_authenticated = False
+        # 3. 无需鉴权的路径直接放行
+        if self._is_no_auth_path(path):
+            return await call_next(request)
 
+        # 4. 需要鉴权的接口
         token = request.headers.get("token")
+        if not token:
+            return JSONResponse(
+                status_code=401,
+                content={"code": 401, "msg": "缺少认证token", "data": None}
+            )
 
-        effective_tenant_id = 0
-        if token:
-            try:
-                user = await AuthControl.is_authed(token)
-                request_tenant_id = await self._get_request_tenant_id(request, user)
-                jwt_tenant_id = getattr(user, "current_tenant_id", 0)
+        try:
+            # 4.1 认证用户
+            user = await AuthControl.is_authed(token)
 
-                Ctx.set_user(user)
-                Ctx.set_jwt_tenant_id(jwt_tenant_id)
-                if user.is_superuser:
-                    Ctx.set_request_tenant_id(request_tenant_id)
-                    effective_tenant_id = request_tenant_id if request_tenant_id > 0 else 0
-                else:
-                    effective_tenant_id = jwt_tenant_id
+            # 4.2 获取请求中的租户ID
+            request_tenant_id = await self._get_request_tenant_id(request, user)
 
-                # 设置日志模块的 tenant_id
-                set_tenant_id(effective_tenant_id)
+            # 4.3 验证租户归属（超管直接放行，普通用户需验证）
+            if not await self._validate_tenant_access(user, request_tenant_id):
+                return JSONResponse(
+                    status_code=403,
+                    content={"code": 403, "msg": "无权访问该租户", "data": None}
+                )
 
-                request.state.current_user = user
-                request.state.tenant_id = effective_tenant_id
-                request.state.is_authenticated = True
+            # 4.4 确定有效租户ID
+            effective_tenant_id = request_tenant_id if request_tenant_id > 0 else user.current_tenant_id
+            if effective_tenant_id <= 0:
+                # 如果用户没有当前租户，尝试获取第一个关联租户
+                tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user.id)
+                if tenant_ids:
+                    effective_tenant_id = tenant_ids[0]
 
-            except Exception:
-                pass
+            # 4.5 设置上下文
+            Ctx.set_user(user)
+            Ctx.set_request_tenant_id(effective_tenant_id)
+            set_tenant_id(effective_tenant_id)
+
+            # 4.6 权限验证（base 接口跳过）
+            if not self._is_base_api(path):
+                has_perm = await self._check_permission(request, user, effective_tenant_id)
+                if not has_perm:
+                    return JSONResponse(
+                        status_code=403,
+                        content={"code": 403, "msg": "无权限访问", "data": None}
+                    )
+
+        except Exception as e:
+            error_msg = str(e)
+            if "Authentication" in error_msg or "Token" in error_msg or "expired" in error_msg:
+                return JSONResponse(
+                    status_code=401,
+                    content={"code": 401, "msg": error_msg, "data": None}
+                )
+            raise
 
         response = await call_next(request)
         Ctx.clear()
 
         return response
 
-    async def _get_request_tenant_id(self, request: Request, user) -> int:
+    async def _get_request_tenant_id(self, request: Request, user: User) -> int:
+        """从请求中获取租户ID（仅超管可从参数指定）"""
         if user.is_superuser:
+            # 超管可以从 Header 获取
             tenant_id_header = request.headers.get("X-Tenant-ID")
             if tenant_id_header:
                 try:
@@ -225,6 +263,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 except ValueError:
                     pass
 
+            # 超管可以从 Query 获取
             tenant_id = request.query_params.get("tenant_id")
             if tenant_id:
                 try:
@@ -232,6 +271,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 except ValueError:
                     pass
 
+            # 超管可以从 Body 获取
             if request.method in ["POST", "PUT", "PATCH"]:
                 try:
                     body = await request.json()
@@ -243,7 +283,74 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
             return 0
 
+        # 普通用户返回其当前租户ID
         return getattr(user, "current_tenant_id", 0)
+
+    async def _validate_tenant_access(self, user: User, tenant_id: int) -> bool:
+        """
+        验证用户是否有权访问指定租户
+        
+        - 超管：直接放行
+        - 普通用户：查询关联表判断是否拥有该租户
+        - tenant_id <= 0：表示不过滤，放行
+        """
+        # tenant_id <= 0 表示不过滤，放行
+        if tenant_id <= 0:
+            return True
+        
+        # 超管直接放行
+        if user.is_superuser:
+            return True
+        
+        # 普通用户：查询关联表判断是否拥有该租户
+        user_tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user.id)
+        return tenant_id in user_tenant_ids
+
+    async def _check_permission(self, request: Request, user: User, tenant_id: int) -> bool:
+        """检查用户是否有权限访问当前接口"""
+        from app.models.admin import Api
+        from app.services.permission_cache_service import permission_cache_service
+        
+        if user.is_superuser:
+            return True
+
+        method = request.method
+        path = request.url.path
+
+        try:
+            # 使用权限缓存服务获取用户权限
+            permission_apis = await permission_cache_service.get_user_permissions(user.id, tenant_id)
+
+            if permission_apis is None:
+                return False
+
+            # 获取当前请求的API code
+            current_api = await Api.filter(method=method, path=path).first()
+            if not current_api:
+                return False
+
+            return current_api.api_code in permission_apis
+
+        except Exception:
+            # 降级处理：直接从数据库获取权限
+            role_ids = await RelationQuery.get_role_ids_by_user_id(user.id)
+            if not role_ids:
+                return False
+
+            api_ids_mapping = await RelationQuery.batch_get_api_ids_by_role_ids(role_ids)
+            all_api_ids = list({aid for ids in api_ids_mapping.values() for aid in ids})
+
+            if not all_api_ids:
+                return False
+
+            apis = await Api.filter(id__in=all_api_ids).values("api_code")
+            permission_apis = {api["api_code"] for api in apis}
+
+            current_api = await Api.filter(method=method, path=path).first()
+            if not current_api:
+                return False
+
+            return current_api.api_code in permission_apis
 
 
 class RequestLoggingMiddleware:

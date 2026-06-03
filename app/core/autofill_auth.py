@@ -42,8 +42,8 @@ class APIKeyAuth:
         tenant = await Tenant.filter(id=app.tenant_id).first()
         domain = tenant.domain if tenant else ""
 
-        # 设置租户上下文（通过 Ctx）
-        Ctx.set_tenant_id(app.tenant_id)
+        # 设置租户上下文（通过 Ctx）- 只设置 CTX_REQUEST_TENANT_ID
+        Ctx.set_request_tenant_id(app.tenant_id)
 
         result = {
             "app_name": app.app_name,

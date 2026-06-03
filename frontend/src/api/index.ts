@@ -9,8 +9,8 @@ const publicRequest = axios.create({
 export default {
   // 登录相关
   login: (data: any) => request.post('/base/access_token', data),
-  selectTenant: (data: any) => request.post('/base/select_tenant', data),
   getUserInfo: () => request.get('/base/userinfo'),
+  selectTenant: (data: any = {}) => request.post('/base/select_tenant', data),
   getUserMenu: () => request.get('/base/usermenu'),
   getUserApi: () => request.get('/base/userapi'),
   quickLogin: (data: any = {}) => request.post('/base/quick_login', data),
@@ -25,7 +25,6 @@ export default {
   updateUser: (data: any = {}) => request.post('/user/update', data),
   deleteUser: (params: any = {}) => request.delete('/user/delete', { params }),
   resetPassword: (data: any = {}) => request.post('/user/reset_password', data),
-  selectUserTenant: (data: any = {}) => request.post('/user/select_tenant', data),
   getTenantRoles: (params: any = {}) => request.get('/user/tenant_roles', { params }),
   getUserTenantAssignedRoles: (params: any = {}) => request.get('/user/tenant_assigned_roles', { params }),
   updateUserTenantRoles: (data: any = {}) => request.post('/user/update_tenant_roles', data),
@@ -66,7 +65,7 @@ export default {
   createTenant: (data: any = {}) => request.post('/tenant/create', data),
   updateTenant: (data: any = {}) => request.post('/tenant/update', data),
   deleteTenant: (params: any = {}) => request.delete('/tenant/delete', { params }),
-  getTenantSelect: (params: any = {}) => request.get('/tenant/select', { params }),
+  getTenantSelect: (params: any = {}) => request.get('/base/select', { params }),
   getTenantUsers: (params: any = {}) => request.get('/tenant/users', { params }),
   addUserToTenant: (data: any = {}) => request.post('/tenant/add_user', data),
   removeUserFromTenant: (data: any = {}) => request.post('/tenant/remove_user', data),

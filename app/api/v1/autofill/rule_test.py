@@ -12,6 +12,7 @@ import uuid
 from fastapi import APIRouter, Query, Request
 from fastapi.exceptions import HTTPException
 
+from app.core.ctx import Ctx
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.services.autofill.app_service import app_service
 from app.services.autofill.rule_engine_service import rule_engine_service
@@ -26,7 +27,7 @@ async def list_apps_for_test(
     request: Request,
 ):
     """获取当前用户可用的应用列表（用于规则测试页面下拉选择）"""
-    current_user = request.state.current_user if hasattr(request.state, 'current_user') else None
+    current_user = Ctx.get_user()
 
     if not current_user:
         return Fail(code=401, msg="用户未认证")

@@ -65,18 +65,7 @@ def make_middlewares():
         # 异常捕获中间件放在最外层，确保能捕获所有异常
         Middleware(ExceptionHandlingMiddleware),
         Middleware(RequestIdMiddleware),  # 请求追踪 ID 中间件
-        Middleware(
-            TenantContextMiddleware,
-            exclude_paths=[
-                "/docs",
-                "/openapi.json",
-                "/redoc",
-                "/health",
-                "/uploads/",
-                "/api/autofill/llm/rule/execute",
-                "/api/autofill/llm/rule/execute/result",
-            ],
-        ),  # 租户上下文中间件（需要在 RequestLoggingMiddleware 之前执行）
+        Middleware(TenantContextMiddleware),  # 租户上下文中间件（需要在 RequestLoggingMiddleware 之前执行）
         Middleware(RequestLoggingMiddleware),  # 请求日志记录中间件
         Middleware(BackGroundTaskMiddleware),
         Middleware(

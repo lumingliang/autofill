@@ -132,39 +132,6 @@ class TenantAPI(BaseAPI):
         except Exception as e:
             return Fail(code=400, msg=str(e))
 
-    async def tenant_select(
-        self,
-        keyword: str = Query("", description="搜索关键词（名称或域名）"),
-    ):
-        """
-        租户下拉选择
-
-        获取租户下拉列表，用于选择框
-        - 超管可以搜索所有租户，支持清空（不传keyword返回全部）
-        - 支持模糊搜索
-        """
-        try:
-            # 超管可以查看所有租户
-            if Ctx.is_superuser():
-                tenants = await tenant_service.get_tenant_select_list(keyword)
-            else:
-                # 普通用户只能看到自己有权限的租户
-                current_user = Ctx.get_user()
-                tenant_list = await user_service.get_user_tenants(current_user.id)
-                tenants = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenant_list if t.is_active]
-
-                # 普通用户也支持模糊搜索
-                if keyword:
-                    keyword_lower = keyword.lower()
-                    tenants = [
-                        t for t in tenants
-                        if keyword_lower in t["name"].lower() or keyword_lower in t["domain"].lower()
-                    ]
-
-            return Success(data=tenants)
-        except Exception as e:
-            return Fail(code=400, msg=str(e))
-
     async def get_tenant_users(
         self,
         tenant_id: int = Query(..., description="租户ID"),
@@ -343,11 +310,6 @@ async def update_tenant(tenant_in: TenantUpdate):
 @router.delete("/delete", summary="删除租户")
 async def delete_tenant(tenant_id: int = Query(..., description="租户ID")):
     return await tenant_api.delete_tenant(tenant_id)
-
-
-@router.get("/select", summary="租户下拉选择")
-async def tenant_select(keyword: str = Query("", description="搜索关键词")):
-    return await tenant_api.tenant_select(keyword)
 
 
 @router.get("/users", summary="获取租户下的用户")

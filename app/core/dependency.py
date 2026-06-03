@@ -3,7 +3,7 @@ from typing import Optional
 import jwt
 from fastapi import Depends, Header, HTTPException, Request
 
-from app.core.ctx import CTX_USER_ID, Ctx
+from app.core.ctx import Ctx
 from app.core.relation import RelationQuery
 from app.models import User
 from app.models.admin import Api
@@ -75,8 +75,6 @@ class AuthControl:
                     user.current_tenant_id = tenant_ids[0]
             tenant_domain = decode_data.get("tenant_domain")
             user.tenant_domain = tenant_domain if tenant_domain else ""
-            CTX_USER_ID.set(int(user_id))
-            Ctx.set_user(user)
             return user
         except jwt.DecodeError:
             raise HTTPException(status_code=401, detail="Invalid Token")

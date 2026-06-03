@@ -47,8 +47,8 @@ class DifyAgentAuth:
         if not agent.is_active:
             raise HTTPException(status_code=403, detail="Agent is disabled")
 
-        # 设置租户上下文（通过 Ctx）
-        Ctx.set_tenant_id(agent.tenant_id)
+        # 设置租户上下文（通过 Ctx）- 只设置 CTX_REQUEST_TENANT_ID
+        Ctx.set_request_tenant_id(agent.tenant_id)
 
         return {
             "agent_id": agent.id,

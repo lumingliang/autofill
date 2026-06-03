@@ -98,15 +98,33 @@ class Settings(BaseSettings):
     # 中间件配置 - 敏感字段列表（日志中会被替换为***）
     LOG_SENSITIVE_FIELDS: list = ["password", "token", "secret", "key", "auth", "authorization", "cookie"]
 
-    # 中间件配置 - 租户上下文排除路径（这些路径跳过租户认证）
-    TENANT_EXCLUDE_PATHS: list = [
-        "/docs",
-        "/openapi.json",
-        "/redoc",
-        "/health",
-        "/uploads/",
+    # ==================== 接口鉴权分类配置 ====================
+    # 1. Public 接口 - 只走 autofill_auth，中间件不处理（基于路径配置）
+    # 这些接口在 app/api/public/ 目录下，使用 API Key 认证
+    PUBLIC_API_PATHS: list = [
+        "/api/test/exception/business",
+        "/api/test/exception/permission",
+        "/api/test/exception/not-found",
+        "/api/test/exception/validation",
+        "/api/test/exception/unexpected",
+        "/api/test/exception/success",
         "/api/autofill/llm/rule/execute",
         "/api/autofill/llm/rule/execute/result",
+        "/api/autofill/summary-feedback",
+        "/api/agent/chat",
+        "/api/agent/chat/stream",
+        "/api/autofill/record_fill_data",
+    ]
+
+    # 2. 后台接口无需鉴权 - 不需要 is_authed 验证（基于路径配置）
+    NO_AUTH_PATHS: list = [
+        "/api/v1/base/access_token",
+    ]
+
+    # 3. 后台接口无需权限认证(has_permission) - 只需要 is_authed（基于前缀配置）
+    # 这些接口只需要登录，不需要具体的权限码
+    BASE_API_PREFIXES: list = [
+        "/api/v1/base/",
     ]
 
     # 中间件配置 - 审计日志特殊路径
@@ -268,12 +286,6 @@ class Settings(BaseSettings):
                         instance.LOG_SKIP_PATHS = log_config["skip_paths"]
                     if "sensitive_fields" in log_config:
                         instance.LOG_SENSITIVE_FIELDS = log_config["sensitive_fields"]
-
-                # 加载租户中间件配置
-                if "tenant_middleware" in config:
-                    tenant_config = config["tenant_middleware"]
-                    if "exclude_paths" in tenant_config:
-                        instance.TENANT_EXCLUDE_PATHS = tenant_config["exclude_paths"]
 
                 # 加载审计日志中间件配置
                 if "audit_log_middleware" in config:

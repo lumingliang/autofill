@@ -3,8 +3,7 @@
 
 提供统一的请求上下文管理，包括：
 - 当前用户信息
-- JWT Token 中的租户ID
-- 请求参数中的租户ID（仅超管有效）
+- 请求中的租户ID
 - 后台任务
 """
 
@@ -19,9 +18,7 @@ from app.models.admin import User
 CTX_USER_ID: contextvars.ContextVar[int] = contextvars.ContextVar("user_id", default=0)
 CTX_BG_TASKS: contextvars.ContextVar[BackgroundTasks] = contextvars.ContextVar("bg_task", default=None)
 CTX_USER: contextvars.ContextVar[Optional[User]] = contextvars.ContextVar("user", default=None)
-CTX_JWT_TENANT_ID: contextvars.ContextVar[int] = contextvars.ContextVar("jwt_tenant_id", default=0)
 CTX_REQUEST_TENANT_ID: contextvars.ContextVar[int] = contextvars.ContextVar("request_tenant_id", default=0)
-CTX_TENANT_ID: contextvars.ContextVar[int] = contextvars.ContextVar("tenant_id", default=0)
 
 
 class Ctx:
@@ -30,8 +27,7 @@ class Ctx:
 
     提供统一的方法来管理请求生命周期内的上下文信息：
     - 用户信息（User）
-    - JWT Token 中的租户ID（jwt_tenant_id）
-    - 请求参数中的租户ID（request_tenant_id，仅超管有效）
+    - 请求中的租户ID（request_tenant_id）
 
     使用方式：
     - 在中间件中设置上下文
@@ -52,23 +48,13 @@ class Ctx:
         return CTX_USER.get()
 
     @classmethod
-    def set_jwt_tenant_id(cls, tenant_id: int) -> None:
-        """设置JWT Token中解析的租户ID"""
-        CTX_JWT_TENANT_ID.set(tenant_id)
-
-    @classmethod
-    def get_jwt_tenant_id(cls) -> int:
-        """获取JWT Token中解析的租户ID"""
-        return CTX_JWT_TENANT_ID.get()
-
-    @classmethod
     def set_request_tenant_id(cls, tenant_id: int) -> None:
-        """设置请求参数中的租户ID（仅超管有效）"""
+        """设置请求中的租户ID"""
         CTX_REQUEST_TENANT_ID.set(tenant_id)
 
     @classmethod
     def get_request_tenant_id(cls) -> int:
-        """获取请求参数中的租户ID"""
+        """获取请求中的租户ID"""
         return CTX_REQUEST_TENANT_ID.get()
 
     @classmethod
@@ -76,31 +62,14 @@ class Ctx:
         """
         获取有效的租户ID
 
-        逻辑（按优先级）：
-        1. 直接设置的租户ID（API Key认证等场景）
-        2. JWT Token中的租户ID（普通用户）
-        3. 请求参数中的租户ID（超管）
-        4. 0（表示不过滤）
+        直接使用 CTX_REQUEST_TENANT_ID
+        - 0 表示不过滤（查询所有租户）
+        - >0 表示按指定租户过滤
 
         Returns:
             int: 有效的租户ID，0表示不过滤
         """
-        # 1. 优先检查是否直接设置了租户ID（API Key认证等场景）
-        direct_tenant_id = cls.get_tenant_id()
-        if direct_tenant_id > 0:
-            return direct_tenant_id
-
-        user = cls.get_user()
-        if not user:
-            return 0
-
-        if user.is_superuser:
-            # 超管：使用请求参数中的租户ID，未指定则返回0（不过滤）
-            request_tenant_id = cls.get_request_tenant_id()
-            return request_tenant_id if request_tenant_id > 0 else 0
-        else:
-            # 普通用户：强制使用JWT中的租户ID
-            return cls.get_jwt_tenant_id()
+        return cls.get_request_tenant_id()
 
     @classmethod
     def build_query_filter(cls, tenant_field: str = "tenant_id") -> Dict[str, Any]:
@@ -139,23 +108,11 @@ class Ctx:
         return cls.get_effective_tenant_id() <= 0
 
     @classmethod
-    def set_tenant_id(cls, tenant_id: int) -> None:
-        """设置租户ID（用于API Key认证等场景）"""
-        CTX_TENANT_ID.set(tenant_id)
-
-    @classmethod
-    def get_tenant_id(cls) -> int:
-        """获取租户ID（优先返回直接设置的租户ID）"""
-        return CTX_TENANT_ID.get()
-
-    @classmethod
     def clear(cls) -> None:
         """清理所有上下文（请求结束时调用）"""
         CTX_USER.set(None)
         CTX_USER_ID.set(0)
-        CTX_JWT_TENANT_ID.set(0)
         CTX_REQUEST_TENANT_ID.set(0)
-        CTX_TENANT_ID.set(0)
 
     @classmethod
     def set_bg_tasks(cls, bg_tasks: BackgroundTasks) -> None:

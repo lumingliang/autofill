@@ -83,11 +83,17 @@ export const useUserStore = defineStore('user', () => {
         return true
       }
 
+      // 调用后端接口保存租户选择
+      const res: any = await api.selectTenant({ tenant_id: tenantId })
+      if (res.code !== 200) {
+        window.$message?.error(res.msg || '租户切换失败')
+        return false
+      }
+
       // 使用传入的租户对象或创建临时租户对象
       const tenant = tenantObj || { id: tenantId, name: `租户${tenantId}`, domain: '' }
       setCurrentTenant(tenant)
       window.$message?.success('租户切换成功')
-      // 不刷新页面，只更新状态
       return true
     } catch (error) {
       console.error('选择租户失败', error)

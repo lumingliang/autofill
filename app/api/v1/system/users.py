@@ -120,23 +120,6 @@ class UserAPI(BaseAPI):
         except Exception as e:
             return Fail(code=400, msg=str(e))
 
-    async def select_tenant(
-        self,
-        tenant_data: UserTenantSelect,
-    ):
-        """
-        用户选择当前操作的租户
-
-        注意：认证在中间件中已完成，直接从 Ctx 获取用户信息
-        """
-        # 从 Ctx 获取当前用户（中间件已设置）
-        current_user = Ctx.get_user()
-        try:
-            await user_service.set_current_tenant(current_user.id, tenant_data.tenant_id)
-            return Success(msg="租户选择成功")
-        except Exception as e:
-            return Fail(code=400, msg=str(e))
-
     async def get_tenant_roles(self):
         """
         获取当前租户下的所有角色，用于给用户分配角色
@@ -231,11 +214,6 @@ async def delete_user(query: UserDelete = Depends()):
 @router.post("/reset_password", summary="重置密码")
 async def reset_password(data: ResetPassword):
     return await user_api.reset_password(data)
-
-
-@router.post("/select_tenant", summary="选择当前租户")
-async def select_tenant(tenant_data: UserTenantSelect):
-    return await user_api.select_tenant(tenant_data)
 
 
 @router.get("/tenant_roles", summary="获取当前租户的角色")

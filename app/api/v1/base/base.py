@@ -1,15 +1,17 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from app.core.ctx import Ctx
 from app.core.dependency import AuthControl
 from app.models.admin import User
 from app.schemas.base import Fail, Success
 from app.schemas.login import *
-from app.schemas.users import UpdatePassword
+from app.schemas.users import UpdatePassword, UserTenantSelect
 from app.services.system.api_service import api_service
 from app.services.system.menu_service import menu_service
+from app.services.system.tenant_service import tenant_service
 from app.services.system.user_service import user_service
 from app.settings import settings
 from app.utils.jwt_utils import create_access_token
@@ -47,41 +49,6 @@ async def login_access_token(credentials: CredentialsSchema):
     return Success(data=data.model_dump())
 
 
-class SelectTenantSchema(BaseModel):
-    tenant_id: int
-
-@router.post("/select_tenant", summary="选择租户后获取完整token")
-async def select_tenant_and_get_token(
-    schema: SelectTenantSchema,
-    current_user: User = Depends(AuthControl.is_authed),
-):
-    """用户选择租户后，更新当前租户并返回新的token"""
-    try:
-        tenant_result = await user_service.select_tenant(current_user.id, schema.tenant_id)
-        tenant_domain = tenant_result["tenant_domain"]
-
-        access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-        expire = datetime.now(timezone.utc) + access_token_expires
-
-        data = JWTOut(
-            access_token=create_access_token(
-                data=JWTPayload(
-                    user_id=current_user.id,
-                    username=current_user.username,
-                    is_superuser=current_user.is_superuser,
-                    exp=expire,
-                    current_tenant_id=schema.tenant_id,
-                    tenant_domain=tenant_domain,
-                )
-            ),
-            username=current_user.username,
-            current_tenant_id=schema.tenant_id,
-        )
-        return Success(data=data.model_dump())
-    except Exception as e:
-        return Fail(code=400, msg=str(e))
-
-
 @router.get("/userinfo", summary="查看用户信息")
 async def get_userinfo(current_user: User = Depends(AuthControl.is_authed)):
     user_id = current_user.id
@@ -117,6 +84,53 @@ async def update_user_password(
         new_password=req_in.new_password
     )
     return Success(msg="密码修改成功")
+
+
+@router.get("/select", summary="租户下拉选择")
+async def tenant_select(keyword: str = Query("", description="搜索关键词（名称或域名）")):
+    """
+    租户下拉选择
+
+    获取租户下拉列表，用于选择框
+    - 超管可以搜索所有租户，支持清空（不传keyword返回全部）
+    - 支持模糊搜索
+    """
+    try:
+        # 超管可以查看所有租户
+        if Ctx.is_superuser():
+            tenants = await tenant_service.get_tenant_select_list(keyword)
+        else:
+            # 普通用户只能看到自己有权限的租户
+            current_user = Ctx.get_user()
+            tenant_list = await user_service.get_user_tenants(current_user.id)
+            tenants = [{"id": t.id, "name": t.name, "domain": t.domain} for t in tenant_list if t.is_active]
+
+            # 普通用户也支持模糊搜索
+            if keyword:
+                keyword_lower = keyword.lower()
+                tenants = [
+                    t for t in tenants
+                    if keyword_lower in t["name"].lower() or keyword_lower in t["domain"].lower()
+                ]
+
+        return Success(data=tenants)
+    except Exception as e:
+        return Fail(code=400, msg=str(e))
+
+
+@router.post("/select_tenant", summary="选择当前租户")
+async def select_tenant(
+    tenant_data: UserTenantSelect,
+    current_user: User = Depends(AuthControl.is_authed),
+):
+    """
+    用户选择当前操作的租户
+    """
+    try:
+        await user_service.set_current_tenant(current_user.id, tenant_data.tenant_id)
+        return Success(msg="租户选择成功")
+    except Exception as e:
+        return Fail(code=400, msg=str(e))
 
 
 class QuickLoginSchema(BaseModel):
