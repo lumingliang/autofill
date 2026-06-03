@@ -146,15 +146,21 @@
               <!-- 文件上传 -->
               <div @drop.prevent="handleDrop" @dragover.prevent @dragenter.prevent>
                 <a-upload-dragger v-model:file-list="importFileList" :custom-request="handleCustomUpload"
-                  @change="handleImportFileChange" accept=".csv" :multiple="false" :open-file-dialog-on-click="true">
+                  @change="handleImportFileChange" accept=".csv,.xlsx,.xls" :multiple="false"
+                  :open-file-dialog-on-click="true">
                   <p class="ant-upload-drag-icon">
                     <UploadOutlined />
                   </p>
-                  <p class="ant-upload-text">点击或拖拽CSV文件到此处上传</p>
+                  <p class="ant-upload-text">点击或拖拽文件到此处上传</p>
                   <p class="ant-upload-hint">
-                    支持按表头字段名称匹配，不按列顺序匹配
+                    支持 CSV、Excel (.xlsx, .xls) 格式，自动检测文件编码
                   </p>
                 </a-upload-dragger>
+              </div>
+
+              <!-- 编码检测提示 -->
+              <div v-if="detectedEncoding" class="encoding-info">
+                <a-alert type="info" show-icon :message="`检测到文件编码: ${detectedEncoding}`" />
               </div>
 
               <!-- 数据预览 -->
@@ -194,8 +200,7 @@
           <a-tab-pane key="curl" tab="从CURL导入">
             <CurlImport ref="curlImportRef" :rule-id="ruleId" :rule-code="ruleCode" :rule-name="ruleName"
               :existing-headers="headers" :primary-keys="primaryKeys" :sync-fields="syncFields"
-              :allow-add-new="allowAddNew"
-              @preview="handleCurlPreview" @imported="handleCurlImportSuccess" />
+              :allow-add-new="allowAddNew" @preview="handleCurlPreview" @imported="handleCurlImportSuccess" />
           </a-tab-pane>
         </a-tabs>
       </div>
@@ -205,6 +210,8 @@
     <a-modal v-model:open="importResultVisible" title="导入结果" @ok="importResultVisible = false"
       :cancel-button-props="{ style: { display: 'none' } }">
       <a-descriptions :column="1" bordered>
+        <a-descriptions-item v-if="importResult.detected_encoding" label="文件编码">{{ importResult.detected_encoding
+        }}</a-descriptions-item>
         <a-descriptions-item label="新增行数">{{ importResult.added_count }}</a-descriptions-item>
         <a-descriptions-item label="更新行数">{{ importResult.updated_count }}</a-descriptions-item>
         <a-descriptions-item label="忽略行数">{{ importResult.skipped_count }}</a-descriptions-item>
@@ -309,6 +316,7 @@ const filePreviewData = ref<any>({
   config: {}
 })
 const fileImporting = ref(false)
+const detectedEncoding = ref<string>('')  // 检测到的文件编码
 
 // CURL导入引用
 const curlImportRef = ref<InstanceType<typeof CurlImport>>()
@@ -721,9 +729,67 @@ const handleImportModalClose = () => {
   importFileList.value = []
   allHeaders.value = []
   allowAddNew.value = true
+  detectedEncoding.value = ''  // 重置编码检测
 }
 
-// 处理CSV内容变化（预览时自动保存主键配置）
+// 处理文件内容预览（支持CSV/Excel）- 使用FormData上传
+const handleFilePreview = async (file: File) => {
+  if (!props.ruleId) {
+    message.warning('规则ID不存在')
+    return
+  }
+
+  const filename = file.name.toLowerCase()
+  const isExcel = filename.endsWith('.xlsx') || filename.endsWith('.xls')
+  const isCsv = filename.endsWith('.csv')
+
+  if (!isExcel && !isCsv) {
+    message.error('不支持的文件格式，请上传 CSV 或 Excel 文件')
+    return
+  }
+
+  try {
+    // 使用FormData上传文件
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('rule_id', props.ruleId.toString())
+    formData.append('primary_keys', JSON.stringify(primaryKeys.value))
+
+    // 预览时传入当前主键配置，后端会自动保存
+    const res: any = await api.previewFileImport(formData)
+
+    if (res.code === 200) {
+      filePreviewData.value = res.data
+      isFirstImport.value = res.data.is_first_import
+      allHeaders.value = res.data.csv_headers || []
+
+      // 保存检测到的编码
+      if (res.data.detected_encoding) {
+        detectedEncoding.value = res.data.detected_encoding
+      }
+
+      // 使用后端返回的主键配置（可能已经更新）
+      if (res.data.primary_keys) {
+        primaryKeys.value = res.data.primary_keys
+      }
+
+      // 使用后端返回的同步字段（实时计算的，排除主键）
+      if (res.data.sync_fields) {
+        syncFields.value = res.data.sync_fields
+        selectAllSyncFields.value = syncFields.value.length === availableSyncFields.value.length
+      }
+
+      message.success(`文件解析成功，共 ${res.data.row_count} 行数据`)
+    } else {
+      message.error(res.msg || '预览失败')
+    }
+  } catch (error) {
+    console.error('预览失败', error)
+    message.error('文件解析失败，请检查文件格式')
+  }
+}
+
+// 处理CSV内容变化（预览时自动保存主键配置）- 兼容旧版CSV文本预览
 const handleCsvContentChange = async () => {
   if (!csvContent.value.trim()) {
     filePreviewData.value = {
@@ -735,6 +801,7 @@ const handleCsvContentChange = async () => {
       config: {}
     }
     allHeaders.value = []
+    detectedEncoding.value = ''
     return
   }
 
@@ -745,7 +812,7 @@ const handleCsvContentChange = async () => {
 
   try {
     // 预览时传入当前主键配置，后端会自动保存
-    const res: any = await api.previewFileImport({
+    const res: any = await api.previewCsvContent({
       rule_id: props.ruleId,
       content: csvContent.value,
       primary_keys: primaryKeys.value  // 传入当前主键配置，后端自动保存
@@ -755,6 +822,11 @@ const handleCsvContentChange = async () => {
       filePreviewData.value = res.data
       isFirstImport.value = res.data.is_first_import
       allHeaders.value = res.data.csv_headers || []
+
+      // 保存检测到的编码
+      if (res.data.detected_encoding) {
+        detectedEncoding.value = res.data.detected_encoding
+      }
 
       // 使用后端返回的主键配置（可能已经更新）
       if (res.data.primary_keys) {
@@ -780,6 +852,12 @@ const handleCustomUpload = () => {
   // 不做任何操作，阻止默认上传
 }
 
+// 检查文件类型是否支持
+const isSupportedFile = (filename: string): boolean => {
+  const lowerName = filename.toLowerCase()
+  return lowerName.endsWith('.csv') || lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')
+}
+
 // 处理文件变化
 const handleImportFileChange = async (info: any) => {
   const fileList = info.fileList || []
@@ -791,8 +869,8 @@ const handleImportFileChange = async (info: any) => {
   const file = info.file?.originFileObj || info.file
   if (!file) return
 
-  if (!file.name || !file.name.endsWith('.csv')) {
-    message.error('请选择CSV文件')
+  if (!file.name || !isSupportedFile(file.name)) {
+    message.error('请选择 CSV 或 Excel (.xlsx, .xls) 文件')
     importFileList.value = []
     importFile.value = null
     return
@@ -800,12 +878,22 @@ const handleImportFileChange = async (info: any) => {
 
   importFile.value = file
 
-  const reader = new FileReader()
-  reader.onload = async (e) => {
-    csvContent.value = e.target?.result as string
-    await handleCsvContentChange()
+  // 对于Excel文件，使用Base64编码上传预览
+  // 对于CSV文件，尝试本地读取预览
+  const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')
+
+  if (isExcel) {
+    // Excel文件直接上传预览
+    await handleFilePreview(file)
+  } else {
+    // CSV文件本地读取
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      csvContent.value = e.target?.result as string
+      await handleCsvContentChange()
+    }
+    reader.readAsText(file)
   }
-  reader.readAsText(file)
 }
 
 // 处理拖拽事件
@@ -817,8 +905,8 @@ const handleDrop = (e: DragEvent) => {
   if (!files || files.length === 0) return
 
   const file = files[0]
-  if (!file.name.endsWith('.csv')) {
-    message.error('请选择CSV文件')
+  if (!isSupportedFile(file.name)) {
+    message.error('请选择 CSV 或 Excel (.xlsx, .xls) 文件')
     return
   }
 
@@ -843,7 +931,7 @@ const confirmFileImport = async () => {
   }
 
   if (!importFile.value) {
-    message.warning('请上传CSV文件')
+    message.warning('请上传文件')
     return
   }
 
@@ -855,12 +943,46 @@ const confirmFileImport = async () => {
   fileImporting.value = true
 
   try {
-    const importData = {
-      rule_id: props.ruleId,
-      content: csvContent.value,
-      primary_keys: primaryKeys.value,
-      sync_fields: syncFields.value,
-      allow_add_new: allowAddNew.value
+    // 判断文件类型
+    const isExcel = importFile.value.name.toLowerCase().endsWith('.xlsx') ||
+      importFile.value.name.toLowerCase().endsWith('.xls')
+
+    let importData: any
+
+    if (isExcel) {
+      // Excel文件：使用FormData上传
+      const formData = new FormData()
+      formData.append('file', importFile.value)
+      formData.append('rule_id', props.ruleId.toString())
+
+      const res: any = await api.importFile(formData)
+
+      if (res.code === 200) {
+        importResult.value = res.data
+        importResultVisible.value = true
+
+        // 检查是否无变化
+        if (res.data.no_change) {
+          message.info(res.data.message || '当前内容没有变化，无需保存新版本')
+        } else {
+          // 刷新表格数据
+          loadRuleDetail()
+          emit('saved')
+        }
+        importModalVisible.value = false
+      } else {
+        message.error(res.msg || '导入失败')
+      }
+      return
+    } else {
+      // CSV文件：使用内容导入
+      importData = {
+        rule_id: props.ruleId,
+        content: csvContent.value,
+        primary_keys: primaryKeys.value,
+        sync_fields: syncFields.value,
+        allow_add_new: allowAddNew.value
+      }
     }
 
     const res: any = await api.applyImport(importData)
@@ -1134,5 +1256,10 @@ onMounted(() => {
 
 .mb-4 {
   margin-bottom: 16px;
+}
+
+.encoding-info {
+  margin-top: 12px;
+  margin-bottom: 12px;
 }
 </style>

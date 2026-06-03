@@ -117,6 +117,14 @@ async function loadTenants(keyword: string = '') {
         label: `${t.name} (${t.domain})`,
         value: t.id,
       }))
+
+      // 如果没有搜索关键词且当前没有选中租户，默认选择第一个
+      if (!keyword && !selectedTenantId.value && tenantOptions.value.length > 0) {
+        const firstTenant = tenantOptions.value[0]
+        selectedTenantId.value = firstTenant.value
+        // 自动触发租户切换
+        await handleTenantChange(firstTenant.value)
+      }
     }
   } catch (error) {
     console.error('加载租户列表失败', error)

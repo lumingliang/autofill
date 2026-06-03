@@ -1,5 +1,5 @@
 """
-规则导入接口 - 处理CSV导入的API端点
+规则导入接口 - 处理CSV/Excel导入的API端点
 
 参考 depts.py 简洁风格：
 - 直接在路由函数中调用 Service 层
@@ -32,6 +32,16 @@ from app.services.rule_management.rule_service import (
     VersionConflictException,
     rule_service,
 )
+from app.utils.file_parser import (
+    convert_to_csv_string,
+    decode_content,
+    detect_encoding,
+    parse_file,
+)
+
+# 常量定义
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB 文件大小限制
+ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls'}
 
 router = APIRouter()
 
@@ -291,29 +301,122 @@ async def _execute_import_from_rows_core(
     }
 
 
-@router.post("/rule/import/file/preview", summary="预览CSV导入")
-async def preview_file_import(file_request: FilePreviewRequest):
-    """预览CSV导入 - 返回CSV表头、预览数据、是否是首次导入等信息"""
+def _validate_file(file: UploadFile) -> tuple[bool, str]:
+    """验证文件类型和大小"""
+    # 检查文件扩展名
+    filename = file.filename or ''
+    ext = '.' + filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    if ext not in ALLOWED_EXTENSIONS:
+        return False, f"不支持的文件格式: {ext}，请上传 CSV 或 Excel 文件"
+    return True, ""
+
+
+@router.post("/rule/import/file/preview", summary="预览文件导入（FormData格式）")
+async def preview_file_upload(
+    file: UploadFile = File(..., description="CSV/Excel文件"),
+    rule_id: int = Form(..., description="规则ID"),
+    primary_keys: str = Form("[]", description="主键字段列表（JSON字符串）"),
+):
+    """预览文件导入 - 使用FormData格式上传文件（支持CSV/Excel）"""
+    rule = await _get_rule(rule_id=rule_id)
+    if not rule:
+        return Fail(code=404, msg="规则不存在")
+
+    # 验证文件
+    is_valid, error_msg = _validate_file(file)
+    if not is_valid:
+        return Fail(code=400, msg=error_msg)
+
+    try:
+        content = await file.read()
+
+        # 检查文件大小
+        if len(content) > MAX_FILE_SIZE:
+            return Fail(code=400, msg=f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）")
+
+        # 自动识别文件类型并解析
+        headers, data, detected_encoding = parse_file(content, file.filename or 'data.csv')
+
+        logger.info(
+            "文件预览",
+            filename=file.filename,
+            detected_encoding=detected_encoding,
+            row_count=len(data),
+        )
+
+    except Exception as e:
+        logger.error("解析文件失败", error=str(e))
+        return Fail(code=400, msg=f"解析文件失败: {str(e)}")
+
+    existing_headers, is_first_import = await _get_existing_headers(rule)
+
+    # 为了兼容前端，字段名保持 csv_headers
+    csv_headers = headers
+    csv_data = data
+
+    # 解析主键配置
+    pk_list = []
+    try:
+        pk_list = json.loads(primary_keys)
+    except json.JSONDecodeError:
+        pass
+
+    existing_config = _parse_import_config(rule.config) or {}
+    if existing_config:
+        pk_list = existing_config.get("primary_keys", []) or pk_list
+
+    if pk_list:
+        await _save_primary_keys_config(rule, pk_list)
+
+    merged_headers = _merge_headers(existing_headers, csv_headers)
+    sync_fields = [h for h in merged_headers if h not in pk_list]
+
+    # 从配置中读取 allow_add_new，默认为 True
+    allow_add_new = existing_config.get("allow_add_new", True)
+
+    return Success(
+        data={
+            "csv_headers": csv_headers,
+            "existing_headers": existing_headers,
+            "merged_headers": merged_headers,
+            "row_count": len(csv_data),
+            "preview_data": csv_data[:10],
+            "is_first_import": is_first_import,
+            "primary_keys": pk_list,
+            "sync_fields": sync_fields,
+            "allow_add_new": allow_add_new,
+            "detected_encoding": detected_encoding,
+        }
+    )
+
+
+@router.post("/rule/import/preview/content", summary="预览CSV内容导入")
+async def preview_file_content(file_request: FilePreviewRequest):
+    """预览CSV内容导入 - 用于直接传入CSV文本内容（粘贴或编辑器输入）"""
     rule = await _get_rule(rule_id=file_request.rule_id)
     if not rule:
         return Fail(code=404, msg="规则不存在")
 
     existing_headers, is_first_import = await _get_existing_headers(rule)
-    csv_headers, csv_data = _parse_csv_content(file_request.content)
+
+    # 直接解析CSV文本内容
+    headers, data = _parse_csv_content(file_request.content)
+
+    csv_headers = headers
+    csv_data = data
 
     primary_keys = []
     existing_config = _parse_import_config(rule.config) or {}
     if existing_config:
         primary_keys = existing_config.get("primary_keys", [])
 
-    if hasattr(file_request, "primary_keys") and file_request.primary_keys:
+    if file_request.primary_keys:
         primary_keys = file_request.primary_keys
         await _save_primary_keys_config(rule, primary_keys)
 
     merged_headers = _merge_headers(existing_headers, csv_headers)
     sync_fields = [h for h in merged_headers if h not in primary_keys]
 
-    # 从配置中读取 allow_add_new，默认为 True
     allow_add_new = existing_config.get("allow_add_new", True)
 
     return Success(
@@ -327,6 +430,7 @@ async def preview_file_import(file_request: FilePreviewRequest):
             "primary_keys": primary_keys,
             "sync_fields": sync_fields,
             "allow_add_new": allow_add_new,
+            "detected_encoding": "utf-8",
         }
     )
 
@@ -347,19 +451,31 @@ async def get_import_config(query: ImportConfigQuery = Depends()):
     })
 
 
-@router.post("/rule/import/file", summary="导入CSV文件")
-async def import_csv_file(
-    file: UploadFile = File(..., description="CSV文件"),
+@router.post("/rule/import/file", summary="导入文件")
+async def import_file(
+    file: UploadFile = File(..., description="CSV/Excel文件"),
     rule_id: int = Form(..., description="规则ID"),
 ):
-    """导入CSV文件，执行增量导入并保存为新版本"""
+    """导入文件（支持CSV/Excel），执行增量导入并保存为新版本"""
     rule = await _get_rule(rule_id=rule_id)
     if not rule:
         return Fail(code=404, msg="规则不存在")
 
     try:
         content = await file.read()
-        csv_content = content.decode('utf-8')
+
+        # 自动识别文件类型并解析
+        headers, data, detected_encoding = parse_file(content, file.filename or 'data.csv')
+
+        # 转换为CSV格式字符串用于后续处理
+        csv_content = convert_to_csv_string(headers, data)
+
+        logger.info(
+            "文件导入",
+            filename=file.filename,
+            detected_encoding=detected_encoding,
+            row_count=len(data),
+        )
 
         config_dict = _parse_import_config(rule.config) or {}
         primary_keys = config_dict.get("primary_keys", [])
@@ -375,11 +491,15 @@ async def import_csv_file(
         if not import_result["success"]:
             return Fail(code=400, msg=import_result["error"])
 
-        return Success(data=import_result["data"])
+        # 添加编码信息到返回结果
+        result_data = import_result["data"]
+        result_data["detected_encoding"] = detected_encoding
+
+        return Success(data=result_data)
 
     except Exception as e:
-        logger.error("CSV导入失败", error=str(e))
-        return Fail(code=400, msg=f"CSV导入失败: {str(e)}")
+        logger.error("文件导入失败", error=str(e))
+        return Fail(code=400, msg=f"文件导入失败: {str(e)}")
 
 
 @router.post("/rule/import/apply", summary="执行CSV导入（通过内容）")

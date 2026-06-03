@@ -153,9 +153,17 @@ export default {
   }),
 
   // 规则导入接口
-  previewFileImport: (data: any = {}) => request.post('/autofill/rule/import/file/preview', data),
+  // 预览文件导入（FormData格式，支持CSV/Excel）
+  previewFileImport: (formData: FormData) => request.post('/autofill/rule/import/file/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  // 预览CSV内容导入（JSON格式，用于直接传入CSV文本）
+  previewCsvContent: (data: any = {}) => request.post('/autofill/rule/import/preview/content', data),
   getImportConfig: (params: any = {}) => request.get('/autofill/rule/import/config', { params }),
   applyImport: (data: any = {}) => request.post('/autofill/rule/import/apply', data),
+  importFile: (formData: FormData) => request.post('/autofill/rule/import/file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
 
   // CURL导入接口
   previewCurlImport: (data: any = {}) => request.post('/autofill/rule/import/curl/preview', data),

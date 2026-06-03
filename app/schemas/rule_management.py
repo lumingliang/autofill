@@ -145,9 +145,9 @@ class CsvImportConfig(BaseModel):
 
 
 class FilePreviewRequest(BaseModel):
-    """文件导入预览请求"""
+    """文件导入预览请求 - 用于JSON格式请求（直接传入CSV内容）"""
     rule_id: int = Field(..., description="规则ID")
-    content: str = Field(..., description="CSV内容")
+    content: str = Field("", description="CSV内容")
     primary_keys: List[str] = Field(default_factory=list, description="主键字段列表（可选，提供时自动保存）")
 
 
@@ -159,6 +159,7 @@ class FilePreviewResponse(BaseModel):
     preview_data: List[Dict[str, Any]] = Field(default_factory=list, description="预览数据（前10行）")
     is_first_import: bool = Field(False, description="是否是首次导入")
     config: CsvImportConfig = Field(default_factory=CsvImportConfig, description="当前配置")
+    detected_encoding: Optional[str] = Field(None, description="检测到的文件编码")
 
 
 class ImportApplyRequest(BaseModel):
