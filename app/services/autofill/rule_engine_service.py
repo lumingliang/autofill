@@ -127,7 +127,8 @@ class RuleEngineService:
             is_last=is_last
         )
 
-        return {
+        # 构建返回结果，将 results 中的字段展平到最外层（后覆盖前）
+        result = {
             "session_id": session_id,
             "step": step,
             "is_last": is_last,
@@ -135,6 +136,13 @@ class RuleEngineService:
             "elapsed_time": elapsed_time,
             "results": results
         }
+
+        # 展平 results 中的字段到最外层
+        for task_name, task_result in results.items():
+            if isinstance(task_result, dict):
+                result.update(task_result)
+
+        return result
 
     async def _execute_single_rule(
         self,
