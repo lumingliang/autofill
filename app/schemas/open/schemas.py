@@ -1,6 +1,6 @@
 """
-Public API 完整请求模型定义
-所有public接口的请求参数统一在此定义，通过继承减少重复
+Open API 完整请求模型定义
+所有open接口的请求参数统一在此定义，通过继承减少重复
 """
 from typing import Any, Dict, List, Optional
 
@@ -9,20 +9,20 @@ from pydantic import BaseModel, Field
 
 # ==================== 基础请求类 ====================
 
-class BasePublicRequest(BaseModel):
-    """公开接口基础请求类"""
+class BaseOpenRequest(BaseModel):
+    """开放接口基础请求类"""
     pass
 
     class Config:
         extra = "allow"
 
 
-class AppBaseRequest(BasePublicRequest):
+class AppBaseRequest(BaseOpenRequest):
     """需要应用名称的基础请求"""
     app_name: str = Field(..., description="应用名称（必填）")
 
 
-class TenantAppBaseRequest(BasePublicRequest):
+class TenantAppBaseRequest(BaseOpenRequest):
     """需要租户和应用的基础请求"""
     tenant_id: Optional[int] = Field(default=None, description="租户ID（可选，默认从认证信息获取）")
     app_name: Optional[str] = Field(default=None, description="应用名称（可选，默认从认证信息获取）")
@@ -36,7 +36,7 @@ class FieldSpecListRequest(AppBaseRequest):
     field_names: List[str] = Field(default_factory=list, description="字段名称列表（可选，不传则返回所有字段）")
 
 
-class FieldSpecCreateRequest(BasePublicRequest):
+class FieldSpecCreateRequest(BaseOpenRequest):
     """创建字段明细请求"""
     field_name: str = Field(..., description="字段名（英文）")
     field_label: str = Field(..., description="字段显示名称")
@@ -71,14 +71,14 @@ class FieldGroupRequest(AppBaseRequest):
     field_names: List[str] = Field(default_factory=list, description="字段名称列表")
 
 
-class FieldGroupDetailRequest(BasePublicRequest):
+class FieldGroupDetailRequest(BaseOpenRequest):
     """查询字段组详情请求"""
     group_id: int = Field(..., description="字段组ID")
 
 
 # ==================== 填单数据相关请求 ====================
 
-class RecordFillDataRequest(BasePublicRequest):
+class RecordFillDataRequest(BaseOpenRequest):
     """记录填单数据请求"""
     session_id: str = Field(..., description="会话ID")
     data: Dict[str, Any] = Field(default_factory=dict, description="填单数据")
@@ -89,14 +89,14 @@ class RecordFillDataRequest(BasePublicRequest):
 
 # ==================== LLM/AI 填单相关请求 ====================
 
-class AIFillDataRequest(BasePublicRequest):
+class AIFillDataRequest(BaseOpenRequest):
     """获取AI填单数据请求"""
     session_id: str = Field(..., description="会话ID")
     data: Dict[str, Any] = Field(default_factory=dict, description="请求数据")
     response_mode: str = Field(default="sync", description="响应模式: sync=同步, async=异步")
 
 
-class AIFillDataResultRequest(BasePublicRequest):
+class AIFillDataResultRequest(BaseOpenRequest):
     """查询AI填单异步结果请求"""
     session_id: str = Field(..., description="会话ID")
 
@@ -113,7 +113,7 @@ class LLMFillRequest(AppBaseRequest):
 
 # ==================== 反馈总结相关请求 ====================
 
-class SummaryFeedbackRequest(BasePublicRequest):
+class SummaryFeedbackRequest(BaseOpenRequest):
     """反馈内容总结请求"""
     order_id: str = Field(..., description="工单ID（唯一标识）")
     brand: str = Field(..., description="品牌")
@@ -140,7 +140,7 @@ class RuleExecuteParam(BaseModel):
     prompt: RuleExecutePromptConfig = Field(..., description="提示词配置")
 
 
-class RuleExecuteRequest(BasePublicRequest):
+class RuleExecuteRequest(BaseOpenRequest):
     """规则执行引擎请求"""
     session_id: str = Field(..., description="会话ID")
     query: str = Field(..., description="用户输入文本")
@@ -153,16 +153,28 @@ class RuleExecuteRequest(BasePublicRequest):
     system_prompt_name: Optional[str] = Field(default=None, description="系统提示词名称（可选）")
 
 
-class RuleExecuteResultRequest(BasePublicRequest):
+class RuleExecuteResultRequest(BaseOpenRequest):
     """规则执行结果查询请求"""
     session_id: str = Field(..., description="会话ID")
+
+
+# ==================== 事件类型分级查询请求 ====================
+
+class EventTypeQueryRequest(BaseOpenRequest):
+    """事件类型分级查询请求
+    
+    先查询一级事件类型，再根据一级事件类型查询二三级事件类型
+    """
+    query: str = Field(..., description="用户输入的问题描述，如：我的手机坏了")
+    session_id_prefix: Optional[str] = Field(default="test", description="会话ID前缀（可选）")
+    system_prompt_name: Optional[str] = Field(default="事件类型", description="系统提示词名称")
 
 
 # ==================== 导出所有请求类 ====================
 
 __all__ = [
     # 基础请求类
-    "BasePublicRequest",
+    "BaseOpenRequest",
     "AppBaseRequest",
     "TenantAppBaseRequest",
     # 字段明细相关
@@ -186,4 +198,6 @@ __all__ = [
     "RuleExecuteResultRequest",
     "RuleExecuteParam",
     "RuleExecutePromptConfig",
+    # 事件类型分级查询
+    "EventTypeQueryRequest",
 ]

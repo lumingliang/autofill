@@ -2,21 +2,21 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from tortoise import Tortoise
 
 from app.core.exceptions import SettingNotFound
 from app.core.init_app import (
-    init_data,
+    init_db_data,
     init_kafka_consumers,
-    shutdown_kafka,
-    make_middlewares,
+    shutdown_kafka_consumers,
     register_exceptions,
-    register_routers,
 )
 from app.core.redis import redis_client
-from app.log import setup_logger
+from app.log import setup_logger, logger
+from app.core.app_factory import create_internal_app, create_open_app
+from app.api.v1 import v1_router
+from app.api.open import open_router
 
 try:
     from app.settings.config import settings
@@ -29,13 +29,22 @@ setup_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 初始化 Tortoise ORM
+    try:
+        from app.settings import TORTOISE_ORM
+        await Tortoise.init(config=TORTOISE_ORM)
+        logger.info("Tortoise ORM initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize Tortoise ORM: {e}")
+        raise
+
     # 初始化 Redis 连接
     try:
         await redis_client.init()
     except Exception as e:
         print(f"Warning: Redis connection failed: {e}")
 
-    await init_data(app)
+    await init_db_data(app)
 
     # 初始化 Kafka 消费者
     await init_kafka_consumers()
@@ -43,7 +52,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # 关闭 Kafka 消费者
-    await shutdown_kafka()
+    await shutdown_kafka_consumers()
 
     # 关闭 Redis 连接
     try:
@@ -55,57 +64,81 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    """
+    创建主 FastAPI 应用 - 子应用挂载版本
+    
+    架构设计：
+    - 主应用：只负责挂载子应用和静态资源，不处理业务逻辑
+    - 内部 API 子应用 (/api/v1/*)：JWT 认证，完整中间件栈
+      - Swagger UI: /api/v1/docs
+      - OpenAPI JSON: /api/v1/openapi.json
+    - Open API 子应用 (/api/v1/open/*)：API Key 认证，精简中间件栈
+      - Swagger UI: /api/v1/open/docs
+      - OpenAPI JSON: /api/v1/open/openapi.json
+    
+    挂载顺序：先挂载 Open API（路径更长），再挂载 Internal API（路径更短）
+    这样 /api/v1/open/xxx 会优先匹配到 Open 子应用
+    """
+    
+    # ============ 创建子应用 ============
+    internal_app = create_internal_app()
+    open_app = create_open_app()
+    
+    # 注册路由到子应用
+    internal_app.include_router(v1_router)
+    open_app.include_router(open_router)
+    
+    # ============ 创建主应用 ============
+    # 主应用不处理业务路由，只挂载子应用
     app = FastAPI(
         title=settings.APP_TITLE,
         description=settings.APP_DESCRIPTION,
         version=settings.VERSION,
-        openapi_url="/openapi.json",
+        # 主应用不生成 openapi，由子应用各自管理
+        openapi_url=None,
         docs_url=None,
         redoc_url=None,
-        middleware=make_middlewares(),
         lifespan=lifespan,
     )
+    
+    # 注册全局异常处理器
     register_exceptions(app)
-    register_routers(app, prefix="/api")
-
-    # 注册静态文件服务 - 上传文件访问
+    
+    # ============ 挂载子应用 ============
+    # 关键：先挂载路径更长的 Open API，再挂载路径更短的 Internal API
+    # FastAPI 的 mount 是从上到下匹配，先匹配到的优先处理
+    app.mount("/api/v1/open", open_app)
+    app.mount("/api/v1", internal_app)
+    
+    # ============ 注册静态文件服务 ============
     upload_dir = os.path.abspath(settings.UPLOAD_DIR)
     os.makedirs(upload_dir, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
-
-    # 注册本地 Swagger UI 静态资源（内网部署使用）
+    
+    # 注册本地 Swagger UI 静态资源
     static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static")
     swagger_ui_dir = os.path.join(static_dir, "swagger-ui")
     if os.path.exists(swagger_ui_dir):
         app.mount("/static/swagger-ui", StaticFiles(directory=swagger_ui_dir), name="swagger-ui-static")
-
-    # 注册前端静态文件服务（Docker 部署使用）
+    
+    # 注册前端静态文件服务
     web_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web")
     if os.path.exists(web_dir):
         from fastapi.responses import FileResponse
         from fastapi import Request
 
-        # 根路径返回 index.html
         @app.get("/", include_in_schema=False)
         async def root_redirect():
             return FileResponse(os.path.join(web_dir, "index.html"))
 
-        # 处理前端静态文件和 SPA 路由
         @app.get("/web/{path:path}", include_in_schema=False)
         async def serve_web_files(request: Request, path: str):
-            """
-            处理前端静态文件和 SPA 路由
-            - 如果请求的是存在的文件（如 CSS、JS、图片），直接返回文件
-            - 否则返回 index.html，由前端路由处理（SPA 模式）
-            """
-            # 安全路径处理：防止目录遍历攻击
             safe_path = os.path.normpath(path)
             if safe_path.startswith("..") or safe_path.startswith("/"):
                 safe_path = safe_path.lstrip("/").lstrip(".")
             
             file_path = os.path.join(web_dir, safe_path)
             
-            # 确保路径在 web_dir 范围内（防止目录遍历）
             real_file_path = os.path.realpath(file_path)
             real_web_dir = os.path.realpath(web_dir)
             if not real_file_path.startswith(real_web_dir):
@@ -114,26 +147,14 @@ def create_app() -> FastAPI:
                     return FileResponse(index_file)
                 return {"error": "Invalid path"}
 
-            # 检查文件是否存在且是文件（不是目录）
             if os.path.exists(real_file_path) and os.path.isfile(real_file_path):
                 return FileResponse(real_file_path)
 
-            # 文件不存在，返回 index.html（SPA 路由）
             index_file = os.path.join(web_dir, "index.html")
             if os.path.exists(index_file):
                 return FileResponse(index_file)
 
             return {"error": "Frontend not found"}
-
-    @app.get("/docs", include_in_schema=False)
-    async def custom_swagger_ui_html():
-        return get_swagger_ui_html(
-            openapi_url="/openapi.json",
-            title=f"{settings.APP_TITLE} - Swagger UI",
-            swagger_js_url="/static/swagger-ui/swagger-ui-bundle.js",
-            swagger_css_url="/static/swagger-ui/swagger-ui.css",
-            swagger_favicon_url="/static/swagger-ui/favicon.png",
-        )
 
     return app
 

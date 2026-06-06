@@ -78,7 +78,7 @@ class Settings(BaseSettings):
 
     # API管理配置 - 排除的API tags（这些tags的API不会被纳入权限管理）
     # 默认排除公开API、文件上传等不需要权限控制的接口
-    EXCLUDE_API_TAGS: list = ["公开接口", "文件上传", "public", "upload"]
+    EXCLUDE_API_TAGS: list = ["公开接口", "文件上传", "open", "upload"]
 
     # 审计日志配置 - 排除的API路径（这些路径不记录审计日志的入参和出参）
     # 用于排除导出、导入等大内容接口
@@ -99,26 +99,25 @@ class Settings(BaseSettings):
     LOG_SENSITIVE_FIELDS: list = ["password", "token", "secret", "key", "auth", "authorization", "cookie"]
 
     # ==================== 接口鉴权分类配置 ====================
-    # 1. Public 接口 - 只走 autofill_auth，中间件不处理（基于路径配置）
-    # 这些接口在 app/api/public/ 目录下，使用 API Key 认证
-    PUBLIC_API_PATHS: list = [
-        "/api/test/exception/business",
-        "/api/test/exception/permission",
-        "/api/test/exception/not-found",
-        "/api/test/exception/validation",
-        "/api/test/exception/unexpected",
-        "/api/test/exception/success",
-        "/api/autofill/llm/rule/execute",
-        "/api/autofill/llm/rule/execute/result",
-        "/api/autofill/summary-feedback",
-        "/api/agent/chat",
-        "/api/agent/chat/stream",
-        "/api/autofill/record_fill_data",
-    ]
+    # 1. Open 接口 - 只走 autofill_auth，中间件不处理
+    # 这些接口在 app/api/v1/open/ 目录下，使用 API Key 认证
+    # 路径前缀: /api/v1/open/
+    # 中间件通过路径前缀 /api/v1/open/ 自动识别，无需在此配置
 
     # 2. 后台接口无需鉴权 - 不需要 is_authed 验证（基于路径配置）
+    # 注意：子应用挂载后，docs 和 openapi.json 路径会加上前缀
+    # Internal API: /api/v1/docs, /api/v1/openapi.json
+    # Open API: /api/v1/open/docs, /api/v1/open/openapi.json
     NO_AUTH_PATHS: list = [
         "/api/v1/base/access_token",
+        "/docs",  # 兼容旧路径
+        "/openapi.json",  # 兼容旧路径
+        "/api/v1/docs",  # Internal API Swagger UI
+        "/api/v1/openapi.json",  # Internal API OpenAPI JSON
+        "/api/v1/open/docs",  # Open API Swagger UI
+        "/api/v1/open/openapi.json",  # Open API OpenAPI JSON
+        "/redoc",
+        "/static",
     ]
 
     # 3. 后台接口无需权限认证(has_permission) - 只需要 is_authed（基于前缀配置）

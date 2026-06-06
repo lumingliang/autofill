@@ -1,11 +1,11 @@
 """
-Public API schemas
-用于公开接口的请求/响应模型
+Open API schemas
+用于开放接口的请求/响应模型
 """
-from .base import BasePublicRequest
+from .base import BaseOpenRequest
 from .schemas import (
     # 基础请求类
-    BasePublicRequest as BaseRequest,
+    BaseOpenRequest as BaseRequest,
     AppBaseRequest,
     TenantAppBaseRequest,
     # 填单数据相关
@@ -21,7 +21,7 @@ from .schemas import (
 
 __all__ = [
     # 基础请求类
-    "BasePublicRequest",
+    "BaseOpenRequest",
     "BaseRequest",
     "AppBaseRequest",
     "TenantAppBaseRequest",

@@ -27,8 +27,8 @@ from tortoise.transactions import atomic
 from app.core.ctx import Ctx
 from app.log import logger
 from app.models.rule_management import RuleInfo, RuleVersion
+from app.core.seekdb_client import seekdb_client
 from app.repositories import rule_info_repository, rule_version_repository, rule_data_repository
-from app.services.storage.seekdb_service import seekdb_service
 
 
 class VersionConflictException(Exception):
@@ -207,7 +207,7 @@ class RuleService:
             dict_data.append(row_dict)
 
         # 保存到 seekdb
-        doc_count = await seekdb_service.save_rule_data(
+        doc_count = await seekdb_client.save_rule_data(
             collection_name=collection_name,
             headers=headers,
             data=dict_data,
@@ -574,7 +574,7 @@ class RuleService:
         for version in versions:
             # 删除 seekdb 集合
             if version.seekdb_collection_name:
-                seekdb_service.delete_collection(version.seekdb_collection_name)
+                seekdb_client.delete_collection(version.seekdb_collection_name)
 
         # 物理删除所有版本
         await rule_version_repository.delete_by_rule_id(rule.id)

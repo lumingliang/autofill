@@ -17,9 +17,9 @@ from app.core.ctx import Ctx
 from app.settings import settings
 from app.log import logger
 from app.models.batch_test import BatchTestTask
+from app.core.seekdb_client import seekdb_client
 from app.repositories.autofill import batch_test_repository, dify_agent_repository
 from app.services.autofill.dify_agent_service import dify_agent_service
-from app.services.storage.seekdb_service import seekdb_service
 
 
 class BatchTestConsumer:
@@ -71,7 +71,7 @@ class BatchTestConsumer:
                 return
 
             # 从 SeekDB 获取待执行数据
-            collection = seekdb_service.get_or_create_collection(collection_name, embedding_function=None)
+            collection = seekdb_client.get_or_create_collection(collection_name, embedding_function=None)
 
             # 查询所有 status=0 的数据
             results = collection.get(

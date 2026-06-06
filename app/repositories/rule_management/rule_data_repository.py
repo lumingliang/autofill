@@ -3,8 +3,8 @@ RuleData Repository - 规则数据（seekdb）访问层
 """
 from typing import Any, Dict, List, Optional
 
+from app.core.seekdb_client import seekdb_client
 from app.log import logger
-from app.services.storage.seekdb_service import seekdb_service
 
 
 class RuleDataRepository:
@@ -24,7 +24,7 @@ class RuleDataRepository:
             规则数据或 None
         """
         try:
-            return await seekdb_service.get_rule_data(collection_name)
+            return await seekdb_client.get_rule_data(collection_name)
         except Exception as e:
             logger.error(
                 "从 seekdb 获取规则数据失败",
@@ -51,9 +51,9 @@ class RuleDataRepository:
         try:
             if filter_config:
                 seekdb_filter = {f"data.{key}": value for key, value in filter_config.items()}
-                return await seekdb_service.query_with_filter(collection_name, seekdb_filter)
+                return await seekdb_client.query_with_filter(collection_name, seekdb_filter)
             else:
-                return await seekdb_service.query_with_filter(collection_name, {})
+                return await seekdb_client.query_with_filter(collection_name, {})
         except Exception as e:
             logger.error(
                 "从 seekdb 查询规则数据失败",
@@ -83,7 +83,7 @@ class RuleDataRepository:
             相似数据列表
         """
         try:
-            return await seekdb_service.search_similar(
+            return await seekdb_client.search_similar(
                 collection_name=collection_name,
                 query_text=query_text,
                 top_k=top_k,

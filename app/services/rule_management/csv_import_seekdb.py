@@ -14,7 +14,7 @@ import io
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple, Iterator
 
-from app.services.storage.seekdb_service import seekdb_service, DEFAULT_QUERY_LIMIT
+from app.core.seekdb_client import seekdb_client, DEFAULT_QUERY_LIMIT
 
 
 def build_collection_name(rule_id: int, rule_code: str, version_no: int) -> str:
@@ -337,14 +337,14 @@ class CsvImportSeekdbService:
         5. 旧数据在新CSV中无匹配则保留
         6. allow_add_new=False 时，CSV中存在但旧数据中不存在的主键将被跳过（不新增）
         """
-        seekdb_service.delete_collection(collection_name)
-        collection = seekdb_service.get_or_create_collection(collection_name, embedding_function=None)
+        seekdb_client.delete_collection(collection_name)
+        collection = seekdb_client.get_or_create_collection(collection_name, embedding_function=None)
 
         existing_data: List[Dict[str, Any]] = []
         existing_headers: List[str] = []
 
         if source_collection_name:
-            source_collection = seekdb_service.get_or_create_collection(source_collection_name)
+            source_collection = seekdb_client.get_or_create_collection(source_collection_name)
             existing_results = source_collection.get(limit=DEFAULT_QUERY_LIMIT)
 
             if existing_results and existing_results.get("metadatas"):

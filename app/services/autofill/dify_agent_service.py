@@ -50,7 +50,7 @@ class DifyAgentService:
 
     async def get_agent_by_api_key(self, api_key: str) -> Optional[DifyAgent]:
         """
-        根据 API Key 获取 Agent（用于 public 接口）
+        根据 API Key 获取 Agent（用于 open 接口）
 
         Args:
             api_key: Dify API Key

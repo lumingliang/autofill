@@ -1,30 +1,37 @@
 """
 统一日志模块 - 基于 structlog 的结构化日志
-主要字段：request_id, tenant_id, elapsed_time, exception(filename:lineno)
+支持多应用日志自动分流
+
+主要字段：request_id, tenant_id, app, elapsed_time, exception(filename:lineno)
+
+使用方式：
+    from app.log import logger
+    logger.info("message")  # 自动根据请求路径分流到不同文件
+
+日志文件：
+- 内部 API (/api/v1/*)      → app-internal.log
+- Open API (/api/v1/open/*) → app-open.log
 """
 import inspect
 import logging
 import sys
 from contextvars import ContextVar
 from datetime import datetime
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 import structlog
 
 from app.settings import settings
 
-
-def get_local_timestamp() -> str:
-    """获取本地时区时间戳"""
-    return datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
-
-# 请求追踪 ID 上下文变量
+# ============ 上下文变量 ============
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 tenant_id_var: ContextVar[int] = ContextVar("tenant_id", default=0)
-# 标记请求日志是否已被记录
 request_logged_var: ContextVar[bool] = ContextVar("request_logged", default=False)
+app_type_var: ContextVar[str] = ContextVar("app_type", default="internal")
 
 
+# ============ 上下文变量操作函数 ============
 def get_request_id() -> str:
     return request_id_var.get()
 
@@ -51,49 +58,50 @@ def set_request_logged(logged: bool = True):
     request_logged_var.set(logged)
 
 
+def get_app_type() -> str:
+    """获取当前应用类型"""
+    return app_type_var.get()
+
+
+def set_app_type(app_type: str):
+    """设置当前应用类型 (internal 或 open)"""
+    app_type_var.set(app_type)
+
+
+# ============ 工具函数 ============
 def get_exception_location(exc_info):
-    """获取异常发生的位置（业务代码中的位置）
-    
-    遍历 traceback 链，找到最底层的业务代码帧（即异常实际抛出的位置）
-    排除第三方库、框架内部和中间件代码的帧
-    """
+    """获取异常发生的位置（业务代码中的位置）"""
     if not exc_info or exc_info[2] is None:
         return None
-    
+
     tb = exc_info[2]
     last_business_frame = None
-    
-    # 需要排除的路径前缀
+
     skip_prefixes = (
         '/site-packages/',
         'lib/python',
-        '/app/core/middlewares.py',  # 排除中间件本身
-        '/app/core/exceptions.py',   # 排除异常处理器
-        '/app/log/log.py',           # 排除日志模块
+        '/app/core/middlewares.py',
+        '/app/core/exceptions.py',
+        '/app/log/log.py',
     )
-    
-    # 遍历整个 traceback 链，找到最底层的业务代码帧
+
     while tb:
         filename = tb.tb_frame.f_code.co_filename
         lineno = tb.tb_lineno
         function_name = tb.tb_frame.f_code.co_name
-        
-        # 排除第三方库、框架内部和中间件代码
+
         should_skip = any(p in filename for p in skip_prefixes)
-        
+
         if should_skip:
             tb = tb.tb_next
             continue
-        
-        # 记录业务代码帧（继续遍历以找到最底层的）
+
         last_business_frame = (filename, lineno, function_name)
         tb = tb.tb_next
-    
-    # 返回最底层的业务代码位置
+
     if last_business_frame:
         return f"{last_business_frame[0]}:{last_business_frame[1]} in {last_business_frame[2]}()"
-    
-    # 如果没有找到业务代码位置，返回最底层帧
+
     tb = exc_info[2]
     while tb.tb_next:
         tb = tb.tb_next
@@ -104,17 +112,9 @@ def get_exception_location(exc_info):
 
 
 def get_caller_location(skip_frames: int = 2) -> str:
-    """获取调用者的文件位置和行号
-
-    Args:
-        skip_frames: 跳过的帧数，默认为2（跳过当前函数和调用者）
-
-    Returns:
-        str: 文件路径:行号
-    """
+    """获取调用者的文件位置和行号"""
     frame = inspect.currentframe()
     try:
-        # 跳过指定帧数
         for _ in range(skip_frames):
             if frame is None:
                 return "unknown:0"
@@ -130,29 +130,24 @@ def get_caller_location(skip_frames: int = 2) -> str:
         del frame
 
 
+# ============ Structlog 处理器 ============
 def add_context_info(logger, method_name, event_dict):
     """添加上下文信息到日志事件"""
     event_dict["request_id"] = get_request_id()
     tenant_id = get_tenant_id()
     if tenant_id:
         event_dict["tenant_id"] = tenant_id
+    event_dict["app"] = get_app_type()
     return event_dict
 
 
 def add_caller_location(logger, method_name, event_dict):
-    """添加调用者位置信息到日志事件
-    
-    通过检查调用栈，找到实际调用日志记录的业务代码位置。
-    如果 event_dict 中已存在 location 字段（如异常日志已设置），则保留原有值。
-    """
-    # 如果 location 已存在（如异常日志已设置），保留原有值
+    """添加调用者位置信息到日志事件"""
     if "location" in event_dict:
         return event_dict
-    
+
     frame = inspect.currentframe()
     try:
-        # 向上遍历调用栈，跳过框架和日志相关的帧
-        # 需要跳过的模块前缀
         skip_prefixes = (
             '/site-packages/',
             'lib/python',
@@ -160,96 +155,184 @@ def add_caller_location(logger, method_name, event_dict):
             '/logging/',
             '/structlog/',
         )
-        
-        # 从当前帧开始向上遍历
+
         while frame:
             filename = frame.f_code.co_filename
             lineno = frame.f_lineno
-            
-            # 检查是否需要跳过
+
             should_skip = any(p in filename for p in skip_prefixes)
-            
+
             if not should_skip:
-                # 找到业务代码帧
                 event_dict["location"] = f"{filename}:{lineno}"
                 return event_dict
-            
+
             frame = frame.f_back
-        
-        # 如果没有找到业务代码帧，不添加位置信息
+
         return event_dict
     finally:
         del frame
 
 
+# ============ 多应用 Logger 支持 ============
+_internal_logger: Optional[structlog.BoundLogger] = None
+_open_logger: Optional[structlog.BoundLogger] = None
+
+
+def create_logger_for_app(app_type: str, log_file: str) -> structlog.BoundLogger:
+    """为指定应用创建独立的 logger（只创建一次）"""
+    app_logger = logging.getLogger(f"app.{app_type}")
+
+    # 如果已经配置过，直接返回现有的 logger
+    if hasattr(app_logger, "_configured") and app_logger._configured:
+        return structlog.wrap_logger(
+            app_logger,
+            wrapper_class=structlog.stdlib.BoundLogger,
+            context_class=dict,
+        )
+
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
+
+    app_logger.handlers = []
+    app_logger.addHandler(file_handler)
+    app_logger.addHandler(console_handler)
+    app_logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
+    app_logger.propagate = False
+    app_logger._configured = True  # 标记已配置
+
+    processors = [
+        structlog.contextvars.merge_contextvars,
+        add_context_info,
+        add_caller_location,
+        structlog.processors.TimeStamper(fmt="iso", utc=False),
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer(ensure_ascii=False),
+    ]
+
+    return structlog.wrap_logger(
+        app_logger,
+        processors=processors,
+        wrapper_class=structlog.stdlib.BoundLogger,
+        context_class=dict,
+    )
+
+
+def get_internal_logger() -> structlog.BoundLogger:
+    """获取内部 API 的 logger"""
+    global _internal_logger
+    if _internal_logger is None:
+        log_file = settings.LOG_FILE.replace(".log", "-internal.log")
+        _internal_logger = create_logger_for_app("internal", log_file)
+    return _internal_logger
+
+
+def get_open_logger() -> structlog.BoundLogger:
+    """获取 Open API 的 logger"""
+    global _open_logger
+    if _open_logger is None:
+        log_file = settings.LOG_FILE.replace(".log", "-open.log")
+        _open_logger = create_logger_for_app("open", log_file)
+    return _open_logger
+
+
+class LoggerProxy:
+    """Logger 代理类 - 根据 ContextVar 自动选择 logger"""
+
+    def _get_logger(self) -> structlog.BoundLogger:
+        app_type = get_app_type()
+        if app_type == "open":
+            return get_open_logger()
+        return get_internal_logger()
+
+    def debug(self, *args, **kwargs):
+        return self._get_logger().debug(*args, **kwargs)
+
+    def info(self, *args, **kwargs):
+        return self._get_logger().info(*args, **kwargs)
+
+    def warning(self, *args, **kwargs):
+        return self._get_logger().warning(*args, **kwargs)
+
+    def warn(self, *args, **kwargs):
+        return self._get_logger().warn(*args, **kwargs)
+
+    def error(self, *args, **kwargs):
+        return self._get_logger().error(*args, **kwargs)
+
+    def exception(self, *args, **kwargs):
+        return self._get_logger().exception(*args, **kwargs)
+
+    def critical(self, *args, **kwargs):
+        return self._get_logger().critical(*args, **kwargs)
+
+    def fatal(self, *args, **kwargs):
+        return self._get_logger().fatal(*args, **kwargs)
+
+    def bind(self, **kwargs):
+        return self._get_logger().bind(**kwargs)
+
+    def unbind(self, *args):
+        return self._get_logger().unbind(*args)
+
+    def new(self, **kwargs):
+        return self._get_logger().new(**kwargs)
+
+    def try_unbind(self, *args):
+        return self._get_logger().try_unbind(*args)
+
+
+# 全局 logger 代理实例
+logger = LoggerProxy()
+
+
+# ============ 初始化函数 ============
 def setup_logger():
-    """初始化 structlog 配置"""
-    # 配置标准库 logging 处理器
-    handlers = []
+    """初始化日志配置
     
+    只创建两个日志文件：
+    - app-internal.log: 内部 API 日志 (JWT 认证)
+    - app-open.log: Open API 日志 (API Key 认证)
+    
+    不再创建 app.log
+    """
+    # 配置标准库 logging 基础处理器（控制台输出）
+    handlers = []
+
     if settings.LOG_CONSOLE_OUTPUT:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
         handlers.append(console_handler)
-    
-    if settings.LOG_FILE_OUTPUT:
-        file_handler = logging.FileHandler(settings.LOG_FILE, encoding="utf-8")
-        file_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
-        handlers.append(file_handler)
-    
-    # 配置根日志器
+
+    # 注意：不再创建 app.log 文件
+    # 日志会通过 LoggerProxy 自动分流到 app-internal.log 或 app-open.log
+
     logging.basicConfig(
         level=getattr(logging, settings.LOG_LEVEL.upper()),
         handlers=handlers,
         format="%(message)s",
         force=True,
     )
-    
-    # 配置 structlog
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            add_context_info,
-            add_caller_location,  # 添加调用者位置信息
-            structlog.processors.TimeStamper(fmt="iso", utc=False),
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer(ensure_ascii=False),
-        ],
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
-    
-    # 完全禁用 uvicorn 的所有日志
-    # 访问日志由 RequestLoggingMiddleware 统一处理
-    # 异常日志由 ExceptionHandlingMiddleware 统一处理
-    uvicorn_access = logging.getLogger("uvicorn.access")
-    uvicorn_access.handlers = [logging.NullHandler()]
-    uvicorn_access.propagate = False
-    uvicorn_access.setLevel(logging.CRITICAL + 1)  # 设置比 CRITICAL 更高的级别，完全禁用
 
-    # 禁用 uvicorn.error 的异常输出
-    uvicorn_error = logging.getLogger("uvicorn.error")
-    uvicorn_error.handlers = [logging.NullHandler()]
-    uvicorn_error.propagate = False
-    uvicorn_error.setLevel(logging.CRITICAL + 1)  # 设置比 CRITICAL 更高的级别，完全禁用
+    # 禁用 uvicorn 日志
+    for name in ["uvicorn.access", "uvicorn.error", "uvicorn"]:
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers = [logging.NullHandler()]
+        uvicorn_logger.propagate = False
+        uvicorn_logger.setLevel(logging.CRITICAL + 1)
 
-    # 禁用 uvicorn 根日志器
-    uvicorn_root = logging.getLogger("uvicorn")
-    uvicorn_root.handlers = [logging.NullHandler()]
-    uvicorn_root.propagate = False
-    uvicorn_root.setLevel(logging.CRITICAL + 1)
-
-
-# 获取 logger 实例
-logger = structlog.get_logger()
+    # 预创建 internal 和 open logger，确保它们不会 propagate 到 root logger
+    # 同时创建文件 handler，确保日志文件存在
+    get_internal_logger()
+    get_open_logger()
 
 
 __all__ = [
@@ -259,6 +342,10 @@ __all__ = [
     "get_request_id",
     "set_tenant_id",
     "get_tenant_id",
+    "set_app_type",
+    "get_app_type",
     "get_exception_location",
     "get_caller_location",
+    "is_request_logged",
+    "set_request_logged",
 ]

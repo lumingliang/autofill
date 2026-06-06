@@ -21,8 +21,8 @@ from app.core.kafka.producer import get_kafka_producer
 from app.log import logger
 from app.models.batch_test import BatchTestTask
 from app.models.dify_agent import DifyAgent
+from app.core.seekdb_client import seekdb_client
 from app.repositories.autofill import batch_test_repository, dify_agent_repository
-from app.services.storage.seekdb_service import seekdb_service
 from app.settings import settings
 from app.utils.file_parser import decode_content, parse_csv_content
 
@@ -276,7 +276,7 @@ class BatchTestService:
             metadatas.append(metadata)
 
         # 批量写入 SeekDB
-        collection = seekdb_service.get_or_create_collection(collection_name, embedding_function=None)
+        collection = seekdb_client.get_or_create_collection(collection_name, embedding_function=None)
         embeddings = [[0.0] * 384 for _ in range(len(ids))]
         collection.add(ids=ids, metadatas=metadatas, embeddings=embeddings)
 
@@ -424,7 +424,7 @@ class BatchTestService:
             # 根据 task_id 和 version_no 查找集合名称
             collection_prefix = f"batch_test_{task_id}_v{version_no}_"
             try:
-                seekdb_service.delete_collection_by_prefix(collection_prefix)
+                seekdb_client.delete_collection_by_prefix(collection_prefix)
             except Exception as e:
                 logger.warning(f"删除 SeekDB 集合失败: {collection_prefix}, error: {e}")
 
@@ -539,7 +539,7 @@ class BatchTestService:
             数据列表
         """
         try:
-            collection = seekdb_service.get_or_create_collection(collection_name, embedding_function=None)
+            collection = seekdb_client.get_or_create_collection(collection_name, embedding_function=None)
             results = collection.get()
 
             data = []
@@ -576,7 +576,7 @@ class BatchTestService:
 
         # 从 SeekDB 查询数据
         try:
-            collection = seekdb_service.get_or_create_collection(
+            collection = seekdb_client.get_or_create_collection(
                 task.collection_name,
                 embedding_function=None
             )
@@ -641,7 +641,7 @@ class BatchTestService:
 
         # 从 SeekDB 获取所有数据
         try:
-            collection = seekdb_service.get_or_create_collection(
+            collection = seekdb_client.get_or_create_collection(
                 task.collection_name,
                 embedding_function=None
             )

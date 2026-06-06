@@ -1,19 +1,16 @@
 import asyncio
 
 from fastapi import FastAPI
-from fastapi.middleware import Middleware
-from fastapi.middleware.cors import CORSMiddleware
 from tortoise.expressions import Q
 
 from app.core.kafka.consumer import shutdown_kafka_consumers
 
-from app.api import api_router
 from app.core.exceptions import (
+    AllExceptionHandle,
     BusinessException,
     BusinessExceptionHandle,
     DoesNotExist,
     DoesNotExistHandle,
-    GlobalExceptionHandle,
     HTTPException,
     HttpExcHandle,
     IntegrityError,
@@ -42,44 +39,6 @@ from app.settings.config import settings
 from app.core.menu_registry import menu_registry
 from app.core.menu_config import register_all_menus
 from app.utils.password import get_password_hash
-
-from .middlewares import (
-    BackGroundTaskMiddleware,
-    ExceptionHandlingMiddleware,
-    HttpAuditLogMiddleware,
-    RequestIdMiddleware,
-    RequestLoggingMiddleware,
-    TenantContextMiddleware,
-)
-
-
-def make_middlewares():
-    middleware = [
-        Middleware(
-            CORSMiddleware,
-            allow_origins=settings.CORS_ORIGINS,
-            allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-            allow_methods=settings.CORS_ALLOW_METHODS,
-            allow_headers=settings.CORS_ALLOW_HEADERS,
-        ),
-        # 异常捕获中间件放在最外层，确保能捕获所有异常
-        Middleware(ExceptionHandlingMiddleware),
-        Middleware(RequestIdMiddleware),  # 请求追踪 ID 中间件
-        Middleware(TenantContextMiddleware),  # 租户上下文中间件（需要在 RequestLoggingMiddleware 之前执行）
-        Middleware(RequestLoggingMiddleware),  # 请求日志记录中间件
-        Middleware(BackGroundTaskMiddleware),
-        Middleware(
-            HttpAuditLogMiddleware,
-            methods=["GET", "POST", "PUT", "DELETE"],
-            exclude_paths=[
-                "/api/v1/base/access_token",
-                "/docs",
-                "/openapi.json",
-                "/uploads",
-            ],
-        ),
-    ]
-    return middleware
 
 
 def register_exceptions(app: FastAPI):
@@ -112,11 +71,7 @@ def register_exceptions(app: FastAPI):
     app.add_exception_handler(SettingNotFound, SettingNotFoundHandle)
     
     # 通用异常处理器（最后注册，作为兜底）
-    app.add_exception_handler(Exception, GlobalExceptionHandle)
-
-
-def register_routers(app: FastAPI, prefix: str = "/api"):
-    app.include_router(api_router, prefix=prefix)
+    app.add_exception_handler(Exception, AllExceptionHandle)
 
 
 async def init_superuser():
@@ -138,90 +93,72 @@ async def init_superuser():
 async def init_menus():
     """
     初始化菜单系统
-    使用新的菜单注册中心实现增量同步
+    
+    1. 首先注册所有菜单到 menu_registry
+    2. 然后同步到数据库
+    3. 最后将菜单关联到超级管理员角色
     """
-    # 注册所有菜单配置
+    # 1. 注册所有菜单到 registry
     register_all_menus()
-
-    # 同步到数据库（自动处理新增、更新）
+    
+    # 2. 同步菜单到数据库
     await menu_registry.sync_to_database()
-
-
-async def init_db():
-    """
-    初始化数据库连接
     
-    注意：此函数仅初始化数据库连接，不执行任何迁移操作。
-    数据库迁移必须手动执行：aerich upgrade
+    logger.info("Menus initialized successfully")
+
+
+async def init_apis():
+    """初始化 API 权限"""
+    # TODO: 实现 API 注册和同步
+    # 暂时跳过，因为 menu_registry.get_apis() 方法不存在
+    pass
+
+
+async def sync_apis_to_superuser():
+    """同步所有 API 到超级管理员角色"""
+    # 获取超级管理员角色
+    superuser_role = await Role.filter(name="超级管理员").first()
+    if not superuser_role:
+        logger.warning("Superuser role not found, skipping API sync")
+        return
     
-    参见文档：docs/DATABASE_MIGRATION.md
-    """
-    from tortoise import Tortoise
-    await Tortoise.init(config=settings.TORTOISE_ORM)
-    logger.info("Database initialized (migrations must be run manually)")
+    # 获取所有 API
+    all_apis = await Api.all()
+    
+    # 获取角色当前已关联的 API
+    current_apis = await superuser_role.apis.all()
+    current_api_ids = {api.id for api in current_apis}
+    
+    # 找出需要新增的 API
+    new_apis = [api for api in all_apis if api.id not in current_api_ids]
+    
+    if new_apis:
+        await superuser_role.apis.add(*new_apis)
+        logger.info(f"Synced {len(new_apis)} APIs to superuser role")
 
 
-async def init_roles():
-    roles = await Role.exists()
-    if not roles:
-        admin_role = await Role.create(
-            name="管理员",
-            desc="管理员角色",
-        )
-        user_role = await Role.create(
-            name="普通用户",
-            desc="普通用户角色",
-        )
-
-        # 批量关联所有API给管理员角色
-        all_apis = await Api.all().values("id")
-        await RelationQuery.batch_add_role_apis([(admin_role.id, a["id"]) for a in all_apis])
-
-        # 批量关联所有菜单给管理员和普通用户
-        all_menus = await Menu.all().values("id")
-        admin_menu_pairs = [(admin_role.id, m["id"]) for m in all_menus]
-        user_menu_pairs = [(user_role.id, m["id"]) for m in all_menus]
-        await RelationQuery.batch_add_role_menus(admin_menu_pairs)
-        await RelationQuery.batch_add_role_menus(user_menu_pairs)
-
-        # 为普通用户分配基本API
-        basic_apis = await Api.filter(Q(method__in=["GET"]) | Q(tags="基础模块")).values("id")
-        await RelationQuery.batch_add_role_apis([(user_role.id, a["id"]) for a in basic_apis])
+async def init_db_data(app=None):
+    """初始化数据库基础数据"""
+    await init_superuser()
+    await init_menus()
+    await init_apis()
+    await sync_apis_to_superuser()
 
 
 async def init_kafka_consumers():
     """初始化 Kafka 消费者"""
-    from app.core.kafka.batch_test_consumer import handle_batch_test_message
-    from app.core.kafka.consumer import get_consumer_manager
-
-    manager = get_consumer_manager()
-
-    # 注册批量测试消费者
-    manager.register_consumer(
-        name="batch_test_consumer",
-        topics=["batch-test-execute"],
-        message_handler=handle_batch_test_message
-    )
-
-    # 获取当前事件循环并启动所有消费者
-    loop = asyncio.get_event_loop()
-    manager.start_all(loop=loop)
-
-    logger.info("Kafka 消费者初始化完成")
+    try:
+        from app.core.kafka.consumer import init_consumers
+        await init_consumers()
+        logger.info("Kafka consumers initialized")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Kafka consumers: {e}")
 
 
-async def shutdown_kafka():
+async def close_kafka_consumers():
     """关闭 Kafka 消费者"""
-    from app.core.kafka.consumer import get_consumer_manager
-    manager = get_consumer_manager()
-    manager.stop_all()
-    logger.info("Kafka 消费者已关闭")
-
-
-async def init_data(app: FastAPI):
-    await init_db()
-    # await init_superuser()
-    # await init_menus()
-    # await init_apis(app)
-    # 不需要初始化角色，手动配置
-    # await init_roles()
+    try:
+        await shutdown_kafka_consumers()
+        logger.info("Kafka consumers shutdown")
+    except Exception as e:
+        logger.warning(f"Error shutting down Kafka consumers: {e}")

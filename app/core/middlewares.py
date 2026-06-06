@@ -13,11 +13,14 @@ from starlette.types import ASGIApp, Receive, Scope, Send, Message
 from app.core.ctx import Ctx
 from app.core.dependency import AuthControl
 from app.core.relation import RelationQuery
-from app.log import logger, set_request_id, set_tenant_id, get_caller_location, is_request_logged, set_request_logged, get_exception_location
+from app.log import logger, set_request_id, set_tenant_id, get_caller_location, is_request_logged, set_request_logged
 from app.models.admin import AuditLog, User
 from app.settings import settings
 
 from .bgtask import BgTasks
+
+# Open API 前缀 - 这些接口使用 API Key 认证，不走 JWT 中间件
+OPEN_API_PREFIX: str = "/api/v1/open/"
 
 
 class SimpleBaseMiddleware:
@@ -52,81 +55,23 @@ class BackGroundTaskMiddleware(SimpleBaseMiddleware):
 
 class ExceptionHandlingMiddleware(BaseHTTPMiddleware):
     """
-    异常捕获和记录中间件 - 统一捕获和记录所有异常
+    异常捕获中间件 - 仅捕获异常，不记录日志
 
     功能：
     1. 捕获所有未处理的异常
-    2. 记录异常信息到日志（包含代码位置、堆栈等）
-    3. 重新抛出异常给异常处理器构建响应
+    2. 重新抛出异常给全局异常处理器处理
 
-    注意：此中间件应该在所有中间件的最外层，确保能捕获所有异常
+    注意：
+    - 异常日志由全局异常处理器统一记录
+    - 此中间件仅确保异常能被正确捕获和传递
     """
 
     def __init__(self, app):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        try:
-            return await call_next(request)
-        except Exception as exc:
-            # 获取异常信息
-            exc_type = type(exc).__name__
-            exc_msg = str(exc)
-
-            # 获取异常发生的代码位置
-            exc_info = sys.exc_info()
-            location = get_exception_location(exc_info)
-
-            # 构建精简但有用的 traceback（只包含业务代码）
-            tb_lines = []
-            tb = exc_info[2]
-            
-            # 需要排除的路径前缀
-            skip_prefixes = (
-                '/site-packages/',
-                'lib/python',
-                '/app/core/middlewares.py',
-                '/app/core/exceptions.py',
-                '/app/log/log.py',
-            )
-            
-            while tb:
-                filename = tb.tb_frame.f_code.co_filename
-                lineno = tb.tb_lineno
-                function_name = tb.tb_frame.f_code.co_name
-                
-                # 排除第三方库和框架内部代码
-                should_skip = any(p in filename for p in skip_prefixes)
-                
-                if not should_skip:
-                    # 简化路径，只显示从项目根目录开始的部分
-                    if '/app/' in filename:
-                        short_filename = filename[filename.find('/app/'):]
-                    else:
-                        short_filename = filename
-                    tb_lines.append(f"  File \"{short_filename}\", line {lineno}, in {function_name}")
-                
-                tb = tb.tb_next
-            
-            # 构建精简的 traceback 字符串
-            concise_traceback = f"{exc_type}: {exc_msg}\n" + "\n".join(tb_lines) if tb_lines else f"{exc_type}: {exc_msg}"
-
-            # 构建日志数据
-            log_data = {
-                "event": "exception",
-                "method": request.method,
-                "path": str(request.url.path),
-                "exception_type": exc_type,
-                "exception_msg": exc_msg,
-                "location": location,
-                "traceback": concise_traceback,
-            }
-
-            # 记录异常日志
-            logger.error(**log_data)
-
-            # 重新抛出异常，让异常处理器处理响应
-            raise
+        # 异常由全局异常处理器捕获和记录
+        return await call_next(request)
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -153,7 +98,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     租户上下文中间件 - 统一处理接口鉴权和租户验证
 
     接口分类：
-    1. Public 接口 (app/api/public/ 目录下): 只走 autofill_auth，中间件不处理
+    1. Open 接口 (/api/v1/open/*): 只走 autofill_auth，中间件不处理
     2. 后台接口无需鉴权: 不需要 is_authed 验证
     3. 后台接口需鉴权: is_authed + 租户归属验证
 
@@ -164,20 +109,25 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
-        from app.settings import settings
 
         # 加载配置
-        self.public_paths = settings.PUBLIC_API_PATHS or []
         self.no_auth_paths = settings.NO_AUTH_PATHS or ["/api/v1/base/access_token"]
         self.base_prefixes = settings.BASE_API_PREFIXES or ["/api/v1/base/"]
 
-    def _is_public_api(self, path: str) -> bool:
-        """检查是否是 Public 接口（在 app/api/public/ 目录下）"""
-        return path in self.public_paths
+    def _is_open_api(self, path: str) -> bool:
+        """检查是否是 Open 接口（路径以 /api/v1/open/ 开头）"""
+        return path.startswith(OPEN_API_PREFIX)
 
     def _is_no_auth_path(self, path: str) -> bool:
         """检查是否是无需鉴权的路径"""
-        return path in self.no_auth_paths
+        # 精确匹配
+        if path in self.no_auth_paths:
+            return True
+        # 前缀匹配（支持 /static/* 等）
+        for no_auth_path in self.no_auth_paths:
+            if path.startswith(no_auth_path):
+                return True
+        return False
 
     def _is_base_api(self, path: str) -> bool:
         """检查是否是 base 接口（不需要 has_permission）"""
@@ -186,8 +136,8 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
 
-        # 2. Public 接口直接放行（由 autofill_auth 处理）
-        if self._is_public_api(path):
+        # 2. Open 接口直接放行（由 autofill_auth 处理）
+        if self._is_open_api(path):
             return await call_next(request)
 
         # 3. 无需鉴权的路径直接放行
@@ -253,37 +203,42 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         return response
 
     async def _get_request_tenant_id(self, request: Request, user: User) -> int:
-        """从请求中获取租户ID（仅超管可从参数指定）"""
-        if user.is_superuser:
-            # 超管可以从 Header 获取
-            tenant_id_header = request.headers.get("X-Tenant-ID")
-            if tenant_id_header:
-                try:
-                    return int(tenant_id_header)
-                except ValueError:
-                    pass
+        """从请求中获取租户ID
 
-            # 超管可以从 Query 获取
-            tenant_id = request.query_params.get("tenant_id")
-            if tenant_id:
-                try:
+        获取优先级：
+        1. 请求头 X-Tenant-ID
+        2. 请求头 x-tenant-id (小写兼容)
+        3. Query 参数 tenant_id
+        4. Body 参数 tenant_id (仅 POST/PUT/PATCH)
+        5. 从 user.current_tenant_id 获取
+        """
+        # 1. 从 Header 获取 (X-Tenant-ID 或 x-tenant-id)
+        tenant_id_header = request.headers.get("X-Tenant-ID") or request.headers.get("x-tenant-id")
+        if tenant_id_header:
+            try:
+                return int(tenant_id_header)
+            except ValueError:
+                pass
+
+        # 2. 从 Query 获取
+        tenant_id = request.query_params.get("tenant_id")
+        if tenant_id:
+            try:
+                return int(tenant_id)
+            except ValueError:
+                pass
+
+        # 3. 从 Body 获取 (仅 POST/PUT/PATCH)
+        if request.method in ["POST", "PUT", "PATCH"]:
+            try:
+                body = await request.json()
+                tenant_id = body.get("tenant_id")
+                if tenant_id:
                     return int(tenant_id)
-                except ValueError:
-                    pass
+            except Exception:
+                pass
 
-            # 超管可以从 Body 获取
-            if request.method in ["POST", "PUT", "PATCH"]:
-                try:
-                    body = await request.json()
-                    tenant_id = body.get("tenant_id")
-                    if tenant_id:
-                        return int(tenant_id)
-                except Exception:
-                    pass
-
-            return 0
-
-        # 普通用户返回其当前租户ID
+        # 4. 从 user 中获取当前租户ID
         return getattr(user, "current_tenant_id", 0)
 
     async def _validate_tenant_access(self, user: User, tenant_id: int) -> bool:
@@ -379,6 +334,9 @@ class RequestLoggingMiddleware:
         if self._should_skip_logging(path):
             await self.app(scope, receive, send)
             return
+
+        # 注意：app_type 已由子应用的 SetAppTypeMiddleware 设置
+        # 这里不需要再根据路径判断
 
         start_time = datetime.now()
 

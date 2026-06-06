@@ -35,6 +35,21 @@ class KafkaTopicConfig:
 
 
 @dataclass
+class KafkaSaslConfig:
+    """Kafka SASL 认证配置"""
+    enabled: bool = False
+    mechanism: str = "PLAIN"  # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, GSSAPI, OAUTHBEARER
+    username: str = ""
+    password: str = ""
+    protocol: str = "SASL_PLAINTEXT"  # SASL_PLAINTEXT, SASL_SSL
+    # SSL 相关配置（当 protocol 为 SASL_SSL 时使用）
+    ca_location: str = ""  # CA 证书路径
+    cert_location: str = ""  # 客户端证书路径
+    key_location: str = ""  # 客户端私钥路径
+    key_password: str = ""  # 私钥密码
+
+
+@dataclass
 class KafkaConfig:
     """Kafka 全局配置"""
     bootstrap_servers: str = "localhost:9092"
@@ -42,6 +57,7 @@ class KafkaConfig:
     producer: KafkaProducerConfig = field(default_factory=KafkaProducerConfig)
     consumer: KafkaConsumerConfig = field(default_factory=KafkaConsumerConfig)
     topic: KafkaTopicConfig = field(default_factory=KafkaTopicConfig)
+    sasl: KafkaSaslConfig = field(default_factory=KafkaSaslConfig)
 
     @classmethod
     def from_toml(cls, config_path: Optional[str] = None) -> "KafkaConfig":
@@ -89,20 +105,60 @@ class KafkaConfig:
                 replication_factor=topic_config.get("replication_factor", 1),
             )
 
+            # SASL 配置
+            sasl_config = kafka_config.get("sasl", {})
+            sasl = KafkaSaslConfig(
+                enabled=sasl_config.get("enabled", False),
+                mechanism=sasl_config.get("mechanism", "PLAIN"),
+                username=sasl_config.get("username", ""),
+                password=sasl_config.get("password", ""),
+                protocol=sasl_config.get("protocol", "SASL_PLAINTEXT"),
+                ca_location=sasl_config.get("ca_location", ""),
+                cert_location=sasl_config.get("cert_location", ""),
+                key_location=sasl_config.get("key_location", ""),
+                key_password=sasl_config.get("key_password", ""),
+            )
+
             return cls(
                 bootstrap_servers=bootstrap_servers,
                 client_id=client_id,
                 producer=producer,
                 consumer=consumer,
                 topic=topic,
+                sasl=sasl,
             )
         except Exception as e:
             print(f"Warning: Failed to load Kafka config from TOML: {e}")
             return cls()
 
+    def _get_sasl_config(self) -> Dict[str, Any]:
+        """获取 SASL 认证配置字典"""
+        if not self.sasl.enabled:
+            return {}
+
+        config = {
+            "security.protocol": self.sasl.protocol,
+            "sasl.mechanism": self.sasl.mechanism,
+            "sasl.username": self.sasl.username,
+            "sasl.password": self.sasl.password,
+        }
+
+        # SSL 相关配置
+        if self.sasl.protocol == "SASL_SSL":
+            if self.sasl.ca_location:
+                config["ssl.ca.location"] = self.sasl.ca_location
+            if self.sasl.cert_location:
+                config["ssl.certificate.location"] = self.sasl.cert_location
+            if self.sasl.key_location:
+                config["ssl.key.location"] = self.sasl.key_location
+            if self.sasl.key_password:
+                config["ssl.key.password"] = self.sasl.key_password
+
+        return config
+
     def get_producer_config(self) -> Dict[str, Any]:
         """获取生产者配置字典"""
-        return {
+        config = {
             "bootstrap.servers": self.bootstrap_servers,
             "client.id": f"{self.client_id}-producer",
             "acks": self.producer.acks,
@@ -111,10 +167,13 @@ class KafkaConfig:
             "linger.ms": self.producer.linger_ms,
             "allow.auto.create.topics": True,  # 允许自动创建 Topic
         }
+        # 添加 SASL 配置
+        config.update(self._get_sasl_config())
+        return config
 
     def get_consumer_config(self) -> Dict[str, Any]:
         """获取消费者配置字典"""
-        return {
+        config = {
             "bootstrap.servers": self.bootstrap_servers,
             "client.id": f"{self.client_id}-consumer",
             "group.id": self.consumer.group_id,
@@ -123,3 +182,6 @@ class KafkaConfig:
             "auto.commit.interval.ms": self.consumer.auto_commit_interval_ms,
             "allow.auto.create.topics": True,  # 允许自动创建 Topic
         }
+        # 添加 SASL 配置
+        config.update(self._get_sasl_config())
+        return config

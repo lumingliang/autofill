@@ -34,7 +34,7 @@ class DifyAgentRepository(BaseRepository[DifyAgent]):
         """
         根据 API Key 获取 Agent
 
-        用于 public 接口查询，不应用租户过滤
+        用于 open 接口查询，不应用租户过滤
 
         Args:
             api_key: Dify API Key

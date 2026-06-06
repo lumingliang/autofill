@@ -58,6 +58,19 @@ name = "autofill.ai.requests"
 partitions = 3
 replication_factor = 1
 
+# SASL 认证配置（可选）
+[kafka.sasl]
+enabled = false                    # 是否启用 SASL 认证
+mechanism = "PLAIN"                # 认证机制: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, GSSAPI, OAUTHBEARER
+username = ""                      # SASL 用户名
+password = ""                      # SASL 密码
+protocol = "SASL_PLAINTEXT"        # 安全协议: SASL_PLAINTEXT, SASL_SSL
+# SSL 证书配置（当 protocol = "SASL_SSL" 时使用）
+ca_location = ""                   # CA 证书路径
+cert_location = ""                 # 客户端证书路径
+key_location = ""                  # 客户端私钥路径
+key_password = ""                  # 私钥密码
+
 # 应用配置
 [app]
 debug = true

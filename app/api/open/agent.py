@@ -1,25 +1,23 @@
 """
-Public Agent 接口 - Dify Agent 转发服务
+Open Agent 接口 - Dify Agent 转发服务
 
 使用 API Key 认证，不依赖 JWT
 根据 api_key 查询对应的 Dify Agent URL，转发请求到 Dify
 """
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from app.core.dify_agent_auth import DifyAgentAuth
 from app.schemas.base import Fail, Success
 from app.schemas.dify_agent import AgentChatRequest
-from app.services.autofill.dify_agent_service import dify_agent_service
 
-router = APIRouter(tags=["public-agent"])
+router = APIRouter()
 
 
 @router.post("/agent/chat", summary="Agent 对话接口")
 async def agent_chat(
     request: AgentChatRequest,
-    auth_info: dict = Depends(DifyAgentAuth.authenticate),
+    http_request: Request,
 ):
     """
     Dify Agent 对话接口
@@ -33,16 +31,13 @@ async def agent_chat(
     - user: 用户标识（可选）
     - inputs: 输入参数（可选）
     """
-    # 从认证信息中获取 api_key
-    api_key = auth_info["api_key"]
+    # 从中间件设置的 state 中获取认证信息（已包含 agent_url 和 dify_api_key）
+    auth_info = getattr(http_request.state, "auth_info", {})
+    agent_url = auth_info.get("agent_url", "")
+    dify_api_key = auth_info.get("dify_api_key", "")
 
-    # 查询 Agent 配置
-    agent = await dify_agent_service.get_agent_by_api_key(api_key)
-    if not agent:
-        raise HTTPException(status_code=404, detail="未找到对应的 Agent 配置")
-
-    if not agent.is_active:
-        raise HTTPException(status_code=403, detail="Agent 已禁用")
+    if not agent_url or not dify_api_key:
+        return Fail(code=401, msg="无效的 Agent 配置")
 
     # 构建 Dify 请求
     dify_payload = {
@@ -61,10 +56,10 @@ async def agent_chat(
         # 转发请求到 Dify
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
-                agent.agent_url,
+                agent_url,
                 json=dify_payload,
                 headers={
-                    "Authorization": f"Bearer {agent.api_key}",
+                    "Authorization": f"Bearer {dify_api_key}",
                     "Content-Type": "application/json",
                 }
             )
@@ -84,23 +79,20 @@ async def agent_chat(
 @router.post("/agent/chat/stream", summary="Agent 对话流式接口")
 async def agent_chat_stream(
     request: AgentChatRequest,
-    auth_info: dict = Depends(DifyAgentAuth.authenticate),
+    http_request: Request,
 ):
     """
     Dify Agent 对话流式接口
 
     根据 api_key 查询对应的 Dify Agent 配置，流式转发请求到 Dify
     """
-    # 从认证信息中获取 api_key
-    api_key = auth_info["api_key"]
+    # 从中间件设置的 state 中获取认证信息（已包含 agent_url 和 dify_api_key）
+    auth_info = getattr(http_request.state, "auth_info", {})
+    agent_url = auth_info.get("agent_url", "")
+    dify_api_key = auth_info.get("dify_api_key", "")
 
-    # 查询 Agent 配置
-    agent = await dify_agent_service.get_agent_by_api_key(api_key)
-    if not agent:
-        raise HTTPException(status_code=404, detail="未找到对应的 Agent 配置")
-
-    if not agent.is_active:
-        raise HTTPException(status_code=403, detail="Agent 已禁用")
+    if not agent_url or not dify_api_key:
+        return Fail(code=401, msg="无效的 Agent 配置")
 
     # 构建 Dify 请求
     dify_payload = {
@@ -120,10 +112,10 @@ async def agent_chat_stream(
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
                 "POST",
-                agent.agent_url,
+                agent_url,
                 json=dify_payload,
                 headers={
-                    "Authorization": f"Bearer {agent.api_key}",
+                    "Authorization": f"Bearer {dify_api_key}",
                     "Content-Type": "application/json",
                 }
             ) as response:

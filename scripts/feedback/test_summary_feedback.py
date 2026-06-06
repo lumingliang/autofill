@@ -8,7 +8,7 @@ import json
 import uuid
 
 # 配置
-API_BASE_URL = "http://127.0.0.1:9999/api"
+API_BASE_URL = "http://127.0.0.1:9999/api/v1/open"
 API_KEY = "af_1fzDujUFl7SLg9L3CWMSV5upBT4GU1bR"  # 实际的 API Key
 
 # 请求头

@@ -2,22 +2,21 @@
 规则执行引擎接口
 提供基于CSV规则的选择题和填空题执行能力
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Request
 from fastapi.exceptions import HTTPException
 
-from app.core.autofill_auth import APIKeyAuth
 from app.log import logger
 from app.schemas.base import Success
-from app.schemas.public import RuleExecuteRequest, RuleExecuteResultRequest
+from app.schemas.open import RuleExecuteRequest, RuleExecuteResultRequest
 from app.services.autofill.rule_engine_service import rule_engine_service
 
-router = APIRouter(tags=["public"])
+router = APIRouter()
 
 
 @router.post("/autofill/llm/rule/execute", summary="规则执行引擎")
 async def execute_rule(
     request: RuleExecuteRequest,
-    auth_info: dict = Depends(APIKeyAuth.authenticate)
+    http_request: Request,
 ):
     """
     执行规则引擎
@@ -51,7 +50,9 @@ async def execute_rule(
     }
     ```
     """
-    app_name = auth_info["app_name"]
+    # 从中间件设置的 state 中获取认证信息
+    auth_info = getattr(http_request.state, "auth_info", {})
+    app_name = auth_info.get("app_name", "")
 
     # 智能method适配：多任务默认json_parser，单任务默认plain
     method = request.method
@@ -111,7 +112,7 @@ async def execute_rule(
 @router.post("/autofill/llm/rule/execute/result", summary="获取规则执行结果")
 async def get_rule_execute_result(
     request: RuleExecuteResultRequest,
-    auth_info: dict = Depends(APIKeyAuth.authenticate)
+    http_request: Request,
 ):
     """
     获取规则执行的完整结果
@@ -123,7 +124,9 @@ async def get_rule_execute_result(
     }
     ```
     """
-    app_name = auth_info["app_name"]
+    # 从中间件设置的 state 中获取认证信息
+    auth_info = getattr(http_request.state, "auth_info", {})
+    app_name = auth_info.get("app_name", "")
 
     result = await rule_engine_service.get_step_result(
         session_id=request.session_id,

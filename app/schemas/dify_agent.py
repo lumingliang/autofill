@@ -52,7 +52,7 @@ class DifyAgentOut(BaseModel):
         from_attributes = True
 
 
-# ==================== Public Agent 接口 Schemas ====================
+# ==================== Open Agent 接口 Schemas ====================
 
 class AgentChatRequest(BaseModel):
     """Agent 对话请求"""

@@ -23,7 +23,8 @@ FRONTEND_PID_FILE="/tmp/autofill_frontend.pid"
 # 日志路径配置（与 app/settings/config.py 保持一致）
 # 后端日志默认在项目根目录的 logs/ 目录下
 LOGS_DIR="$PROJECT_DIR/logs"
-BACKEND_LOG_FILE="$LOGS_DIR/app.log"
+# 注意：后端使用结构化日志，直接写入 app-internal.log 和 app-open.log
+# 这里只配置前端日志路径
 FRONTEND_LOG_FILE="$LOGS_DIR/frontend.log"
 
 # 服务端口配置
@@ -164,9 +165,11 @@ start_backend() {
         
         log_info "使用 conda 环境: $CONDA_ENV"
         log_info "启动 FastAPI 服务 (端口: $BACKEND_PORT)..."
-        log_info "后端日志文件: $BACKEND_LOG_FILE"
+        log_info "后端日志文件: $LOGS_DIR/app-internal.log 和 $LOGS_DIR/app-open.log"
         
-        "$HOME/miniforge3/envs/$CONDA_ENV/bin/python" run.py > "$BACKEND_LOG_FILE" 2>&1 &
+        # 不再重定向日志到文件，因为应用内部使用结构化日志直接写入 app-internal.log 和 app-open.log
+        # 只将控制台输出重定向到 /dev/null，错误输出保留以便排查启动问题
+        "$HOME/miniforge3/envs/$CONDA_ENV/bin/python" run.py > /dev/null 2>&1 &
         local pid=$!
         save_pid "$pid" "$BACKEND_PID_FILE"
 
@@ -180,7 +183,7 @@ start_backend() {
         if check_port "$BACKEND_PORT"; then
             log_success "后端服务已启动 (PID: $pid, 端口: $BACKEND_PORT)"
         else
-            log_error "后端服务启动失败，请检查日志: $BACKEND_LOG_FILE"
+            log_error "后端服务启动失败，请检查日志: $LOGS_DIR/app-internal.log"
             exit 1
         fi
     )
@@ -371,10 +374,18 @@ show_logs() {
     
     case "$service" in
         backend|be)
-            if [ -f "$BACKEND_LOG_FILE" ]; then
-                tail -f "$BACKEND_LOG_FILE"
+            # 后端有两个日志文件：app-internal.log 和 app-open.log
+            local internal_log="$LOGS_DIR/app-internal.log"
+            local open_log="$LOGS_DIR/app-open.log"
+            if [ -f "$internal_log" ]; then
+                echo "=== 查看后端日志 (按 Ctrl+C 退出) ==="
+                echo "Internal API 日志: $internal_log"
+                echo "Open API 日志: $open_log"
+                echo ""
+                # 同时监控两个日志文件
+                tail -f "$internal_log" "$open_log" 2>/dev/null
             else
-                log_error "后端日志不存在: $BACKEND_LOG_FILE"
+                log_error "后端日志不存在: $internal_log"
             fi
             ;;
         frontend|fe)
