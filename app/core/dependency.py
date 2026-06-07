@@ -82,12 +82,13 @@ class PermissionControl:
     def _normalize_api_path(cls, path: str) -> str:
         """
         规范化API路径，将请求路径转换为数据库存储格式
-        例如: /api/v1/ai/llm_config/list -> /ai/llm_config/list
+
+        现在数据库存储的是完整路径（包含 /api/v1/ 前缀），
+        所以直接返回原始路径即可
+
+        例如: /api/v1/ai/llm_config/list -> /api/v1/ai/llm_config/list
         """
-        if path.startswith(API_V1_PREFIX):
-            path = path[len(API_V1_PREFIX):]
-        if not path.startswith("/"):
-            path = "/" + path
+        # 数据库存储的是完整路径，直接返回
         return path
 
     @classmethod

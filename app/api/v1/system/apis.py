@@ -33,5 +33,7 @@ async def list_api(
 
 @router.post("/refresh", summary="刷新API列表")
 async def refresh_api(request: Request):
-    await api_service.refresh_api(request.app)
+    # request.app 是 internal_app（挂载在 /api/v1 下）
+    # 需要传入 base_path 前缀，让 _collect_routes 能正确生成完整路径
+    await api_service.refresh_api(request.app, base_path="/api/v1")
     return Success(msg="OK")

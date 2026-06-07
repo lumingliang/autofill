@@ -533,10 +533,6 @@ function handleDeptClick(_selectedKeys: any, e: any) {
 
 onMounted(() => {
   loadData()
-  if (!userStore.isSuperUser) {
-    loadRoles()
-    loadDepts()
-  }
 })
 </script>
 

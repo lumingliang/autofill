@@ -206,19 +206,23 @@ class ApiService:
         method_lower = method.lower()
         return f"{resource}:{action}:{method_lower}"
 
-    async def refresh_api(self, app):
+    def _collect_routes(self, app, prefix=""):
         """
-        刷新API列表
+        递归收集所有路由信息（包括子应用）
+        只收集 internal API（挂载在 /api/v1 下，排除 /api/v1/open）
 
-        从 FastAPI app 的路由中提取 API 信息并存储到数据库
-        优化：一次性查询所有API到内存，减少数据库查询次数
+        Args:
+            app: FastAPI 应用实例
+            prefix: 路径前缀
+
+        Returns:
+            路由信息列表
         """
-        # 1. 收集所有路由API信息
         route_apis = []
         for route in app.routes:
             if self._should_manage_api(route):
                 method = list(route.methods)[0]
-                path = route.path_format
+                path = prefix + route.path_format
                 summary = route.summary
                 tags = list(route.tags)[0] if route.tags else ""
                 api_code = self.generate_api_code(path, method)
@@ -229,6 +233,31 @@ class ApiService:
                     "tags": tags,
                     "api_code": api_code,
                 })
+            # 检查是否是子应用挂载（Mount 类型）
+            elif hasattr(route, 'app') and hasattr(route, 'path'):
+                # 确保是 FastAPI 应用实例（不是函数或其他类型）
+                if hasattr(route.app, 'routes'):
+                    # 只收集 internal API，排除 open API
+                    # internal API 挂载在 /api/v1，open API 挂载在 /api/v1/open
+                    if not route.path.startswith('/api/v1/open'):
+                        # 递归收集子应用的路由
+                        sub_routes = self._collect_routes(route.app, prefix + route.path)
+                        route_apis.extend(sub_routes)
+        return route_apis
+
+    async def refresh_api(self, app, base_path: str = ""):
+        """
+        刷新API列表
+
+        从 FastAPI app 的路由中提取 API 信息并存储到数据库
+        优化：一次性查询所有API到内存，减少数据库查询次数
+
+        Args:
+            app: FastAPI 应用实例
+            base_path: 基础路径前缀（如 /api/v1），用于从子应用收集路由时生成完整路径
+        """
+        # 1. 收集所有路由API信息（包括子应用）
+        route_apis = self._collect_routes(app, prefix=base_path)
 
         # 2. 一次性查询所有数据库中的API
         all_db_apis = await api_repository.get_all()
@@ -255,19 +284,6 @@ class ApiService:
             await api_repository.delete_by_ids(delete_api_ids)
             for api_id in delete_api_ids:
                 logger.debug(f"API Deleted id={api_id}")
-
-    async def _cleanup_role_api_relations(self, api_ids: List[int]) -> None:
-        """
-        后台任务：清理与已删除API关联的角色权限数据
-
-        Args:
-            api_ids: 已删除的API ID列表
-        """
-        try:
-            deleted_count = await role_api_repository.delete_by_api_ids(api_ids)
-            logger.info(f"[ApiService] 清理角色-API关联完成，删除 {deleted_count} 条记录，涉及API: {api_ids}")
-        except Exception as e:
-            logger.error(f"[ApiService] 清理角色-API关联失败: {e}, API IDs: {api_ids}")
 
         # 6. 批量更新和创建
         to_update = []
@@ -298,6 +314,19 @@ class ApiService:
 
         if to_create:
             await api_repository.bulk_create(to_create)
+
+    async def _cleanup_role_api_relations(self, api_ids: List[int]) -> None:
+        """
+        后台任务：清理与已删除API关联的角色权限数据
+
+        Args:
+            api_ids: 已删除的API ID列表
+        """
+        try:
+            deleted_count = await role_api_repository.delete_by_api_ids(api_ids)
+            logger.info(f"[ApiService] 清理角色-API关联完成，删除 {deleted_count} 条记录，涉及API: {api_ids}")
+        except Exception as e:
+            logger.error(f"[ApiService] 清理角色-API关联失败: {e}, API IDs: {api_ids}")
 
 
 api_service = ApiService()

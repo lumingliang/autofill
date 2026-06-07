@@ -243,16 +243,14 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         """
         规范化API路径，将请求路径转换为数据库存储格式
 
+        现在数据库存储的是完整路径（包含 /api/v1/ 前缀），
+        所以直接返回原始路径即可
+
         例如:
-        - /api/v1/ai/llm_config/list -> /ai/llm_config/list
-        - /api/v1/system/user/list -> /system/user/list
+        - /api/v1/ai/llm_config/list -> /api/v1/ai/llm_config/list
+        - /api/v1/system/user/list -> /api/v1/system/user/list
         """
-        # 移除 /api/v1 前缀
-        if path.startswith(API_V1_PREFIX):
-            path = path[len(API_V1_PREFIX):]
-        # 确保路径以 / 开头
-        if not path.startswith("/"):
-            path = "/" + path
+        # 数据库存储的是完整路径，直接返回
         return path
 
     async def _check_permission(self, request: Request, user: User, tenant_id: int) -> bool:
