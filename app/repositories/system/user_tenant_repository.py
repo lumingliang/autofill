@@ -40,7 +40,9 @@ class UserTenantRepository(BaseRepository[UserTenant]):
 
     async def get_tenant_ids_by_user_id(self, user_id: int) -> List[int]:
         """
-        根据用户 ID 获取租户 ID 列表
+        根据用户 ID 获取租户 ID 列表（直接查询模型，不应用租户过滤）
+
+        注意：此方法查询用户的租户关联关系，不应被租户过滤限制
 
         Args:
             user_id: 用户ID
@@ -48,12 +50,14 @@ class UserTenantRepository(BaseRepository[UserTenant]):
         Returns:
             List[int]: 租户ID列表
         """
-        rows = await self.filter(user_id=user_id).values("tenant_id")
+        rows = await self.model.filter(user_id=user_id).values("tenant_id")
         return [r["tenant_id"] for r in rows]
 
     async def batch_get_tenant_ids_by_user_ids(self, user_ids: List[int]) -> dict[int, List[int]]:
         """
-        批量获取用户 ID -> 租户 ID 列表的映射
+        批量获取用户 ID -> 租户 ID 列表的映射（直接查询模型，不应用租户过滤）
+
+        注意：此方法查询用户的租户关联关系，不应被租户过滤限制
 
         Args:
             user_ids: 用户ID列表
@@ -61,7 +65,7 @@ class UserTenantRepository(BaseRepository[UserTenant]):
         Returns:
             dict[int, List[int]]: 用户ID到租户ID列表的映射
         """
-        rows = await self.filter(user_id__in=user_ids).values("user_id", "tenant_id")
+        rows = await self.model.filter(user_id__in=user_ids).values("user_id", "tenant_id")
         result: dict[int, List[int]] = {}
         for r in rows:
             result.setdefault(r["user_id"], []).append(r["tenant_id"])

@@ -3,12 +3,10 @@ from typing import Optional
 import jwt
 from fastapi import Depends, Header, HTTPException, Request
 
-from app.core.ctx import Ctx
-from app.core.relation import RelationQuery
 from app.models import User
-from app.models.admin import Api
+from app.repositories import api_repository, user_repository, user_role_repository, role_api_repository, user_tenant_repository
 from app.services.permission_cache_service import permission_cache_service
-from app.settings import settings
+from app.settings import settings, API_V1_PREFIX
 
 
 async def get_current_user_from_request(request: Request) -> Optional["User"]:
@@ -55,22 +53,17 @@ class AuthControl:
     @classmethod
     async def is_authed(cls, token: str = Header(..., description="token验证")) -> Optional["User"]:
         try:
-            decode_data = {}
-            if token == "dev":
-                user = await User.filter().first()
-                user_id = user.id
-            else:
-                decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-                user_id = decode_data.get("user_id")
-            user = await User.filter(id=user_id).first()
+            decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            user_id = decode_data.get("user_id")
+            user = await user_repository.get_by_id_raw(user_id)
             if not user:
                 raise HTTPException(status_code=401, detail="Authentication failed")
             current_tenant_id = decode_data.get("current_tenant_id")
             if current_tenant_id:
                 user.current_tenant_id = current_tenant_id
             else:
-                # 如果JWT中没有当前租户ID，查询用户的默认租户ID（第一个关联的租户）
-                tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user.id)
+                # 如果JWT中没有当前租户ID，使用 user_tenant_repository 查询默认租户ID
+                tenant_ids = await user_tenant_repository.get_tenant_ids_by_user_id(user.id)
                 if tenant_ids:
                     user.current_tenant_id = tenant_ids[0]
             tenant_domain = decode_data.get("tenant_domain")
@@ -86,12 +79,24 @@ class AuthControl:
 
 class PermissionControl:
     @classmethod
+    def _normalize_api_path(cls, path: str) -> str:
+        """
+        规范化API路径，将请求路径转换为数据库存储格式
+        例如: /api/v1/ai/llm_config/list -> /ai/llm_config/list
+        """
+        if path.startswith(API_V1_PREFIX):
+            path = path[len(API_V1_PREFIX):]
+        if not path.startswith("/"):
+            path = "/" + path
+        return path
+
+    @classmethod
     async def has_permission(cls, request: Request, current_user: User = Depends(AuthControl.is_authed)) -> None:
         if current_user.is_superuser:
             return
 
         method = request.method
-        path = request.url.path
+        path = cls._normalize_api_path(request.url.path)
         tenant_id = getattr(current_user, "current_tenant_id", 0)
 
         try:
@@ -101,8 +106,8 @@ class PermissionControl:
             if permission_apis is None:
                 raise HTTPException(status_code=403, detail="用户未绑定角色")
 
-            # 获取当前请求的API code
-            current_api = await Api.filter(method=method, path=path).first()
+            # 使用 api_repository 获取当前请求的API
+            current_api = await api_repository.get_by_method_path(method, path)
             if not current_api:
                 raise HTTPException(status_code=403, detail="API未注册")
 
@@ -112,22 +117,22 @@ class PermissionControl:
         except HTTPException:
             raise
         except Exception:
-            # 降级处理：直接从数据库获取权限
-            role_ids = await RelationQuery.get_role_ids_by_user_id(current_user.id)
+            # 降级处理：直接使用 repository 从数据库获取权限（自动租户过滤）
+            role_ids = await user_role_repository.get_role_ids_by_user_id(current_user.id)
             if not role_ids:
                 raise HTTPException(status_code=403, detail="用户未绑定角色")
 
-            api_ids_mapping = await RelationQuery.batch_get_api_ids_by_role_ids(role_ids)
+            api_ids_mapping = await role_api_repository.batch_get_api_ids_by_role_ids(role_ids)
             all_api_ids = list({aid for ids in api_ids_mapping.values() for aid in ids})
 
             if not all_api_ids:
                 raise HTTPException(status_code=403, detail="用户未绑定角色")
 
-            apis = await Api.filter(id__in=all_api_ids).values("api_code")
-            permission_apis = {api["api_code"] for api in apis}
+            # 使用 api_repository 获取API codes
+            permission_apis = set(await api_repository.get_codes_by_ids(all_api_ids))
 
-            # 获取当前请求的API code
-            current_api = await Api.filter(method=method, path=path).first()
+            # 使用 api_repository 获取当前请求的API
+            current_api = await api_repository.get_by_method_path(method, path)
             if not current_api:
                 raise HTTPException(status_code=403, detail="API未注册")
 

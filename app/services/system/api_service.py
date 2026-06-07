@@ -14,13 +14,14 @@ API Service 层
 from typing import List, Tuple
 
 from fastapi.routing import APIRoute
+from tortoise.expressions import Q
 
+from app.core.bgtask import BgTasks
 from app.core.ctx import Ctx
 from app.log import logger
 from app.models.admin import Api
-from app.repositories import api_repository
+from app.repositories import api_repository, role_api_repository
 from app.settings import settings
-from tortoise.expressions import Q
 
 
 class ApiService:
@@ -210,53 +211,93 @@ class ApiService:
         刷新API列表
 
         从 FastAPI app 的路由中提取 API 信息并存储到数据库
+        优化：一次性查询所有API到内存，减少数据库查询次数
         """
-        all_api_list = []
-        for route in app.routes:
-            if self._should_manage_api(route):
-                all_api_list.append((list(route.methods)[0], route.path_format))
-
-        db_api_list = await api_repository.get_all_method_path_pairs()
-
-        delete_api_ids = []
-        for api in db_api_list:
-            if api not in all_api_list:
-                api_obj = await api_repository.get_by_method_path(api[0], api[1])
-                if api_obj:
-                    delete_api_ids.append(api_obj.id)
-
-        if delete_api_ids:
-            await api_repository.delete_by_ids(delete_api_ids)
-            for api_id in delete_api_ids:
-                logger.debug(f"API Deleted id={api_id}")
-
+        # 1. 收集所有路由API信息
+        route_apis = []
         for route in app.routes:
             if self._should_manage_api(route):
                 method = list(route.methods)[0]
                 path = route.path_format
                 summary = route.summary
                 tags = list(route.tags)[0] if route.tags else ""
-
                 api_code = self.generate_api_code(path, method)
+                route_apis.append({
+                    "method": method,
+                    "path": path,
+                    "summary": summary,
+                    "tags": tags,
+                    "api_code": api_code,
+                })
 
-                api_obj = await api_repository.get_by_method_path(method, path)
-                if api_obj:
-                    await api_repository.update(api_obj.id, dict(
-                        api_code=api_code,
-                        method=method,
-                        path=path,
-                        summary=summary,
-                        tags=tags
-                    ))
-                else:
-                    logger.debug(f"API Created {api_code} {method} {path}")
-                    await api_repository.create(dict(
-                        api_code=api_code,
-                        method=method,
-                        path=path,
-                        summary=summary,
-                        tags=tags
-                    ))
+        # 2. 一次性查询所有数据库中的API
+        all_db_apis = await api_repository.get_all()
+
+        # 3. 构建内存索引：{(method, path): api_obj}
+        db_api_map = {}
+        for api in all_db_apis:
+            key = (api.method, api.path)
+            db_api_map[key] = api
+
+        # 4. 构建路由API的key集合
+        route_api_keys = {(api["method"], api["path"]) for api in route_apis}
+
+        # 5. 找出需要删除的API（在数据库中但不在路由中）
+        delete_api_ids = []
+        for key, api_obj in db_api_map.items():
+            if key not in route_api_keys:
+                delete_api_ids.append(api_obj.id)
+
+        if delete_api_ids:
+            # 先删除角色-API关联（后台任务）
+            await BgTasks.add_task(self._cleanup_role_api_relations, delete_api_ids)
+            # 再删除API
+            await api_repository.delete_by_ids(delete_api_ids)
+            for api_id in delete_api_ids:
+                logger.debug(f"API Deleted id={api_id}")
+
+    async def _cleanup_role_api_relations(self, api_ids: List[int]) -> None:
+        """
+        后台任务：清理与已删除API关联的角色权限数据
+
+        Args:
+            api_ids: 已删除的API ID列表
+        """
+        try:
+            deleted_count = await role_api_repository.delete_by_api_ids(api_ids)
+            logger.info(f"[ApiService] 清理角色-API关联完成，删除 {deleted_count} 条记录，涉及API: {api_ids}")
+        except Exception as e:
+            logger.error(f"[ApiService] 清理角色-API关联失败: {e}, API IDs: {api_ids}")
+
+        # 6. 批量更新和创建
+        to_update = []
+        to_create = []
+
+        for route_api in route_apis:
+            key = (route_api["method"], route_api["path"])
+            db_api = db_api_map.get(key)
+
+            if db_api:
+                # 需要更新
+                to_update.append({
+                    "id": db_api.id,
+                    "api_code": route_api["api_code"],
+                    "method": route_api["method"],
+                    "path": route_api["path"],
+                    "summary": route_api["summary"],
+                    "tags": route_api["tags"],
+                })
+            else:
+                # 需要创建
+                to_create.append(route_api)
+                logger.debug(f"API Created {route_api['api_code']} {route_api['method']} {route_api['path']}")
+
+        # 7. 执行批量操作
+        if to_update:
+            await api_repository.bulk_update(to_update)
+
+        if to_create:
+            await api_repository.bulk_create(to_create)
 
 
 api_service = ApiService()

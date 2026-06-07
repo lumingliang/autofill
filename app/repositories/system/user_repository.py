@@ -96,6 +96,18 @@ class UserRepository(BaseRepository[User]):
             return user
         return None
 
+    async def get_by_id_raw(self, id: int) -> Optional[User]:
+        """
+        根据ID获取用户（不应用租户过滤，用于认证等场景）
+
+        Args:
+            id: 用户ID
+
+        Returns:
+            Optional[User]: 用户对象，不存在返回None
+        """
+        return await self.model.filter(id=id).first()
+
     async def list_by_tenant(
         self,
         page: int = 1,

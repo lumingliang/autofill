@@ -28,7 +28,6 @@ from app.core.exceptions import (
     StarletteHttpExcHandle,
     ValidationException,
 )
-from app.core.relation import RelationQuery
 from app.log import logger
 from app.models.admin import Api, Menu, Role, User
 from app.repositories import user_repository

@@ -68,6 +68,49 @@ class ApiRepository(BaseRepository[Api]):
             return
         await self.filter(id__in=api_ids).delete()
 
+    async def bulk_update(self, api_list: List[dict]) -> None:
+        """
+        批量更新API
+
+        Args:
+            api_list: API数据列表，每个元素必须包含 'id' 键
+        """
+        if not api_list:
+            return
+
+        # 获取所有需要更新的ID
+        api_ids = [api["id"] for api in api_list]
+
+        # 批量查询现有API
+        existing_apis = await self.filter(id__in=api_ids).all()
+        existing_map = {api.id: api for api in existing_apis}
+
+        # 更新每个API
+        for api_data in api_list:
+            api_id = api_data.get("id")
+            if api_id and api_id in existing_map:
+                api_obj = existing_map[api_id]
+                for key, value in api_data.items():
+                    if key != "id" and hasattr(api_obj, key):
+                        setattr(api_obj, key, value)
+                await api_obj.save()
+
+    async def bulk_create(self, api_list: List[dict]) -> None:
+        """
+        批量创建API
+
+        Args:
+            api_list: API数据列表
+        """
+        if not api_list:
+            return
+
+        # 构建Api对象列表
+        api_objects = [self.model(**api_data) for api_data in api_list]
+
+        # 使用bulk_create批量插入
+        await self.model.bulk_create(api_objects)
+
     async def get_user_api_ids(self, user_id: int) -> Set[int]:
         """获取用户的所有API ID"""
         if not user_id:

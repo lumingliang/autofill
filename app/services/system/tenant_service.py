@@ -4,7 +4,6 @@
 处理租户相关的业务逻辑，包括：
 - 租户 CRUD 操作
 - 租户-用户关联管理
-- 自动创建租户管理员角色
 
 约束：
 - 使用 @atomic 装饰器控制事务
@@ -19,11 +18,8 @@ from fastapi import HTTPException
 from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
-from app.core.relation import RelationQuery
 from app.models.admin import Tenant
 from app.repositories import (
-    api_repository,
-    menu_repository,
     role_repository,
     tenant_repository,
     user_repository,
@@ -120,14 +116,14 @@ class TenantService:
     # ==================== 创建方法 ====================
 
     @atomic()
-    async def create_tenant(self, tenant_in: TenantCreate) -> Tuple[Tenant, object]:
+    async def create_tenant(self, tenant_in: TenantCreate) -> Tenant:
         """
-        创建租户并自动创建管理员角色
+        创建租户并自动创建管理员角色（无权限）
 
         使用 @atomic() 事务控制
 
         Returns:
-            Tuple[Tenant, Role]: (租户对象, 管理员角色对象)
+            Tenant: 租户对象
         """
         # 检查域名是否已存在
         existing = await self.get_tenant_by_domain(tenant_in.domain)
@@ -138,27 +134,15 @@ class TenantService:
         tenant_data = tenant_in.model_dump()
         tenant = await tenant_repository.create(tenant_data)
 
-        # 自动创建该租户的管理员角色
-        all_menus = await menu_repository.get_all_ids()
-        all_apis = await api_repository.get_all_ids()
-
+        # 自动创建该租户的管理员角色（不分配权限）
         admin_role = await role_repository.create({
             "name": f"{tenant.name}管理员",
-            "desc": f"{tenant.name}租户的管理员角色，拥有所有权限",
+            "desc": f"{tenant.name}租户的管理员角色",
             "tenant_id": tenant.id,
             "is_system": True,
         })
 
-        # 批量关联所有菜单和API
-        # 注意：batch_add_role_menus 和 batch_add_role_apis 会从 Ctx 自动获取 tenant_id
-        await RelationQuery.batch_add_role_menus(
-            [(admin_role.id, m_id) for m_id in all_menus]
-        )
-        await RelationQuery.batch_add_role_apis(
-            [(admin_role.id, a_id) for a_id in all_apis]
-        )
-
-        return tenant, admin_role
+        return tenant
 
     # ==================== 更新方法 ====================
 
@@ -207,7 +191,7 @@ class TenantService:
 
         注意：此方法使用 user_repository 查询数据，不直接查询 Model 层
         """
-        user_ids = await RelationQuery.get_user_ids_by_tenant_id(tenant_id)
+        user_ids = await user_tenant_repository.get_user_ids_by_tenant_id(tenant_id)
         if not user_ids:
             return []
 

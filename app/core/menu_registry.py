@@ -38,9 +38,8 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from app.core.relation import RelationQuery
 from app.log import logger
-from app.models.admin import Menu, Role, RoleMenu
+from app.models.admin import Menu
 from app.schemas.menus import MenuType
 
 
@@ -164,37 +163,10 @@ class MenuRegistry:
         for menu_config in self._menu_configs:
             await process_menu(menu_config)
 
-        # 为新菜单分配权限给管理员角色
-        if new_menu_ids:
-            await self._assign_permissions_to_admin(new_menu_ids)
-
         logger.info(
             f"[MenuRegistry] 菜单同步完成: "
             f"创建 {created_count}, 更新 {updated_count}, 跳过 {skipped_count}"
         )
-
-    async def _assign_permissions_to_admin(self, menu_ids: List[int]):
-        """为新菜单分配权限给管理员角色"""
-        # 查找管理员角色（假设ID为1，或者是超级管理员）
-        admin_role = await Role.filter(id=1).first()
-        if not admin_role:
-            logger.warning("[MenuRegistry] 未找到管理员角色，跳过权限分配")
-            return
-
-        # 检查哪些权限还未分配
-        existing_permissions = await RoleMenu.filter(
-            role_id=admin_role.id,
-            menu_id__in=menu_ids
-        ).values_list("menu_id", flat=True)
-
-        new_permissions = [mid for mid in menu_ids if mid not in existing_permissions]
-
-        if new_permissions:
-            pairs = [(admin_role.id, mid) for mid in new_permissions]
-            await RelationQuery.batch_add_role_menus(pairs, tenant_id=0)
-            logger.info(
-                f"[MenuRegistry] 为管理员角色分配了 {len(new_permissions)} 个菜单权限"
-            )
 
 
 # 全局菜单注册中心实例

@@ -12,14 +12,13 @@ from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
 from app.core.ctx import Ctx
 from app.core.dependency import AuthControl
-from app.core.relation import RelationQuery
 from app.log import logger, set_request_id, set_tenant_id, get_caller_location, is_request_logged, set_request_logged
 from app.models.admin import AuditLog, User
+from app.repositories import api_repository, user_role_repository, role_api_repository, user_tenant_repository
+from app.services.permission_cache_service import permission_cache_service
+from app.settings import API_V1_PREFIX, OPEN_API_PREFIX
 
 from .bgtask import BgTasks
-
-# Open API 前缀 - 这些接口使用 API Key 认证，不走 JWT 中间件
-OPEN_API_PREFIX: str = "/api/v1/open/"
 
 
 class SimpleBaseMiddleware:
@@ -149,7 +148,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             effective_tenant_id = request_tenant_id if request_tenant_id > 0 else user.current_tenant_id
             if effective_tenant_id <= 0:
                 # 如果用户没有当前租户，尝试获取第一个关联租户
-                tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user.id)
+                tenant_ids = await user_tenant_repository.get_tenant_ids_by_user_id(user.id)
                 if tenant_ids:
                     effective_tenant_id = tenant_ids[0]
 
@@ -236,20 +235,33 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if user.is_superuser:
             return True
         
-        # 普通用户：查询关联表判断是否拥有该租户
-        user_tenant_ids = await RelationQuery.get_tenant_ids_by_user_id(user.id)
+        # 普通用户：使用 user_tenant_repository 查询判断是否拥有该租户（自动租户过滤）
+        user_tenant_ids = await user_tenant_repository.get_tenant_ids_by_user_id(user.id)
         return tenant_id in user_tenant_ids
+
+    def _normalize_api_path(self, path: str) -> str:
+        """
+        规范化API路径，将请求路径转换为数据库存储格式
+
+        例如:
+        - /api/v1/ai/llm_config/list -> /ai/llm_config/list
+        - /api/v1/system/user/list -> /system/user/list
+        """
+        # 移除 /api/v1 前缀
+        if path.startswith(API_V1_PREFIX):
+            path = path[len(API_V1_PREFIX):]
+        # 确保路径以 / 开头
+        if not path.startswith("/"):
+            path = "/" + path
+        return path
 
     async def _check_permission(self, request: Request, user: User, tenant_id: int) -> bool:
         """检查用户是否有权限访问当前接口"""
-        from app.models.admin import Api
-        from app.services.permission_cache_service import permission_cache_service
-        
         if user.is_superuser:
             return True
 
         method = request.method
-        path = request.url.path
+        path = self._normalize_api_path(request.url.path)
 
         try:
             # 使用权限缓存服务获取用户权限
@@ -258,29 +270,30 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             if permission_apis is None:
                 return False
 
-            # 获取当前请求的API code
-            current_api = await Api.filter(method=method, path=path).first()
+            # 使用 api_repository 获取当前请求的API
+            current_api = await api_repository.get_by_method_path(method, path)
             if not current_api:
                 return False
 
             return current_api.api_code in permission_apis
 
         except Exception:
-            # 降级处理：直接从数据库获取权限
-            role_ids = await RelationQuery.get_role_ids_by_user_id(user.id)
+            # 降级处理：直接使用 repository 从数据库获取权限（自动租户过滤）
+            role_ids = await user_role_repository.get_role_ids_by_user_id(user.id)
             if not role_ids:
                 return False
 
-            api_ids_mapping = await RelationQuery.batch_get_api_ids_by_role_ids(role_ids)
+            api_ids_mapping = await role_api_repository.batch_get_api_ids_by_role_ids(role_ids)
             all_api_ids = list({aid for ids in api_ids_mapping.values() for aid in ids})
 
             if not all_api_ids:
                 return False
 
-            apis = await Api.filter(id__in=all_api_ids).values("api_code")
-            permission_apis = {api["api_code"] for api in apis}
+            # 使用 api_repository 获取API codes
+            permission_apis = set(await api_repository.get_codes_by_ids(all_api_ids))
 
-            current_api = await Api.filter(method=method, path=path).first()
+            # 使用 api_repository 获取当前请求的API
+            current_api = await api_repository.get_by_method_path(method, path)
             if not current_api:
                 return False
 

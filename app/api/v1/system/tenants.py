@@ -86,12 +86,11 @@ class TenantAPI(BaseAPI):
         self.require_superuser()
 
         try:
-            tenant, admin_role = await tenant_service.create_tenant(tenant_in)
+            tenant = await tenant_service.create_tenant(tenant_in)
             return Success(
                 data={
                     "tenant": await tenant.to_dict(),
-                    "admin_role_id": admin_role.id,
-                    "message": f"租户创建成功，已自动创建管理员角色：{admin_role.name}",
+                    "message": "租户创建成功",
                 },
                 msg="创建成功",
             )

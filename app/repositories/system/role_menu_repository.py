@@ -4,7 +4,7 @@
 提供 RoleMenu 关联表的数据访问操作，继承 BaseRepository 获得通用 CRUD 能力。
 """
 
-from typing import List
+from typing import List, Tuple
 
 from app.core.ctx import Ctx
 from app.models.admin import RoleMenu
@@ -84,6 +84,37 @@ class RoleMenuRepository(BaseRepository[RoleMenu]):
             await self.model.bulk_create(
                 [self.model(role_id=role_id, menu_id=mid, tenant_id=tenant_id) for mid in set(menu_ids)]
             )
+
+    async def batch_add_role_menus(
+        self, role_id_menu_id_pairs: List[Tuple[int, int]], tenant_id: int = None
+    ) -> None:
+        """
+        批量添加角色-菜单关联（自动去重）
+
+        Args:
+            role_id_menu_id_pairs: (角色ID, 菜单ID) 元组列表
+            tenant_id: 租户ID，如果不传则从 Ctx 获取
+        """
+        if not role_id_menu_id_pairs:
+            return
+
+        # 获取租户ID
+        if tenant_id is None:
+            tenant_id = Ctx.get_request_tenant_id()
+
+        # 只查询相关角色的数据，减少查询范围
+        role_ids = list(set(rid for rid, _ in role_id_menu_id_pairs))
+        existing = await self.filter(role_id__in=role_ids).values("role_id", "menu_id")
+        existing_set = {(r["role_id"], r["menu_id"]) for r in existing}
+
+        to_create = []
+        for rid, mid in role_id_menu_id_pairs:
+            if (rid, mid) not in existing_set:
+                to_create.append(self.model(role_id=rid, menu_id=mid, tenant_id=tenant_id))
+                existing_set.add((rid, mid))
+
+        if to_create:
+            await self.model.bulk_create(to_create)
 
 
 # 全局 Repository 实例
