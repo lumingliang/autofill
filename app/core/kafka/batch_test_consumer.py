@@ -9,13 +9,14 @@
 5. 更新任务统计信息
 """
 import asyncio
+import json
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.core.ctx import Ctx
 from app.settings import settings
-from app.log import logger
+from app.log import logger, set_request_id, set_tenant_id
 from app.models.batch_test import BatchTestTask
 from app.core.seekdb_client import seekdb_client
 from app.repositories.autofill import batch_test_repository, dify_agent_repository
@@ -48,6 +49,11 @@ class BatchTestConsumer:
         collection_name = message.get("collection_name")
         dify_agent_id = message.get("dify_agent_id")
         total_rows = message.get("total_rows", 0)
+        request_id = message.get("request_id", "")
+
+        # 设置请求上下文（从消息中传递的 request_id）
+        if request_id:
+            set_request_id(request_id)
 
         logger.info(f"[BatchTestConsumer] 开始处理任务: task_id={task_id}, version_no={version_no}")
 
@@ -57,6 +63,10 @@ class BatchTestConsumer:
             if not task:
                 logger.error(f"[BatchTestConsumer] 任务不存在: task_id={task_id}")
                 return
+
+            # 设置租户ID到上下文（用于日志记录）
+            if task.tenant_id:
+                set_tenant_id(task.tenant_id)
 
             # 检查任务状态
             if task.status != 1:  # 不是执行中状态
@@ -185,8 +195,8 @@ class BatchTestConsumer:
             execution_time_ms = int((time.time() - start_time) * 1000)
             completed_at = datetime.now().strftime(settings.DATETIME_FORMAT)
 
-            # 展平 Dify 返回的 data 字段
-            flattened_result = self._flatten_dify_result(result)
+            # 解析并展平 Dify 返回的结果
+            flattened_result = self._parse_and_flatten_result(result)
 
             # 更新 SeekDB
             update_metadata = {
@@ -227,28 +237,53 @@ class BatchTestConsumer:
             logger.error(f"[BatchTestConsumer] 单条测试失败: doc_id={doc_id}, error={e}")
             return False
 
-    def _flatten_dify_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _parse_and_flatten_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        展平 Dify 返回的结果
+        解析并展平 Dify 返回的结果
 
-        将 data 字段展平到顶层
-        例如：{"code": 200, "data": {"answer": "xxx"}} -> {"code": 200, "answer": "xxx"}
+        标准格式：
+        1. 字符串返回: {"answer": "xxx"}
+        2. JSON 返回: {"field1": "value1", "field2": "value2"} (直接展平)
 
         Args:
             result: Dify 返回的原始结果
 
         Returns:
-            展平后的结果
+            展平后的结果字典
         """
         if not result:
             return {}
 
-        flattened = dict(result)
+        flattened = {}
 
-        # 展平 data 字段
-        if "data" in flattened and isinstance(flattened["data"], dict):
-            data = flattened.pop("data")
-            flattened.update(data)
+        # 处理 answer 字段
+        if "answer" in result:
+            answer = result["answer"]
+
+            # 尝试解析 answer 为 JSON
+            if isinstance(answer, str):
+                try:
+                    parsed_answer = json.loads(answer)
+                    if isinstance(parsed_answer, dict):
+                        # answer 是 JSON 对象，直接展平
+                        flattened.update(parsed_answer)
+                    else:
+                        # answer 是 JSON 但不是对象（如数组或基本类型），包装在 answer 字段
+                        flattened["answer"] = parsed_answer
+                except json.JSONDecodeError:
+                    # answer 不是 JSON，作为普通字符串
+                    flattened["answer"] = answer
+            elif isinstance(answer, dict):
+                # answer 已经是字典，直接展平
+                flattened.update(answer)
+            else:
+                # answer 是其他类型
+                flattened["answer"] = answer
+        else:
+            # 没有 answer 字段，直接复制所有字段（排除内部字段）
+            for key, value in result.items():
+                if key not in ["message_id", "conversation_id", "created_at", "metadata"]:
+                    flattened[key] = value
 
         return flattened
 
@@ -301,3 +336,17 @@ async def handle_batch_test_message(message: Dict[str, Any]):
         message: Kafka 消息
     """
     await batch_test_consumer.process_message(message)
+
+
+def register_batch_test_consumer():
+    """注册批量测试消费者到 Kafka 消费者管理器"""
+    from app.core.kafka.consumer import get_consumer_manager
+    import asyncio
+
+    manager = get_consumer_manager()
+    manager.register_consumer(
+        name="batch_test_consumer",
+        topics=[BatchTestConsumer.TOPIC],
+        message_handler=handle_batch_test_message
+    )
+    logger.info(f"Registered batch test consumer for topic: {BatchTestConsumer.TOPIC}")

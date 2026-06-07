@@ -15,7 +15,6 @@ from app.core.dependency import AuthControl
 from app.core.relation import RelationQuery
 from app.log import logger, set_request_id, set_tenant_id, get_caller_location, is_request_logged, set_request_logged
 from app.models.admin import AuditLog, User
-from app.settings import settings
 
 from .bgtask import BgTasks
 
@@ -51,27 +50,6 @@ class BackGroundTaskMiddleware(SimpleBaseMiddleware):
 
     async def after_request(self, request):
         await BgTasks.execute_tasks()
-
-
-class ExceptionHandlingMiddleware(BaseHTTPMiddleware):
-    """
-    异常捕获中间件 - 仅捕获异常，不记录日志
-
-    功能：
-    1. 捕获所有未处理的异常
-    2. 重新抛出异常给全局异常处理器处理
-
-    注意：
-    - 异常日志由全局异常处理器统一记录
-    - 此中间件仅确保异常能被正确捕获和传递
-    """
-
-    def __init__(self, app):
-        super().__init__(app)
-
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # 异常由全局异常处理器捕获和记录
-        return await call_next(request)
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -110,7 +88,8 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
 
-        # 加载配置
+        # 加载配置（局部导入避免循环依赖）
+        from app.settings import settings
         self.no_auth_paths = settings.NO_AUTH_PATHS or ["/api/v1/base/access_token"]
         self.base_prefixes = settings.BASE_API_PREFIXES or ["/api/v1/base/"]
 

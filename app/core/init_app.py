@@ -107,49 +107,24 @@ async def init_menus():
     logger.info("Menus initialized successfully")
 
 
-async def init_apis():
-    """初始化 API 权限"""
-    # TODO: 实现 API 注册和同步
-    # 暂时跳过，因为 menu_registry.get_apis() 方法不存在
-    pass
-
-
-async def sync_apis_to_superuser():
-    """同步所有 API 到超级管理员角色"""
-    # 获取超级管理员角色
-    superuser_role = await Role.filter(name="超级管理员").first()
-    if not superuser_role:
-        logger.warning("Superuser role not found, skipping API sync")
-        return
-    
-    # 获取所有 API
-    all_apis = await Api.all()
-    
-    # 获取角色当前已关联的 API
-    current_apis = await superuser_role.apis.all()
-    current_api_ids = {api.id for api in current_apis}
-    
-    # 找出需要新增的 API
-    new_apis = [api for api in all_apis if api.id not in current_api_ids]
-    
-    if new_apis:
-        await superuser_role.apis.add(*new_apis)
-        logger.info(f"Synced {len(new_apis)} APIs to superuser role")
-
-
 async def init_db_data(app=None):
     """初始化数据库基础数据"""
     await init_superuser()
     await init_menus()
-    await init_apis()
-    await sync_apis_to_superuser()
 
 
 async def init_kafka_consumers():
     """初始化 Kafka 消费者"""
     try:
-        from app.core.kafka.consumer import init_consumers
-        await init_consumers()
+        from app.core.kafka.consumer import init_kafka_consumers as _init_kafka_consumers
+        from app.core.kafka.batch_test_consumer import register_batch_test_consumer
+        import asyncio
+
+        # 注册批量测试消费者
+        register_batch_test_consumer()
+
+        # 启动所有消费者
+        _init_kafka_consumers(loop=asyncio.get_event_loop())
         logger.info("Kafka consumers initialized")
     except Exception as e:
         logger.warning(f"Failed to initialize Kafka consumers: {e}")

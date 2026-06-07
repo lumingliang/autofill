@@ -12,7 +12,6 @@ from app.settings import settings
 
 from .middlewares import (
     BackGroundTaskMiddleware,
-    ExceptionHandlingMiddleware,
     HttpAuditLogMiddleware,
     RequestIdMiddleware,
     RequestLoggingMiddleware,
@@ -79,7 +78,6 @@ def create_internal_app() -> FastAPI:
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(TenantContextMiddleware)  # JWT 认证中间件
     app.add_middleware(RequestIdMiddleware)
-    app.add_middleware(ExceptionHandlingMiddleware)
     app.add_middleware(SetAppTypeMiddleware, app_type="internal")
 
     return app
@@ -110,7 +108,6 @@ def create_open_app() -> FastAPI:
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(OpenAPIAuthMiddleware)  # API Key 认证中间件
     app.add_middleware(RequestIdMiddleware)
-    app.add_middleware(ExceptionHandlingMiddleware)
     app.add_middleware(SetAppTypeMiddleware, app_type="open")
 
     return app

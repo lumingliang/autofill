@@ -2,8 +2,6 @@ from fastapi import APIRouter
 
 from app.core.dependency import DependPermission
 
-from .apis import apis_router
-from .auditlog import auditlog_router
 from .autofill import (
     app_router,
     batch_test_router,
@@ -16,6 +14,8 @@ from .autofill import (
 )
 from .base import base_router
 from .system import (
+    apis_router,
+    auditlog_router,
     depts_router,
     menus_router,
     roles_router,

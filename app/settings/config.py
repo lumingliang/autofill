@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     APP_TITLE: str = "Vue FastAPI Admin"
     PROJECT_NAME: str = "Vue FastAPI Admin"
     APP_DESCRIPTION: str = "Description"
-    DEBUG: bool = True
+    DEBUG: bool = False
     
     # 路径配置
     PROJECT_ROOT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))

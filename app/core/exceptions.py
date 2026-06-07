@@ -63,13 +63,20 @@ def _get_exception_location(exc_info) -> Optional[str]:
     tb = exc_info[2]
     last_business_frame = None
 
-    # 需要排除的路径前缀
+    # 需要排除的路径前缀（第三方库、框架内部）
     skip_prefixes = (
         '/site-packages/',
         'lib/python',
+        '/usr/lib/python',
+    )
+
+    # 项目内部但非业务代码的路径
+    framework_paths = (
         '/app/core/middlewares.py',
         '/app/core/exceptions.py',
         '/app/log/',
+        '/app/core/dependencies.py',
+        '/app/db/',
     )
 
     # 遍历整个 traceback 链，找到最底层的业务代码帧
@@ -78,10 +85,13 @@ def _get_exception_location(exc_info) -> Optional[str]:
         lineno = tb.tb_lineno
         function_name = tb.tb_frame.f_code.co_name
 
-        # 排除第三方库、框架内部和中间件代码
-        should_skip = any(p in filename for p in skip_prefixes)
+        # 排除第三方库和Python标准库
+        if any(p in filename for p in skip_prefixes):
+            tb = tb.tb_next
+            continue
 
-        if should_skip:
+        # 排除框架内部代码，但只针对 /app/ 目录下的
+        if '/app/' in filename and any(p in filename for p in framework_paths):
             tb = tb.tb_next
             continue
 
@@ -93,14 +103,8 @@ def _get_exception_location(exc_info) -> Optional[str]:
     if last_business_frame:
         return f"{last_business_frame[0]}:{last_business_frame[1]} in {last_business_frame[2]}()"
 
-    # 如果没有找到业务代码位置，返回最底层帧
-    tb = exc_info[2]
-    while tb.tb_next:
-        tb = tb.tb_next
-    filename = tb.tb_frame.f_code.co_filename
-    lineno = tb.tb_lineno
-    function_name = tb.tb_frame.f_code.co_name
-    return f"{filename}:{lineno} in {function_name}()"
+    # 如果没有找到业务代码位置，返回 None（而不是返回框架代码）
+    return None
 
 
 def _build_concise_traceback(exc_info) -> str:
@@ -108,12 +112,20 @@ def _build_concise_traceback(exc_info) -> str:
     tb = exc_info[2]
     tb_lines = []
 
+    # 需要排除的路径前缀（第三方库、框架内部）
     skip_prefixes = (
         '/site-packages/',
         'lib/python',
+        '/usr/lib/python',
+    )
+
+    # 项目内部但非业务代码的路径
+    framework_paths = (
         '/app/core/middlewares.py',
         '/app/core/exceptions.py',
         '/app/log/',
+        '/app/core/dependencies.py',
+        '/app/db/',
     )
 
     while tb:
@@ -121,14 +133,22 @@ def _build_concise_traceback(exc_info) -> str:
         lineno = tb.tb_lineno
         function_name = tb.tb_frame.f_code.co_name
 
-        should_skip = any(p in filename for p in skip_prefixes)
+        # 排除第三方库和Python标准库
+        if any(p in filename for p in skip_prefixes):
+            tb = tb.tb_next
+            continue
 
-        if not should_skip:
-            if '/app/' in filename:
-                short_filename = filename[filename.find('/app/'):]
-            else:
-                short_filename = filename
-            tb_lines.append(f'  File "{short_filename}", line {lineno}, in {function_name}')
+        # 排除框架内部代码，但只针对 /app/ 目录下的
+        if '/app/' in filename and any(p in filename for p in framework_paths):
+            tb = tb.tb_next
+            continue
+
+        # 记录业务代码帧
+        if '/app/' in filename:
+            short_filename = filename[filename.find('/app/'):]
+        else:
+            short_filename = filename
+        tb_lines.append(f'  File "{short_filename}", line {lineno}, in {function_name}')
 
         tb = tb.tb_next
 

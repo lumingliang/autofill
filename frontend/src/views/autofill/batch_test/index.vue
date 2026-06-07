@@ -246,7 +246,7 @@
               <a-statistic
                 title="成功"
                 :value="currentTask.success_count || 0"
-                value-style="color: #52c41a"
+                :value-style="{ color: '#52c41a' }"
               />
             </a-card>
           </a-col>
@@ -255,7 +255,7 @@
               <a-statistic
                 title="失败"
                 :value="currentTask.fail_count || 0"
-                value-style="color: #ff4d4f"
+                :value-style="{ color: '#ff4d4f' }"
               />
             </a-card>
           </a-col>
@@ -264,7 +264,7 @@
               <a-statistic
                 title="待执行"
                 :value="(currentTask.row_count || 0) - (currentTask.success_count || 0) - (currentTask.fail_count || 0)"
-                value-style="color: #1890ff"
+                :value-style="{ color: '#1890ff' }"
               />
             </a-card>
           </a-col>

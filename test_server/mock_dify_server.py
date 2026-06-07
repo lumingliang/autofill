@@ -48,10 +48,18 @@ async def chat_messages(
             media_type="text/event-stream"
         )
     else:
+        # 返回 JSON 格式的 answer，测试展平功能
+        answer = json.dumps({
+            "result": f"成功处理: {request.query}",
+            "confidence": 0.95,
+            "category": "测试分类",
+            "suggestions": ["建议1", "建议2"]
+        })
+        
         return {
             "message_id": f"msg-{int(time.time() * 1000)}",
             "conversation_id": request.conversation_id or f"conv-{int(time.time() * 1000)}",
-            "answer": f"这是虚拟 Dify 的回复：你发送了 '{request.query}'",
+            "answer": answer,
             "created_at": int(time.time()),
             "metadata": {
                 "usage": {

@@ -44,8 +44,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: Redis connection failed: {e}")
 
-    await init_db_data(app)
-
     # 初始化 Kafka 消费者
     await init_kafka_consumers()
 

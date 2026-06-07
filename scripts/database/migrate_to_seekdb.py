@@ -25,7 +25,7 @@ from tortoise import Tortoise
 
 from app.log import logger
 from app.models.rule_management import RuleInfo, RuleVersion
-from app.services.storage.seekdb_service import seekdb_service
+from app.core.seekdb_client import seekdb_client
 from app.settings.config import settings
 
 
@@ -131,7 +131,7 @@ class SeekDBMigration:
 
         try:
             # 保存到 seekdb
-            doc_count = await seekdb_service.save_rule_data(
+            doc_count = await seekdb_client.save_rule_data(
                 collection_name=collection_name,
                 headers=headers,
                 data=dict_data,
@@ -207,7 +207,7 @@ class SeekDBMigration:
                     continue
 
                 try:
-                    result = await seekdb_service.get_rule_data(version.seekdb_collection_name)
+                    result = await seekdb_client.get_rule_data(version.seekdb_collection_name)
                     if result and result.get("data"):
                         doc_count = len(result["data"])
                         if doc_count == version.doc_count:

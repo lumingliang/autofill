@@ -18,7 +18,7 @@ from tortoise.transactions import atomic
 
 from app.core.ctx import Ctx, CTX_USER_ID
 from app.core.kafka.producer import get_kafka_producer
-from app.log import logger
+from app.log import logger, get_request_id
 from app.models.batch_test import BatchTestTask
 from app.models.dify_agent import DifyAgent
 from app.core.seekdb_client import seekdb_client
@@ -306,7 +306,8 @@ class BatchTestService:
             "collection_name": collection_name,
             "dify_agent_id": dify_agent_id,
             "total_rows": total_rows,
-            "created_at": datetime.now().strftime(settings.DATETIME_FORMAT)
+            "created_at": datetime.now().strftime(settings.DATETIME_FORMAT),
+            "request_id": get_request_id()  # 传递 request_id 到消费者
         }
 
         producer = get_kafka_producer()
@@ -662,17 +663,20 @@ class BatchTestService:
                     "completed_at": metadata.get("completed_at", ""),
                 }
 
-                # 添加原始列数据
+                # 添加原始输入列数据（只保留第一层 col_ 前缀的字段，避免重复）
                 for key, value in metadata.items():
-                    if key.startswith("col_"):
+                    if key.startswith("col_") and not key.startswith("col_col_"):
                         col_name = key[4:]  # 去掉 col_ 前缀
                         row[col_name] = value
 
-                # 添加 Dify 返回的字段
+                # 添加 Dify 返回的字段（从 answer 解析展平后的字段）
                 for key, value in metadata.items():
                     if key not in ["task_id", "row_index", "version_no", "dify_agent_id",
                                    "status", "started_at", "completed_at", "execution_time_ms",
                                    "error_msg", "query"] and not key.startswith("col_"):
+                        # 跳过内部字段和嵌套字段
+                        if key in ["code", "message", "data", "answer"]:
+                            continue
                         # 处理时间戳字段，转换为可读格式
                         if key in ["created_at"] and isinstance(value, (int, float)):
                             try:
