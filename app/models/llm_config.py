@@ -40,6 +40,7 @@ class LLMConfig(BaseModel, TimestampMixin):
     api_base = fields.CharField(max_length=255, default="", description="API Base URL")
     timeout = fields.IntField(default=60, description="超时时间(秒)")
     capabilities = fields.JSONField(default=dict, description="结构化输出方法能力配置")
+    gateway_model_id = fields.CharField(max_length=64, default="", description="LiteLLM网关中的模型ID", index=True)
     is_active = fields.BooleanField(default=True, description="是否启用", index=True)
     is_default = fields.BooleanField(default=False, description="是否为默认配置", index=True)
     description = fields.TextField(default="", description="配置描述")
@@ -102,6 +103,7 @@ class LLMConfig(BaseModel, TimestampMixin):
             "api_base": self.api_base,
             "timeout": self.timeout,
             "capabilities": self.capabilities,
+            "gateway_model_id": self.gateway_model_id,
             "is_active": self.is_active,
             "is_default": self.is_default,
             "description": self.description,

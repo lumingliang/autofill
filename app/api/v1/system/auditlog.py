@@ -32,7 +32,6 @@ async def get_audit_log_list(
     summary: str = Query("", description="接口描述"),
     path: str = Query("", description="请求路径"),
     status: int = Query(None, description="状态码"),
-    tenant_id: int = Query(None, description="租户ID（仅超级管理员可见）"),
     start_time: Optional[datetime] = Query(None, description="开始时间"),
     end_time: Optional[datetime] = Query(None, description="结束时间"),
 ):
@@ -42,9 +41,6 @@ async def get_audit_log_list(
     权限：所有登录用户可查看，租户过滤自动应用
     认证：已在中间件处理
     """
-    # 从上下文获取当前用户
-    current_user = Ctx.get_user()
-
     # 调用 Service 层处理业务逻辑
     total, audit_log_objs = await audit_log_service.list_audit_logs(
         page=page,
@@ -55,10 +51,8 @@ async def get_audit_log_list(
         summary=summary,
         path=path,
         status=status,
-        tenant_id=tenant_id,
         start_time=start_time,
-        end_time=end_time,
-        current_user=current_user
+        end_time=end_time
     )
 
     # 转换数据

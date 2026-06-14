@@ -29,9 +29,11 @@ from .system.tenant_repository import tenant_repository
 from .system.user_repository import user_repository
 from .system.user_role_repository import user_role_repository
 from .system.user_tenant_repository import user_tenant_repository
+from .system.audit_log_repository import audit_log_repository
 
 __all__ = [
     "api_repository",
+    "audit_log_repository",
     "BaseRepository",
     "dept_closure_repository",
     "dept_repository",

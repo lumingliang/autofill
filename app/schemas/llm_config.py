@@ -42,6 +42,7 @@ class LLMConfigOut(BaseModel):
     api_base: str = ""
     timeout: int = 60
     capabilities: Dict[str, Any] = {}
+    gateway_model_id: str = ""
     is_active: bool = True
     is_default: bool = False
     description: str = ""
@@ -63,11 +64,6 @@ class LLMConfigListRequest(BaseModel):
 
 class LLMConfigTestRequest(BaseModel):
     id: int = Field(..., description="配置ID")
-
-
-class LLMConfigResetMethodsRequest(BaseModel):
-    id: int = Field(..., description="配置ID")
-    methods: List[str] = Field(default=[], description="指定重置的方法列表，不传则重置所有")
 
 
 class LLMProvider(BaseModel):

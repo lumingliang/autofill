@@ -93,7 +93,6 @@
             <a-button type="link" size="small" @click="handleTest(record)">测试</a-button>
             <a-button v-permission="'post/api/v1/ai/llm_config/update'" type="link" size="small"
               @click="handleEdit(record)">编辑</a-button>
-            <a-button type="link" size="small" @click="handleMethods(record)">方法</a-button>
             <a-popconfirm title="确定删除该配置吗？" @confirm="handleDelete(record)">
               <a-button v-permission="'delete/api/v1/ai/llm_config/delete'" type="link" danger
                 size="small">删除</a-button>
@@ -272,35 +271,7 @@
       </a-spin>
     </a-modal>
 
-    <!-- 方法状态弹窗 -->
-    <a-modal v-model:open="methodsModalVisible" title="结构化输出方法状态" :footer="null" width="700px">
-      <a-spin :spinning="methodsLoading">
-        <div v-if="methodsData" class="methods-status">
-          <a-table :columns="methodsColumns" :data-source="methodsList" :pagination="false" size="small">
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'supported'">
-                <a-tag :color="record.supported ? 'success' : 'error'">
-                  {{ record.supported ? '支持' : '不支持' }}
-                </a-tag>
-              </template>
-              <template v-if="column.key === 'failed_count'">
-                <a-badge :count="record.failed_count"
-                  :number-style="{ backgroundColor: record.failed_count > 0 ? '#ff4d4f' : '#52c41a' }" />
-              </template>
-              <template v-if="column.key === 'last_error'">
-                <a-tooltip v-if="record.last_error" :title="record.last_error">
-                  <span class="error-text">{{ record.last_error.slice(0, 20) }}...</span>
-                </a-tooltip>
-                <span v-else>-</span>
-              </template>
-            </template>
-          </a-table>
-          <div class="methods-actions">
-            <a-button type="primary" @click="handleResetMethods">重置所有方法</a-button>
-          </div>
-        </div>
-      </a-spin>
-    </a-modal>
+
   </div>
 </template>
 
@@ -370,16 +341,8 @@ const columns = computed(() => [
   { title: '默认', key: 'is_default', width: 80, align: 'center' },
   { title: '状态', key: 'is_active', width: 80, align: 'center' },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
-  { title: '操作', key: 'action', width: 220, fixed: 'right' },
+  { title: '操作', key: 'action', width: 180, fixed: 'right' },
 ])
-
-const methodsColumns = [
-  { title: '方法名称', dataIndex: 'name', key: 'name', width: 180 },
-  { title: '支持状态', key: 'supported', width: 100, align: 'center' },
-  { title: '失败次数', key: 'failed_count', width: 100, align: 'center' },
-  { title: '最后错误', key: 'last_error', ellipsis: true },
-  { title: '最后尝试', dataIndex: 'last_attempt', key: 'last_attempt', width: 180 },
-]
 
 const filterItemCount = computed(() => 3)
 
@@ -398,22 +361,6 @@ const testError = ref('')
 const gatewayModalVisible = ref(false)
 const gatewayLoading = ref(false)
 const gatewayStatus = ref<any>(null)
-
-// 方法状态弹窗
-const methodsModalVisible = ref(false)
-const methodsLoading = ref(false)
-const methodsData = ref<any>(null)
-const currentConfigId = ref<number | null>(null)
-
-const methodsList = computed(() => {
-  if (!methodsData.value?.capabilities?.structured_output_methods) return []
-  const methods = methodsData.value.capabilities.structured_output_methods
-  return Object.entries(methods).map(([key, value]: [string, any]) => ({
-    key,
-    name: getMethodName(key),
-    ...value,
-  }))
-})
 
 // 网关模型列表弹窗
 const gatewayModelsModalVisible = ref(false)
@@ -436,18 +383,6 @@ const syncToGatewayResult = ref<any>(null)
 const syncFromGatewayModalVisible = ref(false)
 const syncFromGatewayLoading = ref(false)
 const syncFromGatewayResult = ref<any>(null)
-
-function getMethodName(key: string): string {
-  const names: Record<string, string> = {
-    with_structured_output: 'with_structured_output (官方FC)',
-    bind_tools_stream: 'bind_tools_stream (流式FC)',
-    custom_fc_non_stream: 'custom_fc_non_stream (自定义FC非流式)',
-    custom_fc_stream: 'custom_fc_stream (自定义FC流式)',
-    pydantic_parser: 'pydantic_parser (Pydantic解析)',
-    json_parser: 'json_parser (JSON解析)',
-  }
-  return names[key] || key
-}
 
 function getProviderLabel(value: string): string {
   const provider = providers.value.find(p => p.value === value)
@@ -578,34 +513,6 @@ async function handleGatewayStatus() {
   }
 }
 
-async function handleMethods(record: any) {
-  currentConfigId.value = record.id
-  methodsModalVisible.value = true
-  methodsLoading.value = true
-  methodsData.value = null
-  try {
-    const res: any = await api.getLLMMethods({ id: record.id })
-    if (res.code === 200) {
-      methodsData.value = res.data
-    }
-  } finally {
-    methodsLoading.value = false
-  }
-}
-
-async function handleResetMethods() {
-  if (!currentConfigId.value) return
-  try {
-    const res: any = await api.resetLLMMethods({ id: currentConfigId.value })
-    if (res.code === 200) {
-      window.$message?.success('重置成功')
-      methodsData.value = res.data
-    }
-  } catch (error) {
-    console.error('重置失败', error)
-  }
-}
-
 // 同步到网关
 function handleSyncToGateway() {
   syncToGatewayModalVisible.value = true
@@ -707,15 +614,6 @@ onMounted(loadData)
 
 <style scoped lang="less">
 .llm-config-page {}
-
-.methods-actions {
-  margin-top: 16px;
-  text-align: right;
-}
-
-.error-text {
-  color: #ff4d4f;
-}
 
 .sync-actions {
   padding: 16px 0;

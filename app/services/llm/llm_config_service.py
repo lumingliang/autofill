@@ -240,42 +240,6 @@ class LLMConfigService:
         """获取默认配置"""
         return await llm_config_repository.get_default_config()
 
-    @atomic()
-    async def reset_method_status(
-        self,
-        id: int,
-        methods: Optional[List[str]] = None
-    ) -> LLMConfig:
-        """
-        重置模型方法状态
-
-        Args:
-            id: 配置ID
-            methods: 要重置的方法列表，None表示重置所有
-
-        Returns:
-            LLMConfig: 更新后的配置
-        """
-        config = await self.get_by_id(id)
-        capabilities = config.capabilities or llm_config_repository.get_default_capabilities()
-        structured_methods = capabilities.get("structured_output_methods", {})
-
-        if methods:
-            # 重置指定方法
-            for method in methods:
-                if method in structured_methods:
-                    structured_methods[method] = {
-                        "supported": True,
-                        "failed_count": 0,
-                        "last_error": None,
-                        "last_attempt": None
-                    }
-        else:
-            # 重置所有方法
-            capabilities = llm_config_repository.get_default_capabilities()
-
-        return await llm_config_repository.update_capabilities(id, capabilities)
-
     async def test_config(self, config_id: int) -> Dict[str, Any]:
         """
         测试配置连通性

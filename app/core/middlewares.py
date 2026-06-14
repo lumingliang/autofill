@@ -14,7 +14,7 @@ from app.core.ctx import Ctx
 from app.core.dependency import AuthControl
 from app.log import logger, set_request_id, set_tenant_id, get_caller_location, is_request_logged, set_request_logged
 from app.models.admin import AuditLog, User
-from app.repositories import api_repository, user_role_repository, role_api_repository, user_tenant_repository
+from app.repositories import api_repository, user_role_repository, role_api_repository, user_tenant_repository, audit_log_repository
 from app.services.permission_cache_service import permission_cache_service
 from app.settings import API_V1_PREFIX, OPEN_API_PREFIX
 
@@ -539,18 +539,17 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
 
             args = await self.get_request_args(request, request_body)
 
-            audit_log = AuditLog(
-                user_id=user.id if user else 0,
-                username=user.username if user else "anonymous",
-                module=request.url.path.split("/")[3] if len(request.url.path.split("/")) > 3 else "",
-                summary=f"{request.method} {request.url.path}",
-                method=request.method,
-                path=request.url.path,
-                status_code=response.status_code,
-                response_time=0,
-                request_args=args,
-            )
-            await audit_log.save()
+            await audit_log_repository.create({
+                "user_id": user.id if user else 0,
+                "username": user.username if user else "anonymous",
+                "module": request.url.path.split("/")[3] if len(request.url.path.split("/")) > 3 else "",
+                "summary": f"{request.method} {request.url.path}",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "response_time": 0,
+                "request_args": args,
+            })
 
         except Exception:
             pass

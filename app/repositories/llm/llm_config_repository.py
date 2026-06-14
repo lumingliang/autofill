@@ -104,6 +104,19 @@ class LLMConfigRepository(BaseRepository[LLMConfig]):
         """
         return await self.update(config_id, {"capabilities": capabilities})
 
+    async def update_gateway_model_id(self, config_id: int, gateway_model_id: str) -> Optional[LLMConfig]:
+        """
+        更新配置的网关模型ID
+
+        Args:
+            config_id: 配置ID
+            gateway_model_id: LiteLLM网关中的模型ID
+
+        Returns:
+            更新后的 LLMConfig 对象或 None
+        """
+        return await self.update(config_id, {"gateway_model_id": gateway_model_id})
+
     def get_default_capabilities(self) -> dict:
         """
         获取默认能力配置

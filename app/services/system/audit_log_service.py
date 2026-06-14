@@ -45,10 +45,8 @@ class AuditLogService:
         summary: str = "",
         path: str = "",
         status: int = None,
-        tenant_id: int = None,
         start_time: datetime = None,
-        end_time: datetime = None,
-        current_user=None
+        end_time: datetime = None
     ) -> Tuple[int, List[AuditLog]]:
         """
         查询审计日志列表
@@ -62,10 +60,8 @@ class AuditLogService:
             summary: 接口描述模糊查询
             path: 请求路径模糊查询
             status: 状态码
-            tenant_id: 租户ID（仅超级管理员可指定）
             start_time: 开始时间
             end_time: 结束时间
-            current_user: 当前用户对象
 
         Returns:
             Tuple[int, List[AuditLog]]: (总数, 日志列表)
@@ -101,7 +97,7 @@ class AuditLogService:
 
         return total, logs
 
-    def _get_effective_tenant_id(self, current_user, request_tenant_id: int) -> int:
+    def _get_effective_tenant_id(self, request_tenant_id: int) -> int:
         """
         获取有效的租户ID
 
@@ -109,12 +105,12 @@ class AuditLogService:
         - 普通用户：使用JWT token中的当前租户ID
 
         Args:
-            current_user: 当前用户对象
             request_tenant_id: 请求中指定的租户ID
 
         Returns:
             int: 有效的租户ID
         """
+        current_user = Ctx.get_user()
         if is_superuser(current_user):
             return request_tenant_id if request_tenant_id is not None else 0
         else:

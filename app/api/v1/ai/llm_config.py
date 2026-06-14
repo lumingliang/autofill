@@ -22,7 +22,6 @@ from app.repositories.llm.llm_provider_repository import llm_provider_repository
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.llm_config import (
     LLMConfigCreate,
-    LLMConfigResetMethodsRequest,
     LLMConfigTestRequest,
     LLMConfigUpdate,
 )
@@ -177,32 +176,6 @@ async def get_gateway_status():
             "error": str(e),
             "gateway_url": settings.LITELLM_CONFIG.get("base_url", "http://localhost:4000")
         })
-
-
-@llm_config_router.post("/llm_config/reset_methods", summary="重置模型方法状态")
-async def reset_llm_methods(
-    request: LLMConfigResetMethodsRequest,
-):
-    """重置模型方法状态"""
-    updated = await llm_config_service.reset_method_status(
-        id=request.id,
-        methods=request.methods
-    )
-    return Success(data=await updated.to_dict())
-
-
-@llm_config_router.get("/llm_config/methods", summary="获取模型方法状态")
-async def get_llm_methods(
-    id: int = Query(..., description="配置ID"),
-):
-    """获取模型方法状态"""
-    config = await llm_config_service.get_by_id(id)
-
-    return Success(data={
-        "model_id": config.id,
-        "model_name": config.name,
-        "capabilities": config.capabilities
-    })
 
 
 @llm_config_router.post("/llm_config/sync_to_gateway", summary="同步配置到 LiteLLM 网关")

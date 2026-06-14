@@ -34,12 +34,13 @@ class LiteLLMSyncService:
             return False
         return "****" in api_key or "••••" in api_key or api_key.count("•") > 3
 
-    def _build_model_payload(self, config: LLMConfig) -> Dict[str, Any]:
+    def _build_model_payload(self, config: LLMConfig, include_model_id: bool = False) -> Dict[str, Any]:
         """
         构建 LiteLLM API 请求体
 
         Args:
             config: LLM 配置对象
+            include_model_id: 是否包含 model_info.id（用于更新操作）
 
         Returns:
             API 请求体字典
@@ -64,21 +65,28 @@ class LiteLLMSyncService:
         if config.api_base:
             params["api_base"] = config.api_base
 
+        # 构建 model_info
+        model_info = {
+            "mode": "chat",
+            "max_tokens": 4096,
+            "supports_vision": False,
+            "supports_function_calling": True
+        }
+
+        # 更新操作需要包含 model_info.id
+        if include_model_id and config.gateway_model_id:
+            model_info["id"] = config.gateway_model_id
+
         # 构建请求体
         payload = {
             "model_name": config.name,
             "litellm_params": params,
-            "model_info": {
-                "mode": "chat",
-                "max_tokens": 4096,
-                "supports_vision": False,
-                "supports_function_calling": True
-            }
+            "model_info": model_info
         }
 
         return payload
 
-    async def add_model(self, config: LLMConfig) -> bool:
+    async def add_model(self, config: LLMConfig) -> tuple[bool, str]:
         """
         通过 API 添加新模型到 LiteLLM
 
@@ -86,7 +94,7 @@ class LiteLLMSyncService:
             config: LLM 配置对象
 
         Returns:
-            bool: 是否成功
+            tuple[bool, str]: (是否成功, 网关模型ID)
         """
         try:
             payload = self._build_model_payload(config)
@@ -100,15 +108,19 @@ class LiteLLMSyncService:
                 )
                 response.raise_for_status()
 
-            logger.info(f"Successfully added model '{config.name}' to LiteLLM via API")
-            return True
+            result = response.json()
+            # 从响应中提取 model_id
+            model_id = result.get("model_id", "") or result.get("id", "")
+
+            logger.info(f"Successfully added model '{config.name}' to LiteLLM via API, model_id={model_id}")
+            return True, model_id
 
         except httpx.HTTPStatusError as e:
             logger.error(f"Failed to add model '{config.name}' to LiteLLM: HTTP {e.response.status_code} - {e.response.text}")
-            return False
+            return False, ""
         except Exception as e:
             logger.error(f"Failed to add model '{config.name}' to LiteLLM: {e}")
-            return False
+            return False, ""
 
     async def update_model(self, config: LLMConfig) -> bool:
         """
@@ -121,7 +133,7 @@ class LiteLLMSyncService:
             bool: 是否成功
         """
         try:
-            payload = self._build_model_payload(config)
+            payload = self._build_model_payload(config, include_model_id=True)
             logger.info(f"Updating model '{config.name}' with payload: {payload}")
 
             async with httpx.AsyncClient() as client:
@@ -141,16 +153,25 @@ class LiteLLMSyncService:
             # 如果模型不存在（404），尝试添加
             if e.response.status_code == 404:
                 logger.warning(f"Model '{config.name}' not found in LiteLLM, trying to add instead")
-                return await self.add_model(config)
+                success, model_id = await self.add_model(config)
+                if success and model_id:
+                    await llm_config_repository.update_gateway_model_id(config.id, model_id)
+                return success
             # 如果模型在 config 文件中（400），需要先通过 /model/new 存储到数据库
             elif e.response.status_code == 400:
                 error_text = e.response.text
                 if "Model in config" in error_text or "Can't edit model" in error_text:
                     logger.warning(f"Model '{config.name}' is in config file, trying to add to DB instead")
-                    return await self.add_model(config)
+                    success, model_id = await self.add_model(config)
+                    if success and model_id:
+                        await llm_config_repository.update_gateway_model_id(config.id, model_id)
+                    return success
                 elif "model not found" in error_text:
                     logger.warning(f"Model '{config.name}' not found in LiteLLM, trying to add instead")
-                    return await self.add_model(config)
+                    success, model_id = await self.add_model(config)
+                    if success and model_id:
+                        await llm_config_repository.update_gateway_model_id(config.id, model_id)
+                    return success
                 else:
                     logger.error(f"Failed to update model '{config.name}' in LiteLLM: HTTP {e.response.status_code} - {error_text}")
                     return False
@@ -198,15 +219,25 @@ class LiteLLMSyncService:
         """
         添加或更新配置到 LiteLLM
 
+        如果数据库中已有 gateway_model_id，则更新现有模型；
+        否则添加新模型并保存返回的 model_id。
+
         Args:
             config: LLM 配置对象
 
         Returns:
             bool: 是否成功
         """
-        # 先尝试更新，如果不存在则添加
-        result = await self.update_model(config)
-        return result
+        if config.gateway_model_id:
+            # 已有 model_id，执行更新
+            return await self.update_model(config)
+        else:
+            # 没有 model_id，添加新模型
+            success, model_id = await self.add_model(config)
+            if success and model_id:
+                # 保存网关返回的 model_id 到数据库
+                await llm_config_repository.update_gateway_model_id(config.id, model_id)
+            return success
 
     async def remove_config(self, model_name: str) -> bool:
         """
