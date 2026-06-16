@@ -67,6 +67,13 @@ class Settings(BaseSettings):
 
     # Dify 配置
     DIFY_TIMEOUT: float = 60.0
+
+    # Agent V2 配置
+    AGENT_MODEL: str = "qwen3.6-plus-2026-04-02"
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = ""
+    AGENT_TEMPERATURE: float = 0.7
+    AGENT_MAX_ITERATIONS: int = 10
     
     # 上传配置
     UPLOAD_DIR: str = "./uploads"

@@ -40,6 +40,11 @@ class OpenAPIAuthMiddleware(BaseHTTPMiddleware):
         "/openapi.json",  # OpenAPI JSON
     ]
 
+    # 使用 AppManagement 认证的路径（覆盖默认的 DifyAgent 认证）
+    APP_AUTH_PATHS: list = [
+        "/agent/v2",  # Agent V2 使用 AppManagement 认证
+    ]
+
     def _is_open_api(self, path: str) -> bool:
         """检查是否是 Open API 路由"""
         return path.startswith(self.OPEN_API_PREFIX)
@@ -73,6 +78,11 @@ class OpenAPIAuthMiddleware(BaseHTTPMiddleware):
         api_key = authorization.replace("Bearer ", "").strip()
 
         # 根据路由前缀选择认证方式
+        # 检查是否使用 AppManagement 认证
+        for app_path in self.APP_AUTH_PATHS:
+            if app_path in path:
+                return await self._authenticate_app(request, call_next, api_key)
+
         if "/agent/" in path:
             # Agent 接口使用 DifyAgent 认证
             return await self._authenticate_agent(request, call_next, api_key)

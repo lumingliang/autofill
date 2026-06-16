@@ -8,6 +8,7 @@
 from fastapi import APIRouter
 
 from .agent import router as agent_router
+from .agent_v2 import router as agent_v2_router
 from .autofill import autofill_open_router
 from .test_exception import router as test_exception_router
 
@@ -17,8 +18,11 @@ open_router = APIRouter(tags=["Open API"])
 # 智能填单开放接口
 open_router.include_router(autofill_open_router)
 
-# Agent 开放接口
+# Agent 开放接口 (V1 - Dify 转发)
 open_router.include_router(agent_router)
+
+# Agent 开放接口 (V2 - 自主决策)
+open_router.include_router(agent_v2_router)
 
 # 异常测试接口（仅用于开发和测试环境）
 open_router.include_router(test_exception_router)
