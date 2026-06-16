@@ -144,8 +144,13 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-master-key}
       DATABASE_URL: postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-litellm123456}@postgres:5432/${POSTGRES_DB:-litellm}
       LOG_LEVEL: ${LITELLM_LOG_LEVEL:-INFO}
+      LITELLM_LOG: ${LITELLM_LOG:-DEBUG}
       STORE_MODEL_IN_DB: "true"
       STORE_PROMPTS_IN_SPEND_LOGS: "true"
+      # 增加数据库中提示词的最大长度限制，防止截断
+      MAX_STRING_LENGTH_PROMPT_IN_DB: "100000"
+      # 时区配置
+      TZ: ${TZ:-Asia/Shanghai}
       # 可选：Redis 配置用于缓存
       REDIS_HOST: ${REDIS_HOST:-}
       REDIS_PORT: ${REDIS_PORT:-6379}
