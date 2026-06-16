@@ -7,7 +7,7 @@ Agent API V2 - 基于 1.json 规范的 Agent 接口
 - 多轮对话
 - 工具调用
 """
-import json
+import traceback
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -16,6 +16,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.schemas.base import Fail, Success
+from app.services.agent.agent_core import get_agent
+from app.services.agent.tool_executor import todo_manager
+from app.log import logger
 
 router = APIRouter()
 
@@ -63,16 +66,20 @@ async def agent_chat_v2(request: AgentChatRequest):
     - stream: 是否流式返回
     - max_iterations: 最大迭代次数
     """
+    conversation_id = request.conversation_id or f"conv_{datetime.now().timestamp()}"
+    
+    logger.info({
+        "event": "agent_chat_start",
+        "conversation_id": conversation_id,
+        "user_id": request.user_id,
+        "stream": request.stream,
+        "query": request.query[:200] if request.query else ""
+    })
+    
     try:
-        from app.services.agent.agent_core import get_agent
-        
         agent = get_agent()
         
-        # 生成对话ID
-        conversation_id = request.conversation_id or f"conv_{datetime.now().timestamp()}"
-        
         if request.stream:
-            # 流式响应
             async def event_generator():
                 async for event in agent.chat_stream(
                     query=request.query,
@@ -92,7 +99,6 @@ async def agent_chat_v2(request: AgentChatRequest):
                 }
             )
         else:
-            # 非流式响应
             result = await agent.chat(
                 query=request.query,
                 conversation_id=conversation_id,
@@ -100,12 +106,24 @@ async def agent_chat_v2(request: AgentChatRequest):
                 inputs=request.inputs,
             )
             
+            logger.info({
+                "event": "agent_chat_complete",
+                "conversation_id": conversation_id,
+                "finish_reason": result.get("finish_reason", "stop"),
+                "tool_calls_count": len(result.get("tool_calls", [])),
+                "answer_preview": result.get("answer", "")[:200]
+            })
+            
             return Success(data=result)
             
     except Exception as e:
-        import traceback
         error_detail = traceback.format_exc()
-        print(f"Agent Error: {error_detail}")
+        logger.error({
+            "event": "agent_chat_error",
+            "conversation_id": conversation_id,
+            "error": str(e),
+            "traceback": error_detail
+        })
         return Fail(msg=f"Agent 对话失败: {str(e)}")
 
 
@@ -113,13 +131,22 @@ async def agent_chat_v2(request: AgentChatRequest):
 async def agent_clear_conversation(conversation_id: str):
     """清空指定对话的历史记录"""
     try:
-        from app.services.agent.agent_core import get_agent
-        
         agent = get_agent()
         agent.conversation_manager.clear(conversation_id)
         
+        logger.info({
+            "event": "agent_clear_conversation",
+            "conversation_id": conversation_id,
+            "status": "cleared"
+        })
+        
         return Success(data={"conversation_id": conversation_id, "status": "cleared"})
     except Exception as e:
+        logger.error({
+            "event": "agent_clear_error",
+            "conversation_id": conversation_id,
+            "error": str(e)
+        })
         return Fail(msg=f"清空对话失败: {str(e)}")
 
 
@@ -127,9 +154,19 @@ async def agent_clear_conversation(conversation_id: str):
 async def agent_get_todos(conversation_id: str):
     """获取指定对话的 TODO 列表"""
     try:
-        from app.services.agent.tool_executor import todo_manager
-        
         todos = todo_manager.get_todos(conversation_id)
+        
+        logger.info({
+            "event": "agent_get_todos",
+            "conversation_id": conversation_id,
+            "todos_count": len(todos)
+        })
+        
         return Success(data={"conversation_id": conversation_id, "todos": todos})
     except Exception as e:
+        logger.error({
+            "event": "agent_get_todos_error",
+            "conversation_id": conversation_id,
+            "error": str(e)
+        })
         return Fail(msg=f"获取 TODO 失败: {str(e)}")

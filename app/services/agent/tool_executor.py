@@ -13,6 +13,8 @@
 所有工具都支持 parallel 参数控制并发执行
 """
 
+import glob as glob_module
+import fnmatch
 import json
 import subprocess
 import uuid
@@ -23,21 +25,52 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
 from app.services.agent.skill_loader import load_skill
+from app.log import logger
 
 
-def format_tool_result(status: str, result: dict) -> str:
+def format_tool_result(status: str, result: Any, is_json: bool = True) -> str:
     """格式化工具执行结果 - 与 1.json 规范一致
 
     Args:
         status: 执行状态 (done, error, running)
-        result: 执行结果字典
+        result: 执行结果，可以是字典、字符串或其他类型
+        is_json: 是否将结果格式化为 JSON，默认为 True
 
     Returns:
         格式化的工具结果字符串，包含 <toolcall_status> 和 <toolcall_result> 标签
     """
+    if is_json and isinstance(result, dict):
+        result_str = json.dumps(result, ensure_ascii=False, indent=2)
+    else:
+        result_str = str(result)
+
     return f"""<toolcall_status>{status}</toolcall_status>
 <toolcall_result>
-{json.dumps(result, ensure_ascii=False, indent=2)}
+{result_str}
+</toolcall_result>"""
+
+
+def format_todo_write_result(status: str, todos: List[Dict[str, Any]]) -> str:
+    """格式化 TodoWrite 工具执行结果 - 与 1.json 完全一致
+
+    Args:
+        status: 执行状态 (done, error)
+        todos: 任务列表
+
+    Returns:
+        格式化的 TodoWrite 结果字符串，包含 system-reminder
+    """
+    todos_json = json.dumps(todos, ensure_ascii=False)
+
+    return f"""<toolcall_status>{status}</toolcall_status>
+<toolcall_result>
+Todos have been modified successfully. Ensure you continue to use the todo list to track your progress. Please proceed with your current tasks if applicable
+
+<system-reminder>
+Your todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:
+
+{{"todos":{todos_json}}}.
+</system-reminder>
 </toolcall_result>"""
 
 
@@ -312,8 +345,8 @@ todo_manager = TodoManager()
 async def execute_skill(name: str = None, conversation_id: str = "default", **kwargs) -> str:
     """执行 Skill 工具
 
-    当 Agent 调用 Skill 工具时，会加载对应的 Skill 并激活它。
-    激活后，Skill 的提示词会被添加到对话上下文中。
+    当 Agent 调用 Skill 工具时，加载对应的 Skill 并返回其内容。
+    按照 1.json 规范，Skill 内容直接通过 tool 结果返回给大模型。
 
     Args:
         name: Skill 名称
@@ -321,7 +354,7 @@ async def execute_skill(name: str = None, conversation_id: str = "default", **kw
         **kwargs: 其他可能的参数
 
     Returns:
-        JSON 格式的执行结果
+        格式化的工具结果字符串，包含 Skill 路径和内容
     """
     # 处理可能的参数嵌套情况
     if name is None and 'kwargs' in kwargs:
@@ -339,29 +372,25 @@ async def execute_skill(name: str = None, conversation_id: str = "default", **kw
             "error": "Skill name is required. Please provide the skill name to invoke."
         })
 
-    # 加载并激活 Skill
-    success = skill_executor.activate_skill(conversation_id, name)
+    # 加载 Skill
+    skill_config = load_skill(name)
 
-    if success:
-        skill_config = skill_executor.get_active_skill(conversation_id)
-        return format_tool_result("done", {
-            "type": "skill_activated",
-            "skill_name": name,
-            "skill_description": skill_config["config"].get("description", ""),
-            "message": f"<command-message>The \"{name}\" skill is loading</command-message>\n\nSkill '{name}' has been activated. Following the skill instructions to complete the task."
-        })
+    if skill_config:
+        # 构建 Skill 文件路径
+        skill_path = os.path.join(".trae", "skills", name, "SKILL.md")
+
+        # 按照 1.json 规范，Skill 直接返回 markdown 内容
+        skill_content = skill_config.get("content", "")
+        result_text = f"""**Skill Path:** {skill_path}
+
+{skill_content}"""
+        return format_tool_result("done", result_text, is_json=False)
     else:
-        return format_tool_result("error", {
-            "type": "skill_error",
-            "skill_name": name,
-            "error": f"Failed to load skill: {name}"
-        })
+        return format_tool_result("error", f"Failed to load skill: {name}", is_json=False)
 
 
 async def execute_glob(pattern: str, path: Optional[str] = None, **kwargs) -> str:
     """执行 Glob 工具 - 与 1.json 一致"""
-    import glob as glob_module
-
     search_path = path or os.getcwd()
     full_pattern = os.path.join(search_path, pattern) if not pattern.startswith("/") else pattern
 
@@ -380,7 +409,6 @@ async def execute_glob(pattern: str, path: Optional[str] = None, **kwargs) -> st
 async def execute_ls(path: str, ignore: Optional[List[str]] = None, **kwargs) -> str:
     """执行 LS 工具 - 与 1.json 一致"""
     try:
-        import fnmatch
         items = []
         for item in os.listdir(path):
             # 检查是否被忽略
@@ -462,10 +490,13 @@ async def execute_grep(pattern: str, path: Optional[str] = None, glob: Optional[
 
 
 async def execute_read(file_path: str, limit: int, offset: Optional[int] = None, **kwargs) -> str:
-    """执行 Read 工具 - 与 1.json 一致"""
+    """执行 Read 工具 - 与 1.json 一致
+    
+    返回文件内容（文本格式），与 cat -n 格式一致
+    """
     try:
         if not os.path.exists(file_path):
-            return format_tool_result("error", {"error": f"File not found: {file_path}"})
+            return format_tool_result("error", f"File not found: {file_path}", is_json=False)
 
         with open(file_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -474,17 +505,13 @@ async def execute_read(file_path: str, limit: int, offset: Optional[int] = None,
         end = start + limit
         selected_lines = lines[start:end]
 
-        # 添加行号
+        # 添加行号，与 cat -n 格式一致
         content = "".join(f"{start + i + 1:6}\t{line}" for i, line in enumerate(selected_lines))
 
-        return format_tool_result("done", {
-            "file_path": file_path,
-            "content": content,
-            "total_lines": len(lines),
-            "read_lines": len(selected_lines)
-        })
+        # 返回纯文本内容
+        return format_tool_result("done", content, is_json=False)
     except Exception as e:
-        return format_tool_result("error", {"error": str(e)})
+        return format_tool_result("error", str(e), is_json=False)
 
 
 async def execute_run_command(command: str, cwd: Optional[str] = None, blocking: bool = True,
@@ -502,7 +529,6 @@ async def execute_run_command(command: str, cwd: Optional[str] = None, blocking:
     )
 
     if not blocking and wait_ms_before_async > 0:
-        import asyncio
         await asyncio.sleep(wait_ms_before_async / 1000)
 
     try:
@@ -596,54 +622,29 @@ async def execute_todo_write(todos: List[Dict[str, Any]], merge: bool = False,
         validated_todos = []
         for todo in todos:
             if not isinstance(todo, dict):
-                continue
+                return format_tool_result("error", {
+                    "error": "Each todo must be an object",
+                    "invalid_todo": str(todo)
+                })
 
             validated_todo = {
-                "id": todo.get("id") or str(uuid.uuid4()),
+                "id": todo.get("id", str(uuid.uuid4())),
                 "content": todo.get("content", ""),
                 "status": todo.get("status", "pending"),
                 "priority": todo.get("priority", "medium")
             }
-
-            # 验证状态值
-            if validated_todo["status"] not in ["pending", "in_progress", "completed"]:
-                validated_todo["status"] = "pending"
-
-            # 验证优先级值
-            if validated_todo["priority"] not in ["high", "medium", "low"]:
-                validated_todo["priority"] = "medium"
-
             validated_todos.append(validated_todo)
 
-        # 写入任务列表（使用默认并发数 3）
-        result = todo_manager.write_todos(
-            conversation_id=conversation_id,
-            todos=validated_todos,
-            merge=merge,
-            parallel=3
-        )
+        # 写入任务列表
+        result = todo_manager.write_todos(conversation_id, validated_todos, merge)
 
-        return format_tool_result("done", {
-            "type": "todo_updated",
-            "conversation_id": conversation_id,
-            "todos": result["todos"],
-            "count": result["count"],
-            "stats": {
-                "in_progress": result["in_progress"],
-                "completed": result["completed"],
-                "pending": result["pending"]
-            },
-            "merge": merge
-        })
+        return format_todo_write_result("done", validated_todos)
 
     except Exception as e:
-        return format_tool_result("error", {
-            "error": f"TodoWrite execution failed: {str(e)}"
-        })
+        return format_tool_result("error", {"error": str(e)})
 
 
-# ==================== 工具执行分发器 ====================
-
+# 工具执行器映射
 TOOL_EXECUTORS = {
     "Skill": execute_skill,
     "Glob": execute_glob,
@@ -656,7 +657,7 @@ TOOL_EXECUTORS = {
 
 
 async def execute_tool(tool_name: str, arguments: Dict[str, Any], conversation_id: str = "default") -> str:
-    """执行指定的工具
+    """执行指定工具 - 统一的工具执行入口
 
     Args:
         tool_name: 工具名称
@@ -669,25 +670,129 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any], conversation_i
     executor = TOOL_EXECUTORS.get(tool_name)
 
     if not executor:
+        logger.error({
+            "event": "tool_execute_unknown",
+            "tool_name": tool_name
+        })
         return format_tool_result("error", {
             "error": f"Unknown tool: {tool_name}"
         })
 
     try:
+        # 确保 arguments 是字典
+        if not isinstance(arguments, dict):
+            logger.error({
+                "event": "tool_execute_invalid_args",
+                "tool_name": tool_name,
+                "args_type": type(arguments).__name__,
+                "arguments": str(arguments)
+            })
+            return format_tool_result("error", {
+                "error": f"Invalid arguments type for {tool_name}: expected dict, got {type(arguments).__name__}",
+                "hint": f"Please provide valid JSON arguments for the {tool_name} tool.",
+                "received_arguments": str(arguments)
+            })
+
+        # 记录接收到的参数
+        logger.info({
+            "event": "tool_execute_start",
+            "tool_name": tool_name,
+            "conversation_id": conversation_id,
+            "arguments": arguments
+        })
+
         # 特殊处理需要 conversation_id 的工具
         if tool_name in ["Skill", "TodoWrite"]:
             arguments["conversation_id"] = conversation_id
 
         # 对于 Skill 工具，确保 name 参数存在
-        if tool_name == "Skill" and "name" not in arguments:
-            if "skill_name" in arguments:
-                arguments["name"] = arguments["skill_name"]
-            elif "skill" in arguments:
-                arguments["name"] = arguments["skill"]
+        if tool_name == "Skill":
+            if "name" not in arguments or not arguments["name"]:
+                logger.warning({
+                    "event": "tool_execute_skill_missing_name",
+                    "conversation_id": conversation_id,
+                    "received_arguments": arguments
+                })
+                return format_tool_result("error", {
+                    "error": "Skill name is required",
+                    "hint": "Please provide the skill name in the 'name' parameter. Example: {\"name\": \"autofill-form\"}",
+                    "received_arguments": str(arguments)
+                })
+
+        # 对于 RunCommand 工具，确保 command 参数存在
+        if tool_name == "RunCommand":
+            if "command" not in arguments or not arguments["command"]:
+                logger.warning({
+                    "event": "tool_execute_runcommand_missing_command",
+                    "conversation_id": conversation_id,
+                    "received_arguments": arguments
+                })
+                return format_tool_result("error", {
+                    "error": "Command is required",
+                    "hint": "Please provide the command to execute in the 'command' parameter. Example: {\"command\": \"python script.py\", \"blocking\": true, \"requires_approval\": false}",
+                    "received_arguments": str(arguments),
+                    "available_keys": list(arguments.keys()) if arguments else []
+                })
+            # 确保必需的布尔参数存在
+            if "blocking" not in arguments:
+                arguments["blocking"] = True
+            if "requires_approval" not in arguments:
+                arguments["requires_approval"] = False
+
+        # 对于 TodoWrite 工具，确保 todos 参数存在
+        if tool_name == "TodoWrite":
+            if "todos" not in arguments or not arguments["todos"]:
+                logger.warning({
+                    "event": "tool_execute_todowrite_missing_todos",
+                    "conversation_id": conversation_id
+                })
+                return format_tool_result("error", {
+                    "error": "Todos list is required",
+                    "hint": "Please provide a list of todos in the 'todos' parameter. Example: {\"todos\": [{\"id\": \"1\", \"content\": \"Task 1\", \"status\": \"pending\", \"priority\": \"high\"}], \"merge\": false}",
+                    "received_arguments": str(arguments)
+                })
+            if "merge" not in arguments:
+                arguments["merge"] = False
 
         result = await executor(**arguments)
+        
+        logger.info({
+            "event": "tool_execute_complete",
+            "tool_name": tool_name,
+            "conversation_id": conversation_id,
+            "result_preview": result[:200] if result else ""
+        })
+        
         return result
-    except Exception as e:
+    except TypeError as e:
+        # 处理参数缺失错误
+        error_msg = str(e)
+        logger.error({
+            "event": "tool_execute_type_error",
+            "tool_name": tool_name,
+            "conversation_id": conversation_id,
+            "error": error_msg,
+            "received_arguments": str(arguments) if 'arguments' in dir() else "not available"
+        })
+        if "missing" in error_msg and "required" in error_msg:
+            return format_tool_result("error", {
+                "error": f"Missing required parameters for {tool_name}: {error_msg}",
+                "hint": f"Please check the tool schema and provide all required parameters for {tool_name}.",
+                "received_arguments": str(arguments) if 'arguments' in dir() else "not available"
+            })
         return format_tool_result("error", {
-            "error": f"Tool execution failed: {str(e)}"
+            "error": f"Tool execution failed: {error_msg}",
+            "received_arguments": str(arguments) if 'arguments' in dir() else "not available"
+        })
+    except Exception as e:
+        logger.error({
+            "event": "tool_execute_exception",
+            "tool_name": tool_name,
+            "conversation_id": conversation_id,
+            "error": str(e),
+            "received_arguments": str(arguments) if 'arguments' in dir() else "not available"
+        })
+        return format_tool_result("error", {
+            "error": f"Tool execution failed: {str(e)}",
+            "received_arguments": str(arguments) if 'arguments' in dir() else "not available"
         })

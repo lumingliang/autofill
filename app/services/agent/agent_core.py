@@ -4,16 +4,19 @@ Agent 核心模块 - 实现基于 1.json 规范的 Agent 系统
 核心功能：
 1. 多轮对话管理 - 严格遵循 1.json 消息格式
 2. 工具调用和执行
-3. Skill 加载和激活
+3. Skill 加载（通过工具结果返回）
 4. 流式响应
 
 消息格式规范：
 - 用户消息使用复合消息数组格式
 - system-reminder 在 user_input 前后都有
-- Skill 激活后将内容注入对话上下文
+- Skill 内容通过 tool 结果返回给大模型
 """
 import json
 import asyncio
+import platform
+import toml
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, AsyncGenerator, Union
 from datetime import datetime
@@ -27,10 +30,13 @@ from langchain_core.messages import (
     BaseMessage,
 )
 from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, create_model, Field
 
 from app.services.agent.system_prompt import get_system_prompt
 from app.services.agent.tool_definitions import get_tool_definitions
-from app.services.agent.tool_executor import execute_tool, skill_executor
+from app.services.agent.tool_executor import execute_tool
+from app.services.agent.message_builder import get_message_builder, EnvInfo, TerminalInfo
+from app.log import logger
 
 
 # ==================== 对话上下文管理 ====================
@@ -124,11 +130,15 @@ class TraeAgent:
             # 创建一个包装函数，使用闭包捕获 tool_name
             def create_wrapper(name):
                 async def tool_wrapper(**kwargs):
+                    logger.debug({
+                        "event": "tool_wrapper_received",
+                        "tool_name": name,
+                        "arguments": kwargs
+                    })
                     return await execute_tool(name, kwargs)
                 return tool_wrapper
 
             # 从 Pydantic schema 创建 args_schema
-            from pydantic import BaseModel, create_model
             parameters = func.get("parameters", {})
 
             # 创建动态 Pydantic 模型作为 args_schema
@@ -161,15 +171,14 @@ class TraeAgent:
                     if prop_name not in required:
                         from typing import Optional
                         py_type = Optional[py_type]
-                        default = None
+                        fields[prop_name] = (py_type, Field(default=None, description=prop_def.get("description", "")))
                     else:
-                        default = ...
-
-                    fields[prop_name] = (py_type, default)
+                        # 必填字段不使用 default
+                        fields[prop_name] = (py_type, Field(description=prop_def.get("description", "")))
 
                 # 创建 Pydantic 模型
                 if fields:
-                    args_schema = create_model(f"{tool_name}Input", **fields)
+                    args_schema = create_model(f"{tool_name}Input", **fields, __config__={'extra': 'forbid'})
                 else:
                     args_schema = None
             else:
@@ -180,6 +189,7 @@ class TraeAgent:
                 description=func["description"],
                 func=create_wrapper(tool_name),
                 args_schema=args_schema,
+                coroutine=create_wrapper(tool_name),
             )
             tools.append(tool)
         return tools
@@ -196,12 +206,9 @@ class TraeAgent:
         Returns:
             格式化的消息数组，每个元素是 {"type": "text", "text": "..."}
         """
-        from app.services.agent.message_builder import get_message_builder, EnvInfo, TerminalInfo
-
         builder = get_message_builder()
 
         # 设置环境信息
-        import platform
         env_info = EnvInfo(
             primary_working_directory="/Users/lu/code/code/py/autofill",
             working_directories=["/Users/lu/code/code/py/autofill"],
@@ -221,37 +228,7 @@ class TraeAgent:
         # 构建用户消息
         return builder.build_user_message(query, inputs=inputs)
 
-    def _inject_skill_prompt(self, conversation_id: str, history: List[BaseMessage]) -> bool:
-        """注入 Skill 提示词到对话历史
 
-        当 Skill 被激活后，将其内容作为 AI 消息注入对话上下文，
-        模拟 "skill's prompt will expand" 的效果。
-
-        Args:
-            conversation_id: 对话ID
-            history: 对话历史列表
-
-        Returns:
-            是否成功注入
-        """
-        if not skill_executor.is_skill_active(conversation_id):
-            return False
-
-        skill_prompt = skill_executor.get_skill_system_prompt(conversation_id)
-        if not skill_prompt:
-            return False
-
-        # 检查是否已经注入过（避免重复）
-        for msg in history:
-            if isinstance(msg, AIMessage) and "自动填单 Skill" in msg.content:
-                return False
-
-        # 将 Skill 内容作为 AI 消息注入
-        skill_expansion_msg = f"""<command-message>The "autofill-form" skill is loading</command-message>
-
-{skill_prompt}"""
-        history.append(AIMessage(content=skill_expansion_msg))
-        return True
 
     async def chat(
         self,
@@ -297,10 +274,30 @@ class TraeAgent:
         # 多轮对话循环
         final_response = ""
         tool_calls_executed = []
+        finish_reason = "max_iterations"
 
         for iteration in range(self.max_iterations):
+            logger.debug({
+                "event": "agent_iteration_start",
+                "conversation_id": conversation_id,
+                "iteration": iteration + 1,
+                "max_iterations": self.max_iterations,
+                "history_message_count": len(history)
+            })
+
             # 调用 LLM
             response = await llm_with_tools.ainvoke(history)
+
+            # 记录 LLM 返回信息
+            logger.debug({
+                "event": "agent_llm_response",
+                "conversation_id": conversation_id,
+                "iteration": iteration + 1,
+                "content_preview": response.content[:200] if response.content else "(empty)",
+                "has_tool_calls": bool(response.tool_calls),
+                "tool_calls_count": len(response.tool_calls) if response.tool_calls else 0,
+                "tool_calls": [{"name": tc.get("name"), "args": tc.get("args")} for tc in response.tool_calls] if response.tool_calls else []
+            })
 
             # 添加 AI 消息到历史
             history.append(response)
@@ -312,6 +309,17 @@ class TraeAgent:
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
                     tool_id = tool_call.get("id", f"call_{iteration}")
+
+                    # 详细记录工具调用信息
+                    logger.info({
+                        "event": "agent_tool_call",
+                        "conversation_id": conversation_id,
+                        "iteration": iteration + 1,
+                        "tool_name": tool_name,
+                        "tool_id": tool_id,
+                        "args_type": type(tool_args).__name__,
+                        "args": tool_args
+                    })
 
                     # 执行工具
                     try:
@@ -329,15 +337,6 @@ class TraeAgent:
                             tool_call_id=tool_id,
                             name=tool_name
                         ))
-
-                        # 如果是 Skill 工具，注入 Skill 提示词到上下文
-                        if tool_name == "Skill":
-                            try:
-                                result_data = json.loads(tool_result)
-                                if result_data.get("type") == "skill_activated":
-                                    self._inject_skill_prompt(conversation_id, history)
-                            except json.JSONDecodeError:
-                                pass
                     except Exception as e:
                         error_msg = f"工具执行失败: {str(e)}"
                         history.append(ToolMessage(
@@ -350,14 +349,28 @@ class TraeAgent:
 
             # 没有工具调用，任务完成
             final_response = response.content
+            finish_reason = "stop"
+            logger.debug({
+                "event": "agent_chat_complete",
+                "conversation_id": conversation_id,
+                "finish_reason": "stop",
+                "iterations_used": iteration + 1
+            })
             break
+
+        if finish_reason == "max_iterations":
+            logger.warning({
+                "event": "agent_max_iterations_reached",
+                "conversation_id": conversation_id,
+                "max_iterations": self.max_iterations
+            })
 
         # 构建返回结果
         result = {
             "answer": final_response,
             "conversation_id": conversation_id,
             "tool_calls": tool_calls_executed,
-            "finish_reason": "stop" if final_response else "max_iterations"
+            "finish_reason": finish_reason
         }
 
         # 添加 reasoning_content（如果存在）
@@ -493,10 +506,6 @@ def get_agent() -> TraeAgent:
     """获取全局 Agent 实例 - 从 config.toml 加载配置"""
     global _agent_instance
     if _agent_instance is None:
-        # 从 config.toml 加载配置
-        import toml
-        import os
-
         # 从当前文件位置计算项目根目录
         current_file = Path(__file__).resolve()
         project_root = current_file.parent.parent.parent.parent
@@ -510,16 +519,22 @@ def get_agent() -> TraeAgent:
                 if "agent" in config:
                     agent_config = config["agent"]
             except Exception as e:
-                print(f"Warning: Failed to load agent config from config.toml: {e}")
+                logger.warning({
+                    "event": "agent_config_load_failed",
+                    "config_path": config_path,
+                    "error": str(e)
+                })
 
         # 从配置读取，如果没有则使用默认值
         model = agent_config.get("model", "qwen3.6-plus-2026-04-02")
         api_key = agent_config.get("api_key", "")
         base_url = agent_config.get("base_url", "https://api.openai.com/v1")
+        max_iterations = agent_config.get("max_iterations", 10)
 
         _agent_instance = TraeAgent(
             model=model,
             api_key=api_key,
             base_url=base_url,
+            max_iterations=max_iterations,
         )
     return _agent_instance

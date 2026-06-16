@@ -10,6 +10,8 @@ import json
 from typing import Dict, Any, Optional
 from pathlib import Path
 
+from app.log import logger
+
 
 class SkillLoader:
     """Skill 加载器"""
@@ -43,6 +45,11 @@ class SkillLoader:
         skill_path = os.path.join(self.skills_base_path, skill_name, "SKILL.md")
         
         if not os.path.exists(skill_path):
+            logger.warning({
+                "event": "skill_load_not_found",
+                "skill_name": skill_name,
+                "skill_path": skill_path
+            })
             return None
         
         try:
@@ -53,10 +60,21 @@ class SkillLoader:
             skill_config = self._parse_skill_md(content, skill_name)
             self._loaded_skills[skill_name] = skill_config
             
+            logger.info({
+                "event": "skill_load_success",
+                "skill_name": skill_name,
+                "skill_path": skill_path
+            })
+            
             return skill_config
             
         except Exception as e:
-            print(f"加载 Skill {skill_name} 失败: {e}")
+            logger.error({
+                "event": "skill_load_failed",
+                "skill_name": skill_name,
+                "skill_path": skill_path,
+                "error": str(e)
+            })
             return None
     
     def _parse_skill_md(self, content: str, skill_name: str) -> Dict[str, Any]:
@@ -112,6 +130,10 @@ class SkillLoader:
         skills = []
         
         if not os.path.exists(self.skills_base_path):
+            logger.warning({
+                "event": "skill_list_no_directory",
+                "skills_base_path": self.skills_base_path
+            })
             return skills
         
         for item in os.listdir(self.skills_base_path):
@@ -125,6 +147,12 @@ class SkillLoader:
                         "name": skill_config["name"],
                         "description": skill_config["description"]
                     })
+        
+        logger.info({
+            "event": "skill_list_complete",
+            "skills_count": len(skills),
+            "skills": [s["name"] for s in skills]
+        })
         
         return skills
 
