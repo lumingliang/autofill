@@ -608,15 +608,22 @@ async def execute_todo_write(todos: List[Dict[str, Any]], merge: bool = False,
     """
     try:
         # 验证任务数量
-        if not todos or len(todos) < 3:
+        # merge=false 时要求至少 3 个（新建完整计划）
+        # merge=true 时允许至少 1 个（局部更新状态）
+        min_items = 1 if merge else 3
+        if not todos or len(todos) < min_items:
             return format_tool_result("error", {
-                "error": "At least 3 todos are required",
-                "min_items": 3,
+                "error": f"At least {min_items} todos are required",
+                "min_items": min_items,
                 "provided": len(todos) if todos else 0
             })
 
         if len(todos) > 10:
-            todos = todos[:10]
+            return format_tool_result("error", {
+                "error": "At most 10 todos are allowed",
+                "max_items": 10,
+                "provided": len(todos)
+            })
 
         # 验证每个任务项
         validated_todos = []
