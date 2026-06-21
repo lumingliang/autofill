@@ -11,7 +11,7 @@ from app.services.agent.tool_executor import format_tool_result
 
 
 class DeleteFileInput(BaseModel):
-    file_paths: List[str] = Field(description="The list of file paths you want to delete, you MUST set file path to absolute path.")
+    file_paths: List[str] = Field(description="The list of file paths you want to delete, you MUST set file path to absolute\npath.")
 
 
 async def execute_delete_file(file_paths: List[str]) -> str:
@@ -37,7 +37,7 @@ async def execute_delete_file(file_paths: List[str]) -> str:
 def get_delete_file_tool() -> BaseTool:
     return StructuredTool.from_function(
         name="DeleteFile",
-        description="You can use this tool to delete files, you can delete multi files in one toolcall, and you MUST make sure the files is exist before deleting.\nWhen you need to delete file, you MUST use this tool to delete file instead of using shell.\n",
+        description="You can use this tool to delete files, you can delete multi files in one\ntoolcall, and you MUST make sure the files is exist before deleting.\nWhen you need to delete file, you MUST use this tool to delete file instead of\nusing shell.\n",
         func=None,
         coroutine=execute_delete_file,
         args_schema=DeleteFileInput,

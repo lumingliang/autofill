@@ -15,16 +15,16 @@ class GrepInput(BaseModel):
     pattern: str = Field(description="The regular expression pattern to search for in file contents")
     path: Optional[str] = Field(default=None, description="File or directory to search in (rg PATH). Defaults to current working directory.")
     glob: Optional[str] = Field(default=None, description='Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}") - maps to rg --glob')
-    type: Optional[str] = Field(default=None, description="File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.")
-    output_mode: Optional[Literal["content", "files_with_matches", "count"]] = Field(default="files_with_matches", description='Output mode: "content" shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), "files_with_matches" shows file paths (supports head_limit), "count" shows match counts (supports head_limit). Defaults to "files_with_matches".')
-    head_limit: Optional[int] = Field(default=100, description='Limit output to first N lines/entries, equivalent to "| head -N". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 100.')
-    offset: Optional[int] = Field(default=0, description='Skip first N lines/entries before applying head_limit, equivalent to "| tail -n +N | head -N". Works across all output modes. Defaults to 0.')
-    multiline: Optional[bool] = Field(default=False, description="Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.")
-    A: Optional[int] = Field(default=None, description='Number of lines to show after each match (rg -A). Requires output_mode: "content", ignored otherwise.')
-    B: Optional[int] = Field(default=None, description='Number of lines to show before each match (rg -B). Requires output_mode: "content", ignored otherwise.')
-    C: Optional[int] = Field(default=None, description='Number of lines to show before and after each match (rg -C). Requires output_mode: "content", ignored otherwise.')
+    type: Optional[str] = Field(default=None, description="File type to search (rg --type). Common types: js, py, rust, go, java, etc. More\nefficient than include for standard file types.")
+    output_mode: Optional[Literal["content", "files_with_matches", "count"]] = Field(default="files_with_matches", description='Output mode: "content" shows matching lines (supports -A/-B/-C context, -n line\nnumbers, head_limit), "files_with_matches" shows file paths (supports\nhead_limit), "count" shows match counts (supports head_limit). Defaults to\n"files_with_matches".')
+    head_limit: Optional[int] = Field(default=100, description='Limit output to first N lines/entries, equivalent to "| head -N". Works across\nall output modes: content (limits output lines), files_with_matches (limits file\npaths), count (limits count entries). Defaults to 100.')
+    offset: Optional[int] = Field(default=0, description='Skip first N lines/entries before applying head_limit, equivalent to "| tail -n\n+N | head -N". Works across all output modes. Defaults to 0.')
+    multiline: Optional[bool] = Field(default=False, description="Enable multiline mode where . matches newlines and patterns can span lines (rg\n-U --multiline-dotall). Default: false.")
+    A: Optional[int] = Field(default=None, description='Number of lines to show after each match (rg -A). Requires output_mode:\n"content", ignored otherwise.')
+    B: Optional[int] = Field(default=None, description='Number of lines to show before each match (rg -B). Requires output_mode:\n"content", ignored otherwise.')
+    C: Optional[int] = Field(default=None, description='Number of lines to show before and after each match (rg -C). Requires\noutput_mode: "content", ignored otherwise.')
     i: Optional[bool] = Field(default=False, description="Case insensitive search (rg -i)")
-    n: Optional[bool] = Field(default=False, description='Show line numbers in output (rg -n). Requires output_mode: "content", ignored otherwise.')
+    n: Optional[bool] = Field(default=False, description='Show line numbers in output (rg -n). Requires output_mode: "content", ignored\notherwise.')
 
     @model_validator(mode="before")
     @classmethod
@@ -119,7 +119,7 @@ async def execute_grep(
 def get_grep_tool() -> BaseTool:
     return StructuredTool.from_function(
         name="Grep",
-        description='A powerful search tool built on ripgrep\n\n  Usage:\n  - NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.\n  - Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")\n  - Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")\n  - Output modes: "content" shows matching lines, "files_with_matches" shows only file paths (default), "count" shows match counts\n  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code)\n  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`\n  - Prefer `SearchCodebase` tool when precise code keywords are missing\n',
+        description='A powerful search tool built on ripgrep\n\n  Usage:\n  - NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been\noptimized for correct permissions and access.\n  - Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")\n  - Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type\nparameter (e.g., "js", "py", "rust")\n  - Output modes: "content" shows matching lines, "files_with_matches" shows\nonly file paths (default), "count" shows match counts\n  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use\n`interface\\{\\}` to find `interface{}` in Go code)\n  - Multiline matching: By default patterns match within single lines only. For\ncross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`\n  - Prefer `SearchCodebase` tool when precise code keywords are missing\n',
         func=None,
         coroutine=execute_grep,
         args_schema=GrepInput,

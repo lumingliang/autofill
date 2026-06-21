@@ -15,7 +15,7 @@ class GlobInput(BaseModel):
     pattern: str = Field(description="The glob pattern to match files against.")
     path: Optional[str] = Field(
         default=None,
-        description='The directory to search in. If not specified, the current working directory will be used. Omit this field to use the default behavior. DO NOT enter "undefined" or "null" - simply omit it for the default behavior. Must be a valid absolute directory path if provided.'
+        description='The directory to search in. If not specified, the current working directory will\nbe used. Omit this field to use the default behavior. DO NOT enter "undefined"\nor "null" - simply omit it for the default behavior. Must be a valid absolute\ndirectory path if provided.'
     )
 
 

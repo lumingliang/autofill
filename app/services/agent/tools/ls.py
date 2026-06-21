@@ -49,7 +49,7 @@ async def execute_ls(path: str, ignore: Optional[List[str]] = None) -> str:
 def get_ls_tool() -> BaseTool:
     return StructuredTool.from_function(
         name="LS",
-        description="Lists files and directories in a given path.\nThe path parameter must be an absolute path, not a relative path.\nYou can optionally provide an array of glob patterns to ignore with the ignore parameter.\n",
+        description="Lists files and directories in a given path.\nThe path parameter must be an absolute path, not a relative path.\nYou can optionally provide an array of glob patterns to ignore with the ignore\nparameter.\n",
         func=None,
         coroutine=execute_ls,
         args_schema=LSInput,

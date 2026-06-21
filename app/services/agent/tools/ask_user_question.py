@@ -10,15 +10,15 @@ from app.services.agent.tool_executor import format_tool_result
 
 
 class QuestionOption(BaseModel):
-    label: str = Field(description="The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.")
-    description: str = Field(description="Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.")
+    label: str = Field(description="The display text for this option that the user will see and select. Should be\nconcise (1-5 words) and clearly describe the choice.")
+    description: str = Field(description="Explanation of what this option means or what will happen if chosen. Useful for\nproviding context about trade-offs or implications.")
 
 
 class Question(BaseModel):
-    header: str = Field(description='Very short label displayed as a chip/tag (max 12 chars). Examples: "Auth method", "Library", "Approach".')
-    options: List[QuestionOption] = Field(min_length=2, max_length=4, description="The available choices for this question. Must have 2-4 options. Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled). There should be no 'Other' option, that will be provided automatically.")
-    question: str = Field(description='The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"')
-    multiSelect: bool = Field(default=False, description="Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.")
+    header: str = Field(description='Very short label displayed as a chip/tag (max 12 chars). Examples: "Auth\nmethod", "Library", "Approach".')
+    options: List[QuestionOption] = Field(min_length=2, max_length=4, description="The available choices for this question. Must have 2-4 options. Each option\nshould be a distinct, mutually exclusive choice (unless multiSelect is enabled).\nThere should be no 'Other' option, that will be provided automatically.")
+    question: str = Field(description='The complete question to ask the user. Should be clear, specific, and end with a\nquestion mark. Example: "Which library should we use for date formatting?" If\nmultiSelect is true, phrase it accordingly, e.g. "Which features do you want to\nenable?"')
+    multiSelect: bool = Field(default=False, description="Set to true to allow the user to select multiple options instead of just one.\nUse when choices are not mutually exclusive.")
 
 
 class AskUserQuestionInput(BaseModel):

@@ -14,13 +14,13 @@ from app.services.agent.tool_executor import format_tool_result, format_todo_wri
 
 class TodoItem(BaseModel):
     id: str = Field(description="Unique identifier for the todo item")
-    content: str = Field(description="The description/content of the todo item. Make sure the language of todo item content is consistent with the language of <user_input>!")
+    content: str = Field(description="The description/content of the todo item. Make sure the language of todo item\ncontent is consistent with the language of <user_input>!")
     status: Literal["pending", "in_progress", "completed"] = Field(description="The current status of the todo item")
     priority: Literal["high", "medium", "low"] = Field(description="The priority of the todo item")
 
 
 class TodoWriteInput(BaseModel):
-    merge: bool = Field(description="Whether to merge the todos with the existing todos. If true, the todos will be merged into the existing todos based on the id field. You can leave unchanged properties undefined. If false, the new todos will replace the existing todos.")
+    merge: bool = Field(description="Whether to merge the todos with the existing todos. If true, the todos will be\nmerged into the existing todos based on the id field. You can leave unchanged\nproperties undefined. If false, the new todos will replace the existing todos.")
     todos: List[TodoItem] = Field(min_length=3, max_length=10, description="Array of todo items to write to the workspace")
 
 
