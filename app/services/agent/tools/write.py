@@ -37,7 +37,21 @@ async def execute_write(file_path: str, content: str) -> str:
 def get_write_tool() -> BaseTool:
     return StructuredTool.from_function(
         name="Write",
-        description="Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided\npath.\n- If this is an existing file, you MUST use the Read tool first to read the\nfile's contents. This tool will fail if you did not read the file first.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files\nunless explicitly required.\n- NEVER proactively create documentation files (*.md) or README files. Only\ncreate documentation files if explicitly requested by the User.\n- Only use emojis if the user explicitly requests it. Avoid writing emojis to\nfiles unless asked.\n",
+        description=(
+            "Writes a file to the local filesystem.\n"
+            "\n"
+            "Usage:\n"
+            "- This tool will overwrite the existing file if there is one at the provided\n"
+            "path.\n"
+            "- If this is an existing file, you MUST use the Read tool first to read the\n"
+            "file's contents. This tool will fail if you did not read the file first.\n"
+            "- ALWAYS prefer editing existing files in the codebase. NEVER write new files\n"
+            "unless explicitly required.\n"
+            "- NEVER proactively create documentation files (*.md) or README files. Only\n"
+            "create documentation files if explicitly requested by the User.\n"
+            "- Only use emojis if the user explicitly requests it. Avoid writing emojis to\n"
+            "files unless asked.\n"
+        ),
         func=None,
         coroutine=execute_write,
         args_schema=WriteInput,

@@ -15,7 +15,12 @@ class GlobInput(BaseModel):
     pattern: str = Field(description="The glob pattern to match files against.")
     path: Optional[str] = Field(
         default=None,
-        description='The directory to search in. If not specified, the current working directory will\nbe used. Omit this field to use the default behavior. DO NOT enter "undefined"\nor "null" - simply omit it for the default behavior. Must be a valid absolute\ndirectory path if provided.'
+        description=(
+            "The directory to search in. If not specified, the current working directory will\n"
+            "be used. Omit this field to use the default behavior. DO NOT enter \"undefined\"\n"
+            "or \"null\" - simply omit it for the default behavior. Must be a valid absolute\n"
+            "directory path if provided."
+        )
     )
 
 
@@ -39,7 +44,16 @@ async def execute_glob(pattern: str, path: Optional[str] = None) -> str:
 def get_glob_tool() -> BaseTool:
     return StructuredTool.from_function(
         name="Glob",
-        description="Fast file pattern matching tool that works with any codebase size\n\nUsage:\n  - Supports glob patterns like \"/*.js\" or \"src//*.ts\"\n  - Returns matching file paths sorted by modification time\n  - Use this tool when you need to find files by name patterns\n  - When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the `SearchCodebase` tool instead\n  - You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.\n",
+        description=(
+            "Fast file pattern matching tool that works with any codebase size\n"
+            "\n"
+            "Usage:\n"
+            "  - Supports glob patterns like \"/*.js\" or \"src//*.ts\"\n"
+            "  - Returns matching file paths sorted by modification time\n"
+            "  - Use this tool when you need to find files by name patterns\n"
+            "  - When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the `SearchCodebase` tool instead\n"
+            "  - You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.\n"
+        ),
         func=None,
         coroutine=execute_glob,
         args_schema=GlobInput,

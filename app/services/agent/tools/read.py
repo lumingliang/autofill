@@ -12,8 +12,14 @@ from app.services.agent.tool_executor import format_tool_result
 
 class ReadInput(BaseModel):
     file_path: str = Field(description="The absolute path to the file to read.")
-    limit: int = Field(ge=1, le=1000, description="The number of lines to read (must be at least 1, cannot be negative). This\nparameter is required and controls how many lines to read from the file.")
-    offset: Optional[int] = Field(default=None, ge=1, description="The line number to start reading from (must be at least 1). Only provide if the\nfile is too large to read at once.")
+    limit: int = Field(ge=1, le=1000, description=(
+        "The number of lines to read (must be at least 1, cannot be negative). This\n"
+        "parameter is required and controls how many lines to read from the file."
+    ))
+    offset: Optional[int] = Field(default=None, ge=1, description=(
+        "The line number to start reading from (must be at least 1). Only provide if the\n"
+        "file is too large to read at once."
+    ))
 
 
 async def execute_read(file_path: str, limit: int, offset: Optional[int] = None) -> str:
@@ -44,7 +50,26 @@ async def execute_read(file_path: str, limit: int, offset: Optional[int] = None)
 def get_read_tool() -> BaseTool:
     return StructuredTool.from_function(
         name="Read",
-        description="Reads a file from the local filesystem. You can access any file directly by\nusing this tool.\nAssume this tool is able to read all files on the machine. If the User provides\na path to a file assume that path is valid. It is okay to read a file that does\nnot exist; an error will be returned.\n\nUsage:\n  - The file_path parameter must be an absolute path, not a relative path\n  - You can optionally specify a line offset and limit (especially handy for\nlong files)\n  - Results are returned using cat -n format, with line numbers starting at 1\n  -  When you already know which part of the file you need, only read that part.\nThis can be important for larger files.\n  - You have the capability to call multiple tools in a single response. It is\nalways better to speculatively read multiple files as a batch that are\npotentially useful.\n  - If you read a file that exists but has empty contents you will receive a\nsystem reminder warning in place of file contents.\n",
+        description=(
+            "Reads a file from the local filesystem. You can access any file directly by\n"
+            "using this tool.\n"
+            "Assume this tool is able to read all files on the machine. If the User provides\n"
+            "a path to a file assume that path is valid. It is okay to read a file that does\n"
+            "not exist; an error will be returned.\n"
+            "\n"
+            "Usage:\n"
+            "  - The file_path parameter must be an absolute path, not a relative path\n"
+            "  - You can optionally specify a line offset and limit (especially handy for\n"
+            "long files)\n"
+            "  - Results are returned using cat -n format, with line numbers starting at 1\n"
+            "  -  When you already know which part of the file you need, only read that part.\n"
+            "This can be important for larger files.\n"
+            "  - You have the capability to call multiple tools in a single response. It is\n"
+            "always better to speculatively read multiple files as a batch that are\n"
+            "potentially useful.\n"
+            "  - If you read a file that exists but has empty contents you will receive a\n"
+            "system reminder warning in place of file contents.\n"
+        ),
         func=None,
         coroutine=execute_read,
         args_schema=ReadInput,
