@@ -33,17 +33,17 @@ class LLMConfigRepository(BaseRepository[LLMConfig]):
     def __init__(self):
         super().__init__(LLMConfig)
 
-    async def get_by_name(self, name: str) -> Optional[LLMConfig]:
+    async def get_by_model_id(self, model_id: str) -> Optional[LLMConfig]:
         """
-        根据名称获取配置
+        根据 Model ID 获取配置
 
         Args:
-            name: 配置名称
+            model_id: Model ID
 
         Returns:
             LLMConfig 对象或 None
         """
-        return await self.filter(name=name).first()
+        return await self.filter(model_id=model_id).first()
 
     async def get_active_configs(self) -> List[LLMConfig]:
         """
@@ -63,18 +63,18 @@ class LLMConfigRepository(BaseRepository[LLMConfig]):
         """
         return await self.filter(is_default=True, is_active=True).first()
 
-    async def check_name_exists(self, name: str, exclude_id: Optional[int] = None) -> bool:
+    async def check_model_id_exists(self, model_id: str, exclude_id: Optional[int] = None) -> bool:
         """
-        检查配置名称是否已存在
+        检查 Model ID 是否已存在
 
         Args:
-            name: 配置名称
+            model_id: Model ID
             exclude_id: 要排除的配置ID（用于更新时排除自身）
 
         Returns:
             是否存在
         """
-        query = self.filter(name=name)
+        query = self.filter(model_id=model_id)
         if exclude_id:
             query = query.exclude(id=exclude_id)
         return await query.exists()

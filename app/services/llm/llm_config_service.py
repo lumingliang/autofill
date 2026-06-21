@@ -78,7 +78,7 @@ class LLMConfigService:
         return total, configs
 
     @atomic()
-    async def create_config(self, name: str, model_provider: str, model: str,
+    async def create_config(self, model_id: str, model_provider: str,
                            api_key: str = "", api_base: str = "", timeout: int = 300,
                            is_default: bool = False, is_active: bool = True,
                            description: str = "", **kwargs) -> LLMConfig:
@@ -86,9 +86,8 @@ class LLMConfigService:
         创建 LLM 配置
 
         Args:
-            name: 配置名称
+            model_id: Model ID
             model_provider: 模型提供商
-            model: 模型名称
             api_key: API密钥
             api_base: API基础URL
             timeout: 超时时间
@@ -99,16 +98,15 @@ class LLMConfigService:
         Returns:
             LLMConfig: 创建的配置
         """
-        # 检查配置名称是否已存在
-        existing = await llm_config_repository.get_by_name(name)
+        # 检查 model_id 是否已存在
+        existing = await llm_config_repository.get_by_model_id(model_id)
         if existing:
-            raise HTTPException(status_code=400, detail="已存在同名配置")
+            raise HTTPException(status_code=400, detail="已存在相同的 Model ID")
 
         # 准备数据
         create_data = {
-            "name": name,
+            "model_id": model_id,
             "model_provider": model_provider,
-            "model": model,
             "api_key": api_key,
             "api_base": api_base,
             "timeout": timeout,
@@ -137,9 +135,8 @@ class LLMConfigService:
     async def update_config(
         self,
         id: int,
-        name: str = None,
+        model_id: str = None,
         model_provider: str = None,
-        model: str = None,
         api_key: str = None,
         api_base: str = None,
         timeout: int = None,
@@ -160,20 +157,18 @@ class LLMConfigService:
         """
         config = await self.get_by_id(id)
 
-        # 如果修改了名称，检查唯一性
-        if name and name != config.name:
-            existing = await llm_config_repository.get_by_name(name)
+        # 如果修改了 model_id，检查唯一性
+        if model_id and model_id != config.model_id:
+            existing = await llm_config_repository.get_by_model_id(model_id)
             if existing and existing.id != id:
-                raise HTTPException(status_code=400, detail="已存在同名配置")
+                raise HTTPException(status_code=400, detail="已存在相同的 Model ID")
 
         # 准备更新数据
         update_data = {}
-        if name is not None:
-            update_data["name"] = name
+        if model_id is not None:
+            update_data["model_id"] = model_id
         if model_provider is not None:
             update_data["model_provider"] = model_provider
-        if model is not None:
-            update_data["model"] = model
         if api_key is not None:
             # 检查 api_key 是否被脱敏
             if not self._is_masked_api_key(api_key):
@@ -232,7 +227,7 @@ class LLMConfigService:
             if action in ["create", "update"]:
                 await litellm_sync_service.add_or_update_config(config)
             elif action == "delete":
-                await litellm_sync_service.remove_config(config.name)
+                await litellm_sync_service.remove_config(config.model_id)
         except Exception as e:
             logger.warning(f"Failed to sync config to LiteLLM: {e}")
 
@@ -253,10 +248,10 @@ class LLMConfigService:
         config = await self.get_by_id(config_id)
         api_key = config.api_key
         api_base = config.api_base
-        model = config.name
+        model = config.model
 
         if not model or not api_key:
-            raise HTTPException(status_code=400, detail="模型配置缺少 name 或 api_key")
+            raise HTTPException(status_code=400, detail="模型配置缺少 model_id 或 api_key")
 
         try:
             start_time = time.time()
@@ -314,7 +309,7 @@ class LLMConfigService:
                 success = await litellm_sync_service.add_or_update_config(config)
                 return {
                     "success": success,
-                    "message": f"配置 '{config.name}' {'同步成功' if success else '同步失败'}"
+                    "message": f"配置 '{config.model_id}' {'同步成功' if success else '同步失败'}"
                 }
             else:
                 success = await litellm_sync_service.sync_all_configs()

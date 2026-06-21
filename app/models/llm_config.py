@@ -33,9 +33,8 @@ class LLMProvider(BaseModel, TimestampMixin):
 
 class LLMConfig(BaseModel, TimestampMixin):
     """LLM 模型配置表（全局配置）"""
-    name = fields.CharField(max_length=128, default="", description="配置名称", index=True)
+    model_id = fields.CharField(max_length=128, default="", description="Model ID", index=True)
     model_provider = fields.CharField(max_length=64, default="", description="模型提供商", index=True)
-    model = fields.CharField(max_length=128, default="", description="模型名称")
     api_key = fields.CharField(max_length=255, default="", description="API Key")
     api_base = fields.CharField(max_length=255, default="", description="API Base URL")
     timeout = fields.IntField(default=60, description="超时时间(秒)")
@@ -92,11 +91,22 @@ class LLMConfig(BaseModel, TimestampMixin):
             }
         }
 
+    @property
+    def model(self) -> str:
+        """
+        自动生成模型名称
+        如果提供商是 openai，则拼接为 openai/{model_id}
+        否则直接返回 model_id
+        """
+        if self.model_provider == "openai":
+            return f"openai/{self.model_id}"
+        return self.model_id
+
     async def to_dict(self) -> dict:
         """转换为字典"""
         data = {
             "id": self.id,
-            "name": self.name,
+            "model_id": self.model_id,
             "model_provider": self.model_provider,
             "model": self.model,
             "api_key": self.api_key,

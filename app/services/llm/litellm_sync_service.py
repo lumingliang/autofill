@@ -45,10 +45,8 @@ class LiteLLMSyncService:
         Returns:
             API 请求体字典
         """
-        # 处理模型名称
+        # 使用 model 属性获取完整的模型名称（自动拼接 openai/ 前缀）
         model_name = config.model
-        if config.model_provider == "openai" and model_name and not model_name.startswith("openai/"):
-            model_name = f"openai/{model_name}"
 
         # 构建 litellm_params
         params = {
@@ -79,7 +77,7 @@ class LiteLLMSyncService:
 
         # 构建请求体
         payload = {
-            "model_name": config.name,
+            "model_name": config.model_id,
             "litellm_params": params,
             "model_info": model_info
         }
@@ -112,14 +110,14 @@ class LiteLLMSyncService:
             # 从响应中提取 model_id
             model_id = result.get("model_id", "") or result.get("id", "")
 
-            logger.info(f"Successfully added model '{config.name}' to LiteLLM via API, model_id={model_id}")
+            logger.info(f"Successfully added model '{config.model_id}' to LiteLLM via API, model_id={model_id}")
             return True, model_id
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Failed to add model '{config.name}' to LiteLLM: HTTP {e.response.status_code} - {e.response.text}")
+            logger.error(f"Failed to add model '{config.model_id}' to LiteLLM: HTTP {e.response.status_code} - {e.response.text}")
             return False, ""
         except Exception as e:
-            logger.error(f"Failed to add model '{config.name}' to LiteLLM: {e}")
+            logger.error(f"Failed to add model '{config.model_id}' to LiteLLM: {e}")
             return False, ""
 
     async def update_model(self, config: LLMConfig) -> bool:
@@ -134,7 +132,7 @@ class LiteLLMSyncService:
         """
         try:
             payload = self._build_model_payload(config, include_model_id=True)
-            logger.info(f"Updating model '{config.name}' with payload: {payload}")
+            logger.info(f"Updating model '{config.model_id}' with payload: {payload}")
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -145,14 +143,14 @@ class LiteLLMSyncService:
                 )
                 response.raise_for_status()
 
-            logger.info(f"Successfully updated model '{config.name}' in LiteLLM via API")
+            logger.info(f"Successfully updated model '{config.model_id}' in LiteLLM via API")
             return True
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error for model '{config.name}': status={e.response.status_code}, response={e.response.text}")
+            logger.error(f"HTTP error for model '{config.model_id}': status={e.response.status_code}, response={e.response.text}")
             # 如果模型不存在（404），尝试添加
             if e.response.status_code == 404:
-                logger.warning(f"Model '{config.name}' not found in LiteLLM, trying to add instead")
+                logger.warning(f"Model '{config.model_id}' not found in LiteLLM, trying to add instead")
                 success, model_id = await self.add_model(config)
                 if success and model_id:
                     await llm_config_repository.update_gateway_model_id(config.id, model_id)
@@ -161,24 +159,24 @@ class LiteLLMSyncService:
             elif e.response.status_code == 400:
                 error_text = e.response.text
                 if "Model in config" in error_text or "Can't edit model" in error_text:
-                    logger.warning(f"Model '{config.name}' is in config file, trying to add to DB instead")
+                    logger.warning(f"Model '{config.model_id}' is in config file, trying to add to DB instead")
                     success, model_id = await self.add_model(config)
                     if success and model_id:
                         await llm_config_repository.update_gateway_model_id(config.id, model_id)
                     return success
                 elif "model not found" in error_text:
-                    logger.warning(f"Model '{config.name}' not found in LiteLLM, trying to add instead")
+                    logger.warning(f"Model '{config.model_id}' not found in LiteLLM, trying to add instead")
                     success, model_id = await self.add_model(config)
                     if success and model_id:
                         await llm_config_repository.update_gateway_model_id(config.id, model_id)
                     return success
                 else:
-                    logger.error(f"Failed to update model '{config.name}' in LiteLLM: HTTP {e.response.status_code} - {error_text}")
+                    logger.error(f"Failed to update model '{config.model_id}' in LiteLLM: HTTP {e.response.status_code} - {error_text}")
                     return False
-            logger.error(f"Failed to update model '{config.name}' in LiteLLM: HTTP {e.response.status_code} - {e.response.text}")
+            logger.error(f"Failed to update model '{config.model_id}' in LiteLLM: HTTP {e.response.status_code} - {e.response.text}")
             return False
         except Exception as e:
-            logger.error(f"Failed to update model '{config.name}' in LiteLLM: {e}")
+            logger.error(f"Failed to update model '{config.model_id}' in LiteLLM: {e}")
             return False
 
     async def delete_model(self, model_name: str) -> bool:
@@ -310,7 +308,7 @@ class LiteLLMSyncService:
                     litellm_params = model_data.get("litellm_params", {})
 
                     # 检查本地是否已存在
-                    existing = await llm_config_repository.get_by_name(name=model_name)
+                    existing = await llm_config_repository.get_by_model_id(model_id=model_name)
 
                     if existing:
                         # 更新现有配置（保留本地 API Key，只更新其他字段）
@@ -338,10 +336,14 @@ class LiteLLMSyncService:
                         if "/" in model_value:
                             model_provider = model_value.split("/")[0]
 
+                        # 从 model_value 中提取 model_id（去掉前缀）
+                        model_id = model_value
+                        if "/" in model_value:
+                            model_id = model_value.split("/", 1)[1]
+
                         create_data = {
-                            "name": model_name,
+                            "model_id": model_name,  # 使用 model_name 作为 model_id
                             "model_provider": model_provider,
-                            "model": model_value,
                             "api_key": litellm_params.get("api_key", ""),
                             "api_base": litellm_params.get("api_base", ""),
                             "timeout": litellm_params.get("timeout", 300),

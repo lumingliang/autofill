@@ -41,15 +41,15 @@ async def get_llm_providers_from_db() -> List[Dict[str, Any]]:
 async def list_llm_config(
     page: int = Query(1, description="页码"),
     page_size: int = Query(10, description="每页数量"),
-    name: str = Query("", description="配置名称模糊查询"),
+    model_id: str = Query("", description="Model ID模糊查询"),
     model_provider: str = Query("", description="模型提供商筛选"),
     is_active: bool = Query(True, description="是否启用筛选"),
 ):
     """获取 LLM 配置列表"""
     # 构建查询条件
     q = Q()
-    if name:
-        q &= Q(name__contains=name)
+    if model_id:
+        q &= Q(model_id__contains=model_id)
     if model_provider:
         q &= Q(model_provider=model_provider)
 
@@ -77,9 +77,8 @@ async def create_llm_config(
 ):
     """创建 LLM 配置"""
     config = await llm_config_service.create_config(
-        name=config_in.name,
+        model_id=config_in.model_id,
         model_provider=config_in.model_provider,
-        model=config_in.model,
         api_key=config_in.api_key,
         api_base=config_in.api_base,
         timeout=config_in.timeout,
@@ -97,9 +96,8 @@ async def update_llm_config(
     """更新 LLM 配置"""
     updated = await llm_config_service.update_config(
         id=config_in.id,
-        name=config_in.name,
+        model_id=config_in.model_id,
         model_provider=config_in.model_provider,
-        model=config_in.model,
         api_key=config_in.api_key,
         api_base=config_in.api_base,
         timeout=config_in.timeout,
@@ -219,4 +217,4 @@ async def get_gateway_models():
         return Fail(code=403, msg="无权执行此操作")
 
     models = await llm_config_service.get_gateway_models()
-    return Success(data=models)
+    return Success(data={"total": len(models), "models": models})

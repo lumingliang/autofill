@@ -21,7 +21,7 @@ import os
 # 设置环境变量
 os.environ["LLM_API_KEY"] = "sk-litellm-master-key"
 os.environ["LLM_BASE_URL"] = "http://localhost:4000"
-os.environ["LLM_MODEL"] = "qwen3.6-plus-2026-04-02"
+os.environ["LLM_MODEL"] = "qwen3.6-27b"
 
 # API 配置
 BASE_URL = "http://127.0.0.1:9999"

@@ -7,8 +7,8 @@
       <!-- 筛选条件 -->
       <template #filter-items>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
-          <a-form-item label="配置名称" class="filter-item">
-            <a-input v-model:value="queryParams.name" placeholder="请输入配置名称" allow-clear @pressEnter="handleSearch" />
+          <a-form-item label="Model ID" class="filter-item">
+            <a-input v-model:value="queryParams.model_id" placeholder="请输入Model ID" allow-clear @pressEnter="handleSearch" />
           </a-form-item>
         </a-col>
         <a-col :xs="24" :sm="12" :md="8" :lg="6" :xl="6" class="filter-item-col">
@@ -103,8 +103,8 @@
 
       <!-- 弹窗表单 -->
       <template #modal-form="{ form }">
-        <a-form-item label="配置名称" name="name">
-          <a-input v-model:value="form.name" placeholder="请输入配置名称，如：GPT-4" />
+        <a-form-item label="Model ID" name="model_id">
+          <a-input v-model:value="form.model_id" placeholder="请输入Model ID，如：gpt-4" />
         </a-form-item>
         <a-form-item label="模型提供商" name="model_provider">
           <a-select v-model:value="form.model_provider" placeholder="请选择模型提供商">
@@ -112,9 +112,6 @@
               {{ provider.label }}
             </a-select-option>
           </a-select>
-        </a-form-item>
-        <a-form-item label="模型名称" name="model">
-          <a-input v-model:value="form.model" placeholder="请输入模型名称，如：openai/gpt-4 或 gpt-4" />
         </a-form-item>
         <a-form-item label="API Key" name="api_key">
           <a-input-password v-model:value="form.api_key" placeholder="请输入 API Key" />
@@ -288,7 +285,7 @@ const crudTableRef = ref<InstanceType<typeof CrudTable>>()
 
 // 查询参数
 const queryParams = reactive({
-  name: '',
+  model_id: '',
   model_provider: undefined as string | undefined,
   is_active: undefined as boolean | undefined,
 })
@@ -307,9 +304,8 @@ const modalTitle = ref('')
 const modalLoading = ref(false)
 const modalForm = reactive({
   id: undefined as number | undefined,
-  name: '',
+  model_id: '',
   model_provider: '',
-  model: '',
   api_key: '',
   api_base: '',
   timeout: 60,
@@ -335,9 +331,8 @@ const providers = ref([
 
 // 计算属性
 const columns = computed(() => [
-  { title: '配置名称', dataIndex: 'name', key: 'name', width: 150, ellipsis: true },
+  { title: 'Model ID', dataIndex: 'model_id', key: 'model_id', width: 180, ellipsis: true },
   { title: '提供商', key: 'model_provider', width: 120 },
-  { title: '模型', key: 'model', width: 180, ellipsis: true },
   { title: '默认', key: 'is_default', width: 80, align: 'center' },
   { title: '状态', key: 'is_active', width: 80, align: 'center' },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
@@ -347,7 +342,7 @@ const columns = computed(() => [
 const filterItemCount = computed(() => 3)
 
 const modalRules = {
-  name: [{ required: true, message: '请输入配置名称', trigger: ['input', 'blur'] }],
+  model_id: [{ required: true, message: '请输入Model ID', trigger: ['input', 'blur'] }],
   model_provider: [{ required: true, message: '请选择模型提供商', trigger: 'change' }],
 }
 
@@ -412,7 +407,7 @@ function handleSearch() {
 }
 
 function handleReset() {
-  queryParams.name = ''
+  queryParams.model_id = ''
   queryParams.model_provider = undefined
   queryParams.is_active = undefined
   handleSearch()
@@ -428,9 +423,8 @@ function handleAdd() {
   modalTitle.value = '新增 LLM 配置'
   Object.assign(modalForm, {
     id: undefined,
-    name: '',
+    model_id: '',
     model_provider: '',
-    model: '',
     api_key: '',
     api_base: '',
     timeout: 60,
@@ -590,7 +584,7 @@ async function handleViewGatewayModels() {
 async function handleImportGatewayModel(record: any) {
   try {
     // 先检查是否已存在
-    const existing = tableData.value.find((item: any) => item.name === record.model_name)
+    const existing = tableData.value.find((item: any) => item.model_id === record.model_name)
     if (existing) {
       window.$message?.warning(`模型 "${record.model_name}" 已存在，将更新配置`)
     }

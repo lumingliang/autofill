@@ -18,7 +18,7 @@ import platform
 import toml
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, AsyncGenerator, Union
+from typing import Any, Dict, List, Optional, AsyncGenerator, Union, Literal
 from datetime import datetime
 
 from langchain_openai import ChatOpenAI
@@ -120,6 +120,53 @@ class TraeAgent:
         # 将工具定义转换为 LangChain 工具
         self.langchain_tools = self._create_langchain_tools()
 
+    def _schema_to_type(self, prop_def: dict, model_prefix: str = "") -> type:
+        """递归将 JSON Schema 定义转换为 Python/Pydantic 类型"""
+        prop_type = prop_def.get("type", "string")
+
+        if prop_type == "string":
+            enum_values = prop_def.get("enum")
+            if enum_values:
+                return Literal[tuple(enum_values)]
+            return str
+        elif prop_type == "integer":
+            return int
+        elif prop_type == "number":
+            return float
+        elif prop_type == "boolean":
+            return bool
+        elif prop_type == "array":
+            items = prop_def.get("items")
+            if items and isinstance(items, dict):
+                item_type = self._schema_to_type(items, model_prefix=model_prefix + "Item")
+                return List[item_type]
+            return List
+        elif prop_type == "object":
+            nested_props = prop_def.get("properties", {})
+            if nested_props:
+                return self._build_model(
+                    f"{model_prefix}Nested" if model_prefix else "NestedModel",
+                    nested_props,
+                    prop_def.get("required", [])
+                )
+            return dict
+        else:
+            return str
+
+    def _build_model(self, model_name: str, properties: dict, required: list) -> type:
+        """递归构建 Pydantic 模型"""
+        fields = {}
+        for prop_name, prop_def in properties.items():
+            py_type = self._schema_to_type(prop_def, model_prefix=f"{model_name}_{prop_name}")
+            is_required = prop_name in required
+            description = prop_def.get("description", "")
+            if not is_required:
+                py_type = Optional[py_type]
+                fields[prop_name] = (py_type, Field(default=None, description=description))
+            else:
+                fields[prop_name] = (py_type, Field(description=description))
+        return create_model(model_name, **fields, __config__={'extra': 'forbid'})
+
     def _create_langchain_tools(self) -> List[StructuredTool]:
         """创建 LangChain 工具列表"""
         tools = []
@@ -150,31 +197,14 @@ class TraeAgent:
                 # 构建字段定义
                 fields = {}
                 for prop_name, prop_def in properties.items():
-                    prop_type = prop_def.get("type", "string")
-                    # 根据类型映射到 Python 类型
-                    if prop_type == "string":
-                        py_type = str
-                    elif prop_type == "integer":
-                        py_type = int
-                    elif prop_type == "number":
-                        py_type = float
-                    elif prop_type == "boolean":
-                        py_type = bool
-                    elif prop_type == "array":
-                        py_type = list
-                    elif prop_type == "object":
-                        py_type = dict
-                    else:
-                        py_type = str
-
-                    # 如果不是必填字段，使用 Optional
-                    if prop_name not in required:
-                        from typing import Optional
+                    py_type = self._schema_to_type(prop_def, model_prefix=f"{tool_name}_{prop_name}")
+                    is_required = prop_name in required
+                    description = prop_def.get("description", "")
+                    if not is_required:
                         py_type = Optional[py_type]
-                        fields[prop_name] = (py_type, Field(default=None, description=prop_def.get("description", "")))
+                        fields[prop_name] = (py_type, Field(default=None, description=description))
                     else:
-                        # 必填字段不使用 default
-                        fields[prop_name] = (py_type, Field(description=prop_def.get("description", "")))
+                        fields[prop_name] = (py_type, Field(description=description))
 
                 # 创建 Pydantic 模型
                 if fields:

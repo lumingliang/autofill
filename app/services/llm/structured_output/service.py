@@ -42,7 +42,7 @@ class StructuredOutputService:
 
     def __init__(self, config: LLMConfig):
         self.config = config
-        self.model_name = config.name
+        self.model_name = config.model  # 使用自动拼接的模型名称
         self.api_key = config.api_key or ""
         self.api_base = config.api_base or None
         self.timeout = config.timeout or 300
