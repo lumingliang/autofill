@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent 端到端测试脚本 - 简化版
+Agent 端到端测试脚本 - 简化版（适配配置化 Agent 架构）
 
 测试场景：道路救援填单
 验证：
@@ -8,20 +8,12 @@ Agent 端到端测试脚本 - 简化版
 2. Skill 内容正确加载到对话上下文
 3. Agent 按照 SKILL.md 指导执行填单流程
 4. 终止条件为 finish_reason="stop"
-
-交互格式遵循 /Users/lu/code/code/py/autofill/scripts/cli/1.json 规范
 """
 import asyncio
 import json
 import sys
 import time
 import httpx
-import os
-
-# 设置环境变量
-os.environ["LLM_API_KEY"] = "sk-litellm-master-key"
-os.environ["LLM_BASE_URL"] = "http://localhost:4000"
-os.environ["LLM_MODEL"] = "qwen3.6-plus-2026-04-02"
 
 # API 配置
 BASE_URL = "http://127.0.0.1:9999"
@@ -42,28 +34,28 @@ async def test_roadside_rescue_form_filling():
     用户输入包含道路救援相关信息，期望 Agent：
     1. 识别填单意图，调用 autofill-form skill
     2. 按照 Skill 指导执行 CLI 脚本获取字段、选项
-    3. 自动选择事件类型（道路救援 → 拖车服务 → 紧急拖车）
-    4. 获取模板并生成服务记录总结
-    5. 提交表单
-    6. 返回 finish_reason="stop"
+    3. 自动选择事件类型并提交表单
+    4. 返回 finish_reason="stop"
     """
     print("\n" + "=" * 70)
     print("测试：道路救援填单场景")
     print("=" * 70)
 
-    conversation_id = f"test_rescue_{int(time.time())}"
+    session_id = f"test_rescue_{int(time.time())}"
 
-    # 道路救援场景的用户输入
     payload = {
         "query": "我的车在高速公路抛锚了，需要紧急拖车。我叫李四，电话13900139000，车在G15沈海高速K1234处。请帮我填单记录。",
-        "conversation_id": conversation_id,
+        "agent_name": "autofill",
+        "session_id": session_id,
         "user_id": "test_user",
+        "tenant_id": "default",
         "stream": False,
         "max_iterations": 50
     }
 
     print(f"\n用户输入: {payload['query']}")
-    print(f"对话ID: {conversation_id}")
+    print(f"会话ID: {session_id}")
+    print(f"Agent: {payload['agent_name']}")
 
     async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(AGENT_CHAT_URL, headers=HEADERS, json=payload)
@@ -85,8 +77,12 @@ async def test_roadside_rescue_form_filling():
         tool_calls = data.get("tool_calls", [])
         finish_reason = data.get("finish_reason", "")
         answer = data.get("answer", "")
+        resp_session_id = data.get("session_id", "")
+        resp_agent_name = data.get("agent_name", "")
 
         print(f"\n✅ 请求成功")
+        print(f"   返回会话ID: {resp_session_id}")
+        print(f"   返回Agent: {resp_agent_name}")
         print(f"   结束原因: {finish_reason}")
         print(f"   回答: {answer[:200]}...")
         print(f"\n   工具调用记录 ({len(tool_calls)} 次):")
@@ -114,8 +110,8 @@ async def test_roadside_rescue_form_filling():
                     print(f"       Skill 结果类型: {result_data.get('type', 'unknown')}")
                     if result_data.get('type') == 'skill_activated':
                         print(f"       ✅ Skill 成功激活: {result_data.get('skill_name', '')}")
-                except:
-                    print(f"       结果: {skill_result[:100]}...")
+                except Exception:
+                    print(f"       结果: {str(skill_result)[:100]}...")
 
             elif tool_name == 'RunCommand':
                 runcommand_count += 1
@@ -133,7 +129,15 @@ async def test_roadside_rescue_form_filling():
 
         checks = []
 
-        # 检查1: Skill 是否被触发
+        # 检查1: 会话隔离
+        if resp_session_id == session_id:
+            print("   ✅ 会话ID一致")
+            checks.append(True)
+        else:
+            print(f"   ⚠️ 会话ID不一致: 请求={session_id}, 返回={resp_session_id}")
+            checks.append(False)
+
+        # 检查2: Skill 是否被触发
         if skill_triggered:
             print("   ✅ Skill 工具已触发")
             checks.append(True)
@@ -141,7 +145,7 @@ async def test_roadside_rescue_form_filling():
             print("   ❌ Skill 工具未被触发")
             checks.append(False)
 
-        # 检查2: 是否有 CLI 脚本调用
+        # 检查3: 是否有 CLI 脚本调用
         if runcommand_count > 0:
             print(f"   ✅ RunCommand 调用次数: {runcommand_count}")
             checks.append(True)
@@ -149,19 +153,15 @@ async def test_roadside_rescue_form_filling():
             print("   ❌ 没有 RunCommand 调用")
             checks.append(False)
 
-        # 检查3: 是否调用了预期的 CLI 脚本（包括规则获取）
+        # 检查4: 是否调用了预期的 CLI 脚本
         unique_cli_calls = list(set(cli_calls_found))
-        required_cli_calls = ["get_field.py", "get_field_rules.py"]
-        
-        # 检查是否调用了规则获取脚本
         if "get_field_rules.py" in unique_cli_calls:
-            print(f"   ✅ 规则获取脚本已调用")
+            print("   ✅ 规则获取脚本已调用")
             checks.append(True)
         else:
-            print(f"   ❌ 规则获取脚本未调用 (get_field_rules.py)")
+            print("   ❌ 规则获取脚本未调用 (get_field_rules.py)")
             checks.append(False)
-        
-        # 检查关键脚本完整性
+
         if len(unique_cli_calls) >= 2:
             print(f"   ✅ 关键 CLI 脚本调用: {', '.join(unique_cli_calls)}")
             checks.append(True)
@@ -169,7 +169,7 @@ async def test_roadside_rescue_form_filling():
             print(f"   ⚠️ CLI 脚本调用不足: {unique_cli_calls}")
             checks.append(False)
 
-        # 检查4: 终止条件
+        # 检查5: 终止条件
         if finish_reason == "stop":
             print(f"   ✅ 终止条件正确: finish_reason='stop'")
             checks.append(True)
@@ -177,7 +177,7 @@ async def test_roadside_rescue_form_filling():
             print(f"   ⚠️ 终止条件: finish_reason='{finish_reason}'")
             checks.append(False)
 
-        # 检查5: 有回答内容
+        # 检查6: 有回答内容
         if answer and len(answer) > 10:
             print(f"   ✅ 有有效回答内容 ({len(answer)} 字符)")
             checks.append(True)
@@ -192,7 +192,7 @@ async def test_roadside_rescue_form_filling():
         print(f"测试结果: {passed}/{total} 通过")
 
         if passed == total:
-            print("🎉 道路救援填单测试通过!")
+            print("道路救援填单测试通过!")
             return True
         else:
             print("⚠️ 部分检查未通过")
@@ -206,10 +206,6 @@ async def run_test():
     print("=" * 70)
     print(f"API URL: {AGENT_CHAT_URL}")
     print(f"测试时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"环境变量:")
-    print(f"  LLM_API_KEY: {os.environ.get('LLM_API_KEY', 'NOT SET')}")
-    print(f"  LLM_BASE_URL: {os.environ.get('LLM_BASE_URL', 'NOT SET')}")
-    print(f"  LLM_MODEL: {os.environ.get('LLM_MODEL', 'NOT SET')}")
 
     try:
         success = await test_roadside_rescue_form_filling()
@@ -230,11 +226,11 @@ async def run_test():
     else:
         print("❌ 测试未通过")
         print("\n请检查:")
-        print("   1. 系统提示词是否包含 skill 触发逻辑")
-        print("   2. autofill-form skill 文件是否存在且内容正确")
-        print("   3. Agent 是否正确绑定工具")
-        print("   4. LLM 是否能够正确识别填单意图")
-        print("   5. Mock API 服务是否运行 (port 6666)")
+        print("   1. 后端服务是否运行 (python run.py)")
+        print("   2. LiteLLM 网关是否运行 (http://localhost:4000)")
+        print("   3. config.toml [agent] 模型配置是否正确")
+        print("   4. autofill-form skill 文件是否存在且内容正确")
+        print("   5. Agent 'autofill' 是否正确注册")
 
     return success
 

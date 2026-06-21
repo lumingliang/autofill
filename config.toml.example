@@ -148,6 +148,59 @@ master_key = "sk-litellm-master-key"
 # 默认超时时间（秒）
 timeout = 60
 
+# =============================================================================
+# Agent 配置
+# =============================================================================
+
+# 默认通用 Agent
+[[agents]]
+name = "default"
+display_name = "通用软件工程助手"
+description = "处理通用软件工程任务"
+system_prompt_sections = [
+  "introduction",
+  "system",
+  "doing_tasks",
+  "using_tools",
+  "tone",
+  "output_efficiency",
+  "task_management",
+  "asking_questions",
+  "response_language",
+  "code_reference"
+]
+tools = ["Skill", "Glob", "LS", "Grep", "Read", "RunCommand", "TodoWrite", "SearchReplace", "Write", "DeleteFile", "AskUserQuestion"]
+skills = []  # 空表示允许全部 Skill
+model = "qwen3.6-plus-2026-04-02"
+temperature = 0.7
+max_iterations = 10
+max_history = 20
+enable_streaming = true
+
+[agents.message_builder_options]
+enable_skill_reminder = true
+enable_language_settings = true
+
+# 自动填单 Agent：基于 default 移除 code_reference，追加 autofill_instruction
+[[agents]]
+name = "autofill"
+display_name = "自动填单助手"
+description = "专门处理服务记录表单自动填写"
+system_prompt_base = "trae_base"
+system_prompt_remove_sections = ["code_reference"]
+system_prompt_append_sections = ["autofill_instruction"]
+tools = ["Skill", "RunCommand", "TodoWrite", "AskUserQuestion"]
+skills = ["autofill-form"]
+model = "qwen3.6-plus-2026-04-02"
+temperature = 0.7
+max_iterations = 20
+max_history = 20
+enable_streaming = true
+
+[agents.message_builder_options]
+enable_skill_reminder = true
+enable_language_settings = true
+
 # 结构化输出配置
 [structured_output]
 # 方法失败阈值，达到此值后自动标记为不支持

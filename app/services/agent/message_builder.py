@@ -75,6 +75,8 @@ class MessageBuilder:
         self.todo_reminder: Optional[str] = None
         self.skill_reminder: bool = False
         self.language_settings: bool = False
+        self.tool_reminder: bool = False
+        self.tool_descriptions: Optional[str] = None
 
     def set_env_info(self, env_info: EnvInfo) -> "MessageBuilder":
         """设置环境信息"""
@@ -99,6 +101,12 @@ class MessageBuilder:
     def enable_language_settings(self) -> "MessageBuilder":
         """启用语言设置提醒"""
         self.language_settings = True
+        return self
+
+    def enable_tool_reminder(self, tool_descriptions: Optional[str] = None) -> "MessageBuilder":
+        """启用工具说明提醒"""
+        self.tool_reminder = True
+        self.tool_descriptions = tool_descriptions
         return self
 
     def _build_terminal_reminder(self) -> Optional[str]:
@@ -164,6 +172,15 @@ class MessageBuilder:
         content = "\n".join(sections)
         return f"\n<system-reminder>\n\n{content}\n</system-reminder>\n"
 
+    def _build_tool_reminder(self) -> Optional[str]:
+        """构建工具说明 reminder"""
+        if not self.tool_reminder:
+            return None
+
+        desc = self.tool_descriptions or "Use the available tools when needed."
+        content = f"# Available Tools\n{desc}"
+        return f"\n<system-reminder>\n\n{content}\n</system-reminder>\n"
+
     def _build_user_input_section(self, user_input: str, skill_path: Optional[str] = None, inputs: Optional[Dict[str, Any]] = None) -> str:
         """构建用户输入 section - 对应 1.json 第五个 content 元素"""
         # 构建用户输入内容
@@ -218,7 +235,12 @@ class MessageBuilder:
         if lang_reminder:
             content_parts.append({"type": "text", "text": lang_reminder})
 
-        # 5. 用户输入
+        # 5. 工具说明 reminder（可选）
+        tool_reminder = self._build_tool_reminder()
+        if tool_reminder:
+            content_parts.append({"type": "text", "text": tool_reminder})
+
+        # 6. 用户输入
         user_input_section = self._build_user_input_section(user_input, skill_path, inputs)
         content_parts.append({"type": "text", "text": user_input_section})
 

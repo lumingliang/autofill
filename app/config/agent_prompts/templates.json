@@ -1,0 +1,23 @@
+{
+  "trae_base": {
+    "sections": [
+      "introduction",
+      "system",
+      "doing_tasks",
+      "using_tools",
+      "tone",
+      "output_efficiency",
+      "task_management",
+      "asking_questions",
+      "response_language",
+      "code_reference"
+    ],
+    "separator": "\n\n"
+  },
+  "autofill": {
+    "base": "trae_base",
+    "remove_sections": ["code_reference"],
+    "append_sections": ["autofill_instruction"],
+    "separator": "\n\n"
+  }
+}
