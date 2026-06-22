@@ -10,6 +10,9 @@ from app.services.agent.agent_factory import (
     chat_stream,
     get_agent_factory,
     get_agent_runtime,
+    get_agent_runtime_by_session,
+    get_agent_runtimes_by_agent,
+    get_agent_runtimes_by_tenant,
 )
 from app.services.agent.agent_loop import AgentLoop, ToolContext
 from app.services.agent.agent_registry import AgentRegistry, get_agent_registry
@@ -44,6 +47,9 @@ __all__ = [
     "get_agent_factory",
     "get_agent_registry",
     "get_agent_runtime",
+    "get_agent_runtime_by_session",
+    "get_agent_runtimes_by_agent",
+    "get_agent_runtimes_by_tenant",
     "get_prompt_renderer",
     "get_skill_prompt",
     "get_tool_registry",

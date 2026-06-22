@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 
 sys.path.insert(0, "/Users/lu/code/code/py/autofill")
 
+from app.core.ctx import Ctx
 from app.services.agent.agent_config import AgentConfig
 from app.services.agent.agent_runtime import AgentRuntime
 from app.services.agent.prompt_renderer import get_prompt_renderer
@@ -69,6 +70,9 @@ async def run_test(stream: bool = False, session_suffix: str = "") -> Dict[str, 
     tenant_id = "test-tenant"
     query = "请帮我查看 agent_loop.py 的前几行内容"
 
+    # Set tenant_id in Ctx for the test
+    Ctx.set_request_tenant_id(int(tenant_id)) if tenant_id.isdigit() else None
+
     print(f"\n[TEST] Query: {query}")
     print(f"[TEST] Session: {session_id} Tenant: {tenant_id}")
 
@@ -78,7 +82,6 @@ async def run_test(stream: bool = False, session_suffix: str = "") -> Dict[str, 
         async for event in runtime.chat_stream(
             query=query,
             session_id=session_id,
-            tenant_id=tenant_id,
             user_id="test-user",
         ):
             print(f"[STREAM] {event.strip()}")
@@ -89,7 +92,6 @@ async def run_test(stream: bool = False, session_suffix: str = "") -> Dict[str, 
         result = await runtime.chat(
             query=query,
             session_id=session_id,
-            tenant_id=tenant_id,
             user_id="test-user",
         )
         print("\n[TEST] ----- Non-streaming result -----")

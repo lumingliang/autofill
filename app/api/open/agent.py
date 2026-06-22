@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.core.ctx import Ctx
 from app.schemas.base import Fail, Success
 
 router = APIRouter()
@@ -21,19 +22,8 @@ class AgentChatRequest(BaseModel):
     query: str = Field(..., description="用户输入内容")
     agent_name: str = Field(default="default", description="Agent 名称（本地标识，Dify 转发保留）")
     session_id: Optional[str] = Field(None, description="会话ID（可选，用于保持上下文）")
-    tenant_id: Optional[str] = Field(None, description="租户ID（可选，用于日志标识）")
     user: Optional[str] = Field(None, description="用户标识")
     inputs: Optional[dict] = Field(None, description="输入参数（可选）")
-
-
-def _get_tenant_id(request: Request, body_tenant_id: Optional[str]) -> str:
-    """从请求上下文或请求体获取 tenant_id"""
-    if body_tenant_id:
-        return body_tenant_id
-    tenant_ctx = getattr(request.state, "tenant_id", None)
-    if tenant_ctx:
-        return str(tenant_ctx)
-    return "default"
 
 
 @router.post("/agent/chat", summary="Agent 对话接口")
@@ -51,7 +41,6 @@ async def agent_chat(
     - query: 用户输入内容
     - agent_name: Agent 名称（本地标识）
     - session_id: 会话ID（可选，用于保持上下文）
-    - tenant_id: 租户ID（可选，用于日志标识）
     - user: 用户标识（可选）
     - inputs: 输入参数（可选）
     """
@@ -59,7 +48,7 @@ async def agent_chat(
     auth_info = getattr(http_request.state, "auth_info", {})
     agent_url = auth_info.get("agent_url", "")
     dify_api_key = auth_info.get("dify_api_key", "")
-    tenant_id = _get_tenant_id(http_request, request.tenant_id)
+    tenant_id = str(Ctx.get_effective_tenant_id())
 
     if not agent_url or not dify_api_key:
         return Fail(code=401, msg="无效的 Agent 配置")
@@ -121,7 +110,7 @@ async def agent_chat_stream(
     auth_info = getattr(http_request.state, "auth_info", {})
     agent_url = auth_info.get("agent_url", "")
     dify_api_key = auth_info.get("dify_api_key", "")
-    tenant_id = _get_tenant_id(http_request, request.tenant_id)
+    tenant_id = str(Ctx.get_effective_tenant_id())
 
     if not agent_url or not dify_api_key:
         return Fail(code=401, msg="无效的 Agent 配置")

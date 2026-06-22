@@ -38,7 +38,6 @@ scripts/
 │   └── test_api_permission.py             # API权限测试
 │
 ├── init/                    # 初始化脚本
-│   ├── init_system_prompts.py             # 初始化系统提示词
 │   └── reset_passwords.py                 # 重置密码
 │
 ├── misc/                    # 其他脚本

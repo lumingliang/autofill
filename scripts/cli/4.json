@@ -1,0 +1,802 @@
+{
+  "model": "qwen3.6-27b",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "Skill",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The skill name (no arguments). E.g., \"pdf\" or \"xlsx\""
+            }
+          }
+        },
+        "description": "Execute a skill within the main conversation\n<skills_instructions>\nWhen users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.\nHow to use skills:\n- Invoke skills using this tool with the skill name only (no arguments)\n- When you invoke a skill, you will see <command-message>The \"{{name}}\" skill is loading</command-message>\n- The skill's prompt will expand and provide detailed instructions on how to complete the task\n- Examples:\n  - `command: \"autofill-form\"` - invoke the autofill-form skill\nImportant:\n- When a skill is relevant, you must invoke this tool IMMEDIATELY as your first action\n- NEVER just announce or mention a skill in your text response without actually calling this tool\n- This is a BLOCKING REQUIREMENT: invoke the relevant Skill tool BEFORE generating any other response about the task\n- Only use skills listed in <available_skills> below\n- Do not invoke a skill that is already running\n- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)\n</skills_instructions>\n<available_skills>\n<skill>\n<name>\nautofill-form\n</name>\n<description>\n执行自动填单流程，根据对话内容智能填写表单字段，包括三级事件类型选择和服务记录总结生成。Invoke when user needs to fill a form, process service records, or complete event type classification.\n</description>\n</skill>\n</available_skills>"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "Glob",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "pattern"
+          ],
+          "properties": {
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The directory to search in. If not specified, the current working directory will be used. Omit this field to use the default directory. DO NOT enter \"undefined\" or \"null\" - simply omit it for the default behavior. Must be a valid absolute directory path if provided."
+            },
+            "pattern": {
+              "type": "string",
+              "description": "The glob pattern to match files against."
+            }
+          }
+        },
+        "description": "Fast file pattern matching tool that works with any codebase size\n\nUsage:\n  - Supports glob patterns like \"/*.js\" or \"src//*.ts\"\n  - Returns matching file paths sorted by modification time\n  - Use this tool when you need to find files by name patterns\n  - When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the `SearchCodebase` tool instead\n  - You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful."
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "LS",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "The absolute path to the directory to list (must be absolute, not relative)."
+            },
+            "ignore": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "List of glob patterns to ignore."
+            }
+          }
+        },
+        "description": "Lists files and directories in a given path.\nThe path parameter must be an absolute path, not a relative path.\nYou can optionally provide an array of glob patterns to ignore with the ignore parameter."
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "Grep",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "pattern"
+          ],
+          "properties": {
+            "glob": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Glob pattern to filter files (e.g. \"*.js\", \"**/*.tsx\") - maps to rg --glob"
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "File or directory to search in (rg PATH). Defaults to current working directory."
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types."
+            },
+            "offset": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Skip first N lines/entries before applying head_limit, equivalent to \"| tail -n +N | head -N\". Works across all output modes. Defaults to 0."
+            },
+            "pattern": {
+              "type": "string",
+              "description": "The regular expression pattern to search for in file contents"
+            },
+            "multiline": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false."
+            },
+            "head_limit": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Limit output to first N lines/entries, equivalent to \"| head -N\". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 100."
+            },
+            "output_mode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Output mode: \"content\" shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), \"files_with_matches\" shows only file paths (supports head_limit), \"count\" shows match counts (supports head_limit). Defaults to \"files_with_matches\"."
+            }
+          }
+        },
+        "description": "A powerful search tool built on ripgrep\n\n  Usage:\n  - NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.\n  - Supports full regex syntax (e.g., \"log.*Error\", \"function\\s+\\w+\")\n  - Filter files with glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type parameter (e.g., \"js\", \"py\", \"rust\")\n  - Output modes: \"content\" shows matching lines, \"files_with_matches\" shows only file paths (default), \"count\" shows match counts\n  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code)\n  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`\n  - Prefer `SearchCodebase` tool when precise code keywords are missing"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "Read",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "file_path",
+            "limit"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "description": "The number of lines to read (must be at least 1, cannot be negative). This parameter is required and controls how many lines to read from the file."
+            },
+            "offset": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The line number to start reading from (must be at least 1). Only provide if the file is too large to read at once."
+            },
+            "file_path": {
+              "type": "string",
+              "description": "The absolute path to the file to read."
+            }
+          }
+        },
+        "description": "Reads a file from the local filesystem. You can access any file directly by using this tool.\nAssume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n  - The file_path parameter must be an absolute path, not a relative path\n  - You can optionally specify a line offset and limit (especially handy for long files)\n  - Results are returned using cat -n format, with line numbers starting at 1\n  -  When you already know which part of the file you need, only read that part. This can be important for larger files.\n  - You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.\n  - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.\nImage Support:\n- This tool can also read image files when called with the appropriate path.\n- Supported image formats: PNG, JPG, JPEG, GIF, WEBP.\n- Image files have a size limit of 10MB. The offset and limit parameters are ignored for image files.\n\n\nVideo Support:\n- This tool can also read video files. When a video file is provided, it will be processed and analyzed by a vision model, returning a detailed text description of the video content instead of raw file bytes.\n- Supported video formats: MP4, MPEG, MOV, AVI, FLV, MPG, WEBM, WMV, 3GPP. The offset and limit parameters are ignored for video files.\n- The returned description covers visual content, actions, scene transitions, and any visible text in the video.\n- You MUST always provide the `target` parameter when reading a video file. Use `target` to clearly describe what aspect of the video you want the tool to focus on, such as UI interactions, error messages on screen, the data flow shown in an animation, or the code changes demonstrated in a screen recording.\n- For longer videos, you MUST call this tool multiple times on the same file before making a final judgment. Start from the full timeline and overall workflow, then narrow down to specific time windows, then to local screen regions or components, and finally to the exact visual details that matter for the task.\n- All understanding of video content MUST be grounded in what this tool has actually confirmed from the video. Do NOT guess, imagine, infer, or fill in missing details from prior knowledge or common patterns. If a detail has not been visually confirmed yet, call this tool again with a narrower `target`, or explicitly state that the detail is unknown.\n- **IMPORTANT — Multi-pass requirement for detail-sensitive tasks**: When the task is detail-sensitive — such as debugging a visual issue, reproducing a UI flow, analyzing an error state, replicating a design, recreating an animation, or implementing a demonstrated feature — you MUST analyze the video in multiple passes along both the time axis and the screen-detail axis. First, split the video by timeline to understand the full sequence and identify key stages or suspicious time windows. Then split those specific time windows into full-screen states, major regions, local components, and finally the exact detail level needed, including text, visual states, interactions, and motion changes. Do not stop at a high-level summary when the task depends on precise evidence.\n- **IMPORTANT — Time-aware and screen-aware narrowing**: Video analysis must respect both temporal structure and visual structure. Your follow-up passes should narrow from full video -> key time segment -> smaller time window, and also from full screen -> region -> component -> local detail. If motion or interaction is important, further narrow the analysis to the exact trigger moment, transition process, and final visual state.\n- **Requesting structured output via `target`**: When you need implementation-ready details, you can instruct the vision model through the `target` parameter to return structured descriptions such as HTML/CSS for layout and styling, SVG for icons and vector graphics, CSS @keyframes for motion and transitions, or design token tables for colors, typography, and spacing.\n\nBAD (too vague, missing time scope, screen scope, or motion scope):\n  \"analyze the video\"\n  \"describe what happens\"\n  \"look at the UI\"\n  \"check whether there is a bug\"\n  \"look at the problematic part\"\n\nGOOD (specific, time-split, screen-split, motion-split, produces actionable output):\n  \"First analyze the full timeline of the video and split it into major stages. Identify the exact time window where the abnormal behavior first appears. Then focus only on that time window and describe the full-screen UI state, the major regions on screen, and which local component appears to be involved. Finally, zoom in on that component and explain the trigger action, the state before the interaction, the transition process, any animation or visual change during the interaction, and the final resulting state. Explicitly compare expected behavior vs actual behavior, and mark any unconfirmed details as unknown.\"\n  \"Break this screen recording into timeline segments. For each key segment, describe the full-page layout first, then the relevant region, then the specific component being interacted with. For the critical interaction segment, describe exactly when the interaction starts, what visual changes happen frame-by-frame or step-by-step, whether motion is smooth or abnormal, what text or status changes appear, and what the final rendered result looks like.\"\n  \"Analyze this video for implementation-ready design details in three layers: (1) timeline layer — what the user sees at the start, during each transition, and at the end; (2) screen layer — overall layout, then header / content / footer or other major regions, then the target component; (3) motion layer — trigger condition, animation phases, duration, easing, visual state changes, and final resting appearance. Return only visually confirmed details.\""
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "RunCommand",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "command",
+            "blocking",
+            "requires_approval"
+          ],
+          "properties": {
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The working directory to run the command in, the value MUST be absolute path, if not provided, it will be the current working directory."
+            },
+            "command": {
+              "type": "string",
+              "description": "The terminal command to execute."
+            },
+            "blocking": {
+              "type": "boolean",
+              "description": "Set to `false` ONLY for web_server or long_running_process command types. Set to `true` for all other cases."
+            },
+            "command_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Classify the command type BEFORE deciding [blocking]. Available types: [web_server, long_running_process, short_running_process, other]."
+            },
+            "target_terminal": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The target terminal for command execution. Can be a terminal id (from <available_terminal/> or previous <toolcall_result/>), or 'new' to create a new terminal. If not specified, the system will automatically reuse an idle AI terminal or create a new one if none is available. For performance, prefer reusing existing idle terminals."
+            },
+            "requires_approval": {
+              "type": "boolean",
+              "description": "Whether the user must approval the command before it is executed. Set to 'false' for safe operations like read/write files/directories, create/initialize/build projects, install project dependencies, running development servers."
+            },
+            "wait_ms_before_async": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "This configuration applies only when [blocking] is set to false. It defines the number of milliseconds to pause after initiating the command before letting it proceed in full asynchronous mode. This delay is beneficial for commands that are meant to run asynchronously but might fail almost immediately with an error; the wait allows you to detect and observe any errors that occur during this initial period. If you prefer not to wait, set this value to 0."
+            }
+          }
+        },
+        "description": "Execute a command in a terminal session on behalf of the user.\nEnsure the command is compatible with the current operating system (macos).\n\n\n\nIMPORTANT: This tool is for terminal operations like git, npm, docker, build scripts, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) — use the specialized tools for these instead.\n\nBefore executing the command, follow these steps:\n1. Directory Verification:\n  - If the command creates new directories or files, first verify the parent directory exists.\n  - Use the `cwd` parameter to specify the working directory rather than prepending `cd`.\n\n2. Command Execution:\n  - Always quote file paths that contain spaces with double quotes (e.g., cd \"path with spaces/file.txt\").\n  - You MUST avoid generating interactive commands unless the command only supports interactive input. For example, run `npm create vite@latest . -- --template react` instead of `npm create vite@latest .`.\n\nUsage notes:\n  - Terminals are stateful across sequential calls. Current working directory, environment variables, and state persist between calls within the same terminal.\n  - For performance, prefer reusing existing idle terminals. The system will automatically find and reuse an idle AI terminal when `target_terminal` is not specified.\n  - Commands will be run with PAGER=cat. You may want to limit the length of output for commands that usually rely on paging and may contain very long output (e.g. for git log, use git log -n <N> ; for man ls, man ls | head -n <N>).\n  - VERY IMPORTANT: You MUST avoid using search commands like `find` and `grep`. Use Grep, Glob,SearchCodebase tools instead. You MUST avoid read commands like `cat`, `head`, `tail`. Use the Read tool instead. Avoid editing files with `sed` and `awk`. Use the Edit tool instead.\n  - If you need to observe real-time output from a non-blocking command (blocking: false), use the CheckCommandStatus tool with the command's ID. Do not re-run the command — CheckCommandStatus lets you retrieve the latest output on demand.\n  - To stop a running command, use the StopCommand tool with the command's ID. Do not use `kill`, `pkill`, or other shell commands to terminate processes — StopCommand is the dedicated way.\n  - When issuing multiple commands:\n    - If the commands are independent and can run in parallel, make multiple RunCommand tool calls in a single message. For example, if you need to run \"git status\" and \"git diff\", send a single message with two RunCommand tool calls in parallel.\n    - If the commands depend on each other and must run sequentially, use a single RunCommand call with '&&' to chain them together (e.g., `git add . && git commit -m \"message\" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp,Write before RunCommand for git operations, or git add before git commit), run these operations sequentially instead.\n    - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail\n    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)\n\n### Git Safety Protocol:\n  - NEVER update the git config\n  - NEVER run destructive git commands (push --force, reset --hard, checkout ., restore ., clean -f, branch -D) unless the user explicitly requests these actions. Taking unauthorized destructive actions is unhelpful and can result in lost work, so it's best to ONLY run these commands when given direct instructions \n  - NEVER run force push to main/master, warn the user if they request it\n  - When staging files, prefer adding specific files by name rather than using \"git add -A\" or \"git add .\", which can accidentally include sensitive files (.env, credentials) or large binaries\n  - NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive\n\n### Committing changes with git\n\nOnly create commits when requested by the user. If unclear, ask first. When the user asks you to create a new git commit, follow these steps carefully:\n\n1. Run the following commands in parallel, each using the RunCommand tool:\n  - Run a git status command to see all untracked files. IMPORTANT: Never use the -uall flag as it can cause memory issues on large repos.\n  - Run a git diff command to see both staged and unstaged changes that will be committed.\n  - Run a git log command to see recent commit messages, so that you can follow this repository's commit message style.\n2. Analyze all staged changes (both previously staged and newly added) and draft a commit message:\n  - Summarize the nature of the changes (eg. new feature, enhancement to an existing feature, bug fix, refactoring, test, docs, etc.). Ensure the message accurately reflects the changes and their purpose (i.e. \"add\" means a wholly new feature, \"update\" means an enhancement to an existing feature, \"fix\" means a bug fix, etc.).\n  - Do not commit files that likely contain secrets (.env, credentials.json, etc). Warn the user if they specifically request to commit those files\n  - Draft a concise (1-2 sentences) commit message that focuses on the \"why\" rather than the \"what\"\n  - Ensure it accurately reflects the changes and their purpose\n3. Run the following commands in parallel:\n  - Add relevant untracked files to the staging area.\n  - Run git status after the commit completes to verify success.\n  Note: git status depends on the commit completing, so run it sequentially after the commit.\n\nImportant notes:\n- NEVER run additional commands to read or explore code, besides git  commands\n- NEVER use the TodoWrite or Task tools\n- DO NOT push to the remote repository unless the user explicitly asks you to do so\n- IMPORTANT: Never use git commands with the -i flag (like git rebase -i or git add -i) since they require interactive input which is not supported.\n- IMPORTANT: Do not use --no-edit with git rebase commands, as the --no-edit flag is not a valid option for git rebase.\n- If there are no changes to commit (i.e., no untracked files and no modifications), do not create an empty commit\n- In order to ensure good formatting, ALWAYS pass the commit message via a HEREDOC, a la this example:\n<example>\ngit commit -m \"$(cat <<'EOF'\n  Commit message here.\n\n  EOF\n  )\"\n</example>\n\n### Pushing changes to remote\n\nWhen the user asks you to push changes, follow these steps:\n\n1. Run the following commands in parallel to understand the current state:\n  - `git status` to see all untracked and modified files (never use the -uall flag)\n  - `git log --oneline -5` to see recent commits\n  - `git branch -vv` to check if the current branch tracks a remote and is up to date\n\n2. Based on the results:\n  - If there are uncommitted changes, ask the user whether to commit first (do NOT commit automatically unless explicitly requested)\n  - If the branch has no upstream, use `git push -u origin <branch>` to set tracking\n  - If the branch already tracks a remote, use `git push`\n\nImportant:\n- NEVER use `git push --force` or `git push --force-with-lease` unless the user explicitly requests it\n- NEVER push to main/master directly — warn the user if they request it\n- If the push fails due to remote changes, suggest `git pull --rebase` first rather than force pushing\n- DO NOT use the TodoWrite or Task tools\n- Return merge request/pr/pull request link if available"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "TodoWrite",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "todos",
+            "merge"
+          ],
+          "properties": {
+            "merge": {
+              "type": "boolean",
+              "description": "Whether to merge the todos with the existing todos. If true, the todos will be merged into the existing todos based on the id field. You can leave unchanged properties undefined. If false, the new todos will replace the existing todos."
+            },
+            "todos": {
+              "type": "array",
+              "items": {},
+              "description": "Array of todo items to write to the workspace"
+            }
+          }
+        },
+        "description": "Use this tool to create and manage a structured task list for your current coding session. This helps track progress, organize complex tasks, and demonstrate thoroughness to the user.\nNote: Other than when first creating todos, don't tell the user you're updating todos, just do it.\n### When to Use\nUse for complex tasks with 3+ distinct steps, or when the user explicitly requests a todo list.\nSkip for simple tasks (< 3 steps) or purely conversational requests.\n### merge Parameter\n- merge=false: Replace the entire todo list. Use when creating a fresh plan.\n- merge=true: Merge into the existing list by id. Only id and changed fields are required for updates; all fields required for new items.\n### Task States & Display Order\n- pending / in_progress / completed\n- Only ONE task may be in_progress at a time.\n- Mark tasks complete IMMEDIATELY after finishing, before starting the next.\n- Todos are displayed sorted by: status (in_progress > pending > completed), then priority (high > medium > low), then creation time. Assign priority based on actual importance to the user.\n### Summary Field\nInclude `summary` only when marking tasks as completed. Describe what was done and the outcomes.\n### Parallel Tool Calls\n- Prefer creating the first todo as in_progress.\n- Start working on todos by using tool calls in the same tool call batch as the todo write.\n- Batch todo updates with other tool calls for better latency and lower costs for the user.\n### IMPORTANT\n- When the user sends a new task that supersedes the current todo_list, use merge=false to replace the todo list instead of merging.\n- Do not end your turn before all todos are completed.\n- All required fields (content, status, id, priority) must be provided when creating new items. When updating existing items via merge=true, content and priority can be omitted to preserve their current values."
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "Write",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "file_path",
+            "content"
+          ],
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "The content to write to the file"
+            },
+            "file_path": {
+              "type": "string",
+              "description": "The absolute path to the file to write (must be absolute, not relative)"
+            }
+          }
+        },
+        "description": "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided path.\n- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.\n- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked."
+      }
+    }
+  ],
+  "stream": true,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an interactive agent operating in Trae IDE that helps the USER with auto-filling service record forms. Use the instructions below and the tools available to you to assist the USER.\n\n# System\n  - All text you output outside of tool use is displayed to the user. Output text to communicate with the user. You can use Github-flavored markdown for formatting, and will be rendered in a monospace font using the CommonMark specification.\n  - Tools are executed in a user-selected permission mode. When you attempt to call a tool that is not automatically allowed by the user's permission mode or permission settings, the user will be prompted so that they can approve or deny the execution.\n  - Each time the USER sends a message, we may automatically attach contextual information about their current state in <system-reminder> or other tags, such as what files they have open, recent edit history, terminal status, linter errors, and current mode. This information is provided in case it is helpful to the task.\n  - The system will automatically compress prior messages in your conversation as it approaches context limits.\n\n# Doing tasks\n  - The user will primarily request you to fill service record forms. These may include selecting event types, generating summaries, and processing customer requests.\n  - When given an unclear or generic instruction, consider it in the context of form filling tasks.\n  - Do not create files unless they're absolutely necessary for achieving your goal.\n  - Generally prefer using existing CLI scripts to creating new ones.\n  - Avoid over-engineering. Keep solutions simple and focused.\n\n# Using your tools\n  - Do NOT use the RunCommand to run commands when a relevant dedicated tool is provided.\n  - To read files use Read instead of cat, head, tail, or sed\n  - To edit files use SearchReplace instead of sed or awk\n  - To search for files use Glob instead of find or ls\n  - To search the content of files, use Grep instead of grep or rg\n  - Reserve using the RunCommand exclusively for CLI script execution.\n  - Break down and manage your work with the TodoWrite tool.\n  - You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency.\n  - You MUST NOT exceed 5 parallel tool calls in a single response unless the user explicitly asks for more.\n\n# Tool Call Best Practices - CRITICAL\n**When calling tools, you MUST follow these rules:**\n\n1. **ALWAYS provide a friendly message in the `content` field** when calling tools. NEVER set content to null or empty.\n   - Good: `content: \"让我获取表单字段定义...\"` + `tool_calls: [...]`\n   - Bad: `content: null` + `tool_calls: [...]`\n   - The content should briefly describe what you are doing in Chinese.\n\n2. **If a tool call fails, analyze the error and retry with corrected parameters.**\n   - Read the error message carefully.\n   - Adjust your parameters based on the error.\n   - Do not repeat the same failed call without modifications.\n\n3. **Tool parameters must be valid JSON matching the tool's schema.**\n   - Ensure all required parameters are provided.\n   - Use correct parameter types (string, number, boolean, array, object).\n\n# Tool Usage Examples\n\n## Skill Tool\n```json\n{\n  \"name\": \"Skill\",\n  \"arguments\": {\"name\": \"autofill-form\"}\n}\n```\n\n## RunCommand Tool\n```json\n{\n  \"name\": \"RunCommand\",\n  \"arguments\": {\n    \"command\": \"python /Users/lu/code/code/py/autofill/scripts/cli/get_form_fields.py --format json\",\n    \"blocking\": true,\n    \"requires_approval\": false\n  }\n}\n```\n\n## TodoWrite Tool\n```json\n{\n  \"name\": \"TodoWrite\",\n  \"arguments\": {\n    \"todos\": [\n      {\"id\": \"1\", \"content\": \"获取表单字段\", \"status\": \"in_progress\", \"priority\": \"high\"}\n    ],\n    \"merge\": false\n  }\n}\n```\n\n## Read Tool\n```json\n{\n  \"name\": \"Read\",\n  \"arguments\": {\n    \"file_path\": \"/Users/lu/code/code/py/autofill/config.toml\",\n    \"limit\": 50\n  }\n}\n```\n\n## Glob Tool\n```json\n{\n  \"name\": \"Glob\",\n  \"arguments\": {\"pattern\": \"scripts/cli/*.py\"}\n}\n```\n\n## LS Tool\n```json\n{\n  \"name\": \"LS\",\n  \"arguments\": {\"path\": \"/Users/lu/code/code/py/autofill/scripts/cli\"}\n}\n```\n\n## Grep Tool\n```json\n{\n  \"name\": \"Grep\",\n  \"arguments\": {\n    \"pattern\": \"event_type\",\n    \"path\": \"/Users/lu/code/code/py/autofill\",\n    \"output_mode\": \"files_with_matches\"\n  }\n}\n```\n\n# Error Handling Guidelines\n\nWhen you receive a tool error, follow these steps:\n\n1. **Read the error message** - Understand what went wrong\n2. **Check the hint** - The error often includes a hint on how to fix it\n3. **Review the tool schema** - Ensure you're using the correct parameter names and types\n4. **Fix and retry** - Correct the parameters and call the tool again\n\nCommon errors and fixes:\n- `Missing required parameter 'command'` → Add the `command` parameter to RunCommand\n- `Missing required parameter 'name'` → Add the `name` parameter to Skill\n- `Missing required parameter 'todos'` → Add the `todos` array to TodoWrite\n- `Missing required parameter 'file_path'` → Add the `file_path` parameter to Read\n- `Missing required parameter 'path'` → Add the `path` parameter to LS\n- `Missing required parameter 'pattern'` → Add the `pattern` parameter to Grep/Glob\n\n# Tone and style\n  - Only use emojis if the user explicitly requests it.\n  - Your responses should be short and concise.\n  - Use Chinese language for user communication.\n\n# Output efficiency\n  IMPORTANT: Go straight to the point. Try the simplest approach first without going in circles.\n  Keep your text output brief and direct. Lead with the answer or action, not the reasoning.\n\n# Task Management\n  You have access to the todo_write tool to help you manage and plan tasks.\n  IMPORTANT: Make sure you don't end your turn before you've completed all todos.\n\n# Response language\n- Always use the same language as the user's latest message unless user explicitly asks.\n- For code comments, follow the same language rule unless explicitly instructed otherwise\n- Maintain consistency in language throughout the conversation.\n\n# Code Reference\nWhen referencing files, always use clickable links with `file:///` protocol:\n  - [link text](file:///absolute/path/to/file) for files\n  - [link text](file:///absolute/path/to/file#L123-L145) for line ranges\n\n# Core Responsibilities\n- Analyze user conversations to extract key information\n- Automatically select appropriate event types (3-level cascade)\n- Generate service record summaries using templates\n- Guide users through the form filling process step by step\n\n# Form Fields Overview\nThe form contains 4 core fields that need to be filled:\n1. **event_type_level1** - First-level event type (dropdown)\n2. **event_type_level2** - Second-level event type (cascade dropdown, depends on level1)\n3. **event_type_level3** - Third-level event type (cascade dropdown, depends on level2)\n4. **service_summary** - Service record summary (textarea, template-based)\n\n# CLI Scripts Location\nAll form-related CLI scripts are located at: `/Users/lu/code/code/py/autofill/scripts/cli/`\n\n| Script | Purpose |\n|--------|---------|\n| `get_form_fields.py` | Get form field definitions and options |\n| `get_field_rules.py` | Get field filling rules |\n| `get_template.py` | Get service record template by event type |\n| `submit_form.py` | Submit the completed form |\n\n# Form Filling Workflow\nWhen user needs to fill a form:\n1. **Invoke autofill-form skill** using the Skill tool with name=\"autofill-form\"\n2. The skill content will be loaded into the conversation\n3. Follow the skill instructions to complete each step:\n   - Get form fields list via `python /Users/lu/code/code/py/autofill/scripts/cli/get_form_fields.py --format json`\n   - Get field rules via `python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py --format json`\n   - Query level1 options and select based on user intent\n   - Query level2 options with parent_id and select\n   - Query level3 options with parent_id and select\n   - Get template based on selected level3 via `python /Users/lu/code/code/py/autofill/scripts/cli/get_template.py --event_type_id <selected_level3_id> --format json`\n   - Extract variables from conversation and fill template\n   - Submit form via `python /Users/lu/code/code/py/autofill/scripts/cli/submit_form.py --format json ...`\n\n# Termination Condition\nThe conversation should continue until:\n- The form is successfully filled and submitted (finish_reason=\"stop\")\n- The user explicitly indicates they don't need help\n- Maximum iterations reached\n\nYou should output the final result and let the system handle termination.\n\n# Important Notes\n- Always invoke the autofill-form skill when user mentions form filling, recording, or event types\n- Do not use SearchCodebase tool (currently disabled)\n- Use RunCommand to execute CLI scripts for form operations\n- Maintain conversation context for multi-turn form filling\n- Use Chinese language for user communication\n\n# Available Skills\n<available_skills>\n<skill>\n<name>\nautofill-form\n</name>\n<description>\n执行自动填单流程，根据对话内容智能填写表单字段，包括三级事件类型选择和服务记录总结生成。Invoke when user needs to fill a form, process service records, or complete event type classification.\n</description>\n</skill>\n</available_skills>\n\n# Skill Usage Instructions\nWhen users ask you to perform tasks, check if any of the available skills above can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.\n\nHow to use skills:\n- Invoke skills using the Skill tool with the skill name only (no arguments)\n- When you invoke a skill, you will see <command-message>The \"{{name}}\" skill is loading</command-message>\n- The skill's prompt will expand and provide detailed instructions on how to complete the task\n- Examples:\n  - `command: \"autofill-form\"` - invoke the autofill-form skill\n\nImportant:\n- When a skill is relevant, you must invoke this tool IMMEDIATELY as your first action\n- NEVER just announce or mention a skill in your text response without actually calling this tool\n- This is a BLOCKING REQUIREMENT: invoke the relevant Skill tool BEFORE generating any other response about the task\n- Only use skills listed in <available_skills> above\n- Do not invoke a skill that is already running\n- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)\n\n# When to Invoke autofill-form Skill - CRITICAL INSTRUCTION\n**当用户需要填单时，你必须立即调用 Skill 工具，传入 name=\"autofill-form\"**\n\n**必须调用 autofill-form skill 当：**\n- 用户需要填写服务记录表单\n- 用户提到\"填单\"、\"记录\"、\"事件类型\"等关键词\n- 需要处理客户投诉、救援请求、保养预约等业务\n- 需要根据对话内容生成分类和服务总结\n\n**重要：不要先尝试其他工具（如 Glob, LS, Grep），而是直接调用 Skill 工具！**\n\nCurrent Date: 2026-06-17"
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "\n<system-reminder>\n<env>\nYou have been invoked in the following environment:\n- Primary working directory: /Users/lu/code/code/py/autofill\n- Working directories: /Users/lu/code/code/py/autofill\n- Operating system: darwin\n- Today's date: 2026-06-17\n- Assistant knowledge cutoff is August 2025.\n- You are powered by the model named qwen3.6-27b.\n</env>\n\n# important-instruction-reminders\n\nDo what has been asked; nothing more, nothing less.\n\nNEVER create files unless they're absolutely necessary for achieving your goal.\n\nALWAYS prefer editing an existing file to creating a new one.\n\nNEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.\n\n- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action.\n</system-reminder>\n\n<system-reminder>\n- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action.\n</system-reminder>\n\n\n",
+          "type": "text"
+        },
+        {
+          "text": "\n<system-reminder>\n\n# Response Language Settings\nYou MUST follow these language requirements when responding to the user:\n- Always use the same language as the user's latest message unless user explicitly asks.\n- For code comments, follow the same language rule unless explicitly instructed otherwise\n- Maintain consistency in language throughout the conversation\n</system-reminder>\n",
+          "type": "text"
+        },
+        {
+          "text": "\n<user_input>\n我的车在高速公路抛锚了，需要紧急拖车。我叫李四，电话13900139000，车在G15沈海高速K1234处。请帮我填单记录。\n</user_input>\n\n<system-reminder>\n- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action.\n</system-reminder>\n\n\n",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_90db3bc930c648e3a088e075",
+          "type": "function",
+          "function": {
+            "name": "Skill",
+            "arguments": "{\"name\": \"autofill-form\", \"conversation_id\": \"test_rescue_1781698182\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\n**Skill Path:** .trae/skills/autofill-form/SKILL.md\n\n---\nname: \"autofill-form\"\ndescription: \"执行自动填单流程，按顺序填写：一级事件类型→二级事件类型→三级事件类型→选择模板→填写服务记录总结。Invoke when user needs to fill a form, process service records, or complete event type classification.\"\n---\n\n# 自动填单 Skill\n\n## 概述\n\n本 Skill 用于执行自动填单，按固定顺序填写：\n1. **一级事件类型** (event_type_level1) - 下拉选择\n2. **二级事件类型** (event_type_level2) - 下拉选择，依赖一级ID\n3. **三级事件类型** (event_type_level3) - 下拉选择，依赖二级ID\n4. **服务记录模板** - 根据一级事件类型选择\n5. **服务记录总结** (service_summary) - 文本输入，基于模板生成\n\n**填写顺序：一级 → 二级 → 三级 → 选择模板 → 填写服务记录总结**\n\n## 何时调用\n\n- 用户需要填写服务记录表单\n- 用户提到\"填单\"、\"记录\"、\"事件类型\"等关键词\n- 需要处理客户投诉、救援请求、保养预约等业务\n\n## CLI 脚本\n\n所有脚本位于：`/Users/lu/code/code/py/autofill/scripts/cli/`\n\n| 脚本 | 功能 | 用法 |\n|------|------|------|\n| `get_field.py` | 获取字段列表/选项/模板列表/模板内容 | `get_field.py [field_name] [--parent_id] [--list_templates] [--template_id]` |\n| `get_field_rules.py` | 获取字段/选项/模板规则 | `get_field_rules.py field_id [option_id] [--parent_id] [--template_id]` |\n| `submit_form.py` | 提交表单 | `submit_form.py JSON_DATA` |\n\n## 填单步骤\n\n### 第1步：获取字段列表\n\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py --format json\n```\n\n**返回：** 4个字段的ID、名称、类型\n\n### 第2步：填写一级事件类型\n\n**2.1 获取下拉选项**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level1 --format json\n```\n\n**2.2 获取字段填写规则（了解各选项要求）**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level1 --format json\n```\n默认返回该字段下所有选项的规则。如果只想查看单个选项，可传入 option_id：\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level1 EVT001 --format json\n```\n\n**2.3 根据用户对话选择**\n- 从对话提取关键词匹配选项\n- 记录选择的一级ID（如 EVT001）\n\n### 第3步：填写二级事件类型\n\n**3.1 获取下拉选项（传入一级ID）**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level2 --parent_id EVT001 --format json\n```\n\n**3.2 获取字段填写规则**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level2 --parent_id EVT001 --format json\n```\n传入 `--parent_id` 返回该父级下所有子选项的规则。如果只想查看单个选项，可传入 option_id：\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level2 EVT001001 --format json\n```\n\n**3.3 根据用户对话选择**\n- 记录选择的二级ID（如 EVT001001）\n\n### 第4步：填写三级事件类型\n\n**4.1 获取下拉选项（传入二级ID）**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level3 --parent_id EVT001001 --format json\n```\n\n**4.2 获取字段填写规则**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level3 --parent_id EVT001001 --format json\n```\n传入 `--parent_id` 返回该父级下所有子选项的规则。如果只想查看单个选项，可传入 option_id：\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level3 EVT001001001 --format json\n```\n\n**4.3 根据用户对话选择**\n- 记录选择的三级ID（如 EVT001001002）\n\n### 第5步：选择服务记录模板\n\n**5.1 获取模板列表（传入一级事件类型ID）**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py service_summary --list_templates EVT001 --format json\n```\n\n**5.2 获取模板规则（了解各模板要求）**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py service_summary --template_id 1 --format json\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py service_summary --template_id 5 --format json\n```\n\n**5.3 根据三级事件类型选择模板**\n- 道路救援类 → 选择模板 1（道路救援请求）\n- 保养预约类 → 选择模板 2（保养预约）\n- 质量问题类 → 根据具体问题选择模板 3/4/9\n- 记录选择的模板ID（如 1）\n\n### 第6步：填写服务记录总结\n\n**6.1 获取模板内容（传入模板ID）**\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py service_summary --template_id 1 --format json\n```\n\n**6.2 从对话提取变量填充模板**\n- 必需变量：customer_name, contact_phone, vehicle_system\n- 根据事件类型提取其他变量\n- 将 `${variable}` 替换为实际值\n\n### 第7步：提交表单\n\n```bash\npython /Users/lu/code/code/py/autofill/scripts/cli/submit_form.py '{\"event_type_level1\":\"EVT001\",\"event_type_level2\":\"EVT001001\",\"event_type_level3\":\"EVT001001002\",\"service_summary\":\"填充后的服务记录总结\"}' --format json\n```\n\n## 字段规则说明\n\n获取字段规则时有三种模式：\n\n**1. 默认模式（不传 option_id）**：返回字段下所有选项的规则\n```bash\npython get_field_rules.py event_type_level1\n```\n返回：`options_rules`（所有选项规则列表）、`options_count`（选项总数）\n\n**2. 级联过滤模式（传 --parent_id）**：返回指定父级下所有子选项的规则\n```bash\npython get_field_rules.py event_type_level2 --parent_id EVT001\n```\n\n**3. 单个选项模式（传 option_id）**：只返回单个选项的规则\n```bash\npython get_field_rules.py event_type_level1 EVT001\n```\n\n每个选项规则包含：\n- `option_id`: 选项ID\n- `option_name`: 选项名称\n- `fill_instruction.instruction`: 填写说明\n- `fill_instruction.required_fields`: 需要收集的关键字段\n- `fill_instruction.priority`: 优先级（urgent/high/normal）\n- `fill_instruction.response_time`: 响应时间要求\n- `fill_instruction.key_points`: 关键确认点\n\n## 模板规则说明\n\n获取模板规则时会返回：\n- `template_name`: 模板名称\n- `variable_rules`: 变量规则（总数、必需数、可选数、变量列表）\n- `validation_rules`: 验证规则（长度限制等）\n- `fill_instruction`: 填写说明（步骤、关键确认点）\n\n## 完整示例\n\n**用户输入：** \"我的车在高速公路抛锚了，发动机无法启动，需要紧急拖车。我叫张三，电话13800138000，车型是Model S。\"\n\n**执行流程：**\n\n```bash\n# 第1步：获取字段列表\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py --format json\n\n# 第2步：填写一级事件类型\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level1 --format json\n# → 选择 EVT001（道路救援）\n\n# 第3步：填写二级事件类型\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level2 --parent_id EVT001 --format json\n# → 选择 EVT001001（拖车服务）\n\n# 第4步：填写三级事件类型\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level3 --parent_id EVT001001 --format json\n# → 选择 EVT001001002（紧急拖车）\n\n# 第5步：选择模板\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py service_summary --list_templates EVT001 --format json\n# → 选择模板 1（道路救援请求）\n\n# 第6步：获取模板内容并填写\npython /Users/lu/code/code/py/autofill/scripts/cli/get_field.py service_summary --template_id 1 --format json\n# 提取变量：customer_name=张三, contact_phone=13800138000, vehicle_system=Model S...\n# 填充模板生成服务记录总结\n\n# 第7步：提交表单\npython /Users/lu/code/code/py/autofill/scripts/cli/submit_form.py \\\n  '{\"event_type_level1\":\"EVT001\",\"event_type_level2\":\"EVT001001\",\"event_type_level3\":\"EVT001001002\",\"service_summary\":\"【客户信息】张三，联系电话：13800138000...\"}' \\\n  --format json\n```\n\n## 关键说明\n\n1. **填写顺序固定**：一级 → 二级 → 三级 → 选择模板 → 填写服务记录总结\n2. **级联查询**：二级传一级ID，三级传二级ID\n3. **模板选择**：根据一级事件类型获取模板列表，根据三级事件类型选择具体模板\n4. **所有调用**使用 RunCommand 工具执行\n\n</toolcall_result>",
+      "tool_call_id": "call_90db3bc930c648e3a088e075"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_3c2e349abe1f49c99c3ebc2c",
+          "type": "function",
+          "function": {
+            "name": "TodoWrite",
+            "arguments": "{\"todos\": [{\"id\": \"1\", \"content\": \"\\u83b7\\u53d6\\u5b57\\u6bb5\\u5217\\u8868\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"id\": \"2\", \"content\": \"\\u586b\\u5199\\u4e00\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"3\", \"content\": \"\\u586b\\u5199\\u4e8c\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"4\", \"content\": \"\\u586b\\u5199\\u4e09\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"5\", \"content\": \"\\u9009\\u62e9\\u670d\\u52a1\\u8bb0\\u5f55\\u6a21\\u677f\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"6\", \"content\": \"\\u586b\\u5199\\u670d\\u52a1\\u8bb0\\u5f55\\u603b\\u7ed3\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"7\", \"content\": \"\\u63d0\\u4ea4\\u8868\\u5355\", \"status\": \"pending\", \"priority\": \"high\"}], \"merge\": false, \"conversation_id\": \"test_rescue_1781698182\"}"
+          }
+        },
+        {
+          "id": "call_3f05a682c43943b681244008",
+          "type": "function",
+          "function": {
+            "name": "RunCommand",
+            "arguments": "{\"command\": \"python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py --format json\", \"blocking\": true, \"requires_approval\": false}"
+          }
+        },
+        {
+          "id": "call_71132a53a3d240bbb9336179",
+          "type": "function",
+          "function": {
+            "name": "RunCommand",
+            "arguments": "{\"command\": \"python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level1 --format json\", \"blocking\": true, \"requires_approval\": false}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\nTodos have been modified successfully. Ensure you continue to use the todo list to track your progress. Please proceed with your current tasks if applicable\n\n<system-reminder>\nYour todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:\n\n{\"todos\":[{\"id\": \"1\", \"content\": \"获取字段列表\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"id\": \"2\", \"content\": \"填写一级事件类型\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"3\", \"content\": \"填写二级事件类型\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"4\", \"content\": \"填写三级事件类型\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"5\", \"content\": \"选择服务记录模板\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"6\", \"content\": \"填写服务记录总结\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"7\", \"content\": \"提交表单\", \"status\": \"pending\", \"priority\": \"high\"}]}.\n</system-reminder>\n</toolcall_result>",
+      "tool_call_id": "call_3c2e349abe1f49c99c3ebc2c"
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\n{\n  \"command_id\": \"99ee8f87-af17-4790-952f-63d870e6ce38\",\n  \"status\": \"completed\",\n  \"exit_code\": 0,\n  \"output\": \"{\\n  \\\"code\\\": 200,\\n  \\\"msg\\\": \\\"OK\\\",\\n  \\\"data\\\": [\\n    {\\n      \\\"field_id\\\": \\\"event_type_level1\\\",\\n      \\\"field_name\\\": \\\"一级事件类型\\\",\\n      \\\"field_type\\\": \\\"dropdown\\\"\\n    },\\n    {\\n      \\\"field_id\\\": \\\"event_type_level2\\\",\\n      \\\"field_name\\\": \\\"二级事件类型\\\",\\n      \\\"field_type\\\": \\\"dropdown\\\"\\n    },\\n    {\\n      \\\"field_id\\\": \\\"event_type_level3\\\",\\n      \\\"field_name\\\": \\\"三级事件类型\\\",\\n      \\\"field_type\\\": \\\"dropdown\\\"\\n    },\\n    {\\n      \\\"field_id\\\": \\\"service_summary\\\",\\n      \\\"field_name\\\": \\\"服务记录总结\\\",\\n      \\\"field_type\\\": \\\"textarea\\\"\\n    }\\n  ]\\n}\\n\",\n  \"error\": null\n}\n</toolcall_result>",
+      "tool_call_id": "call_3f05a682c43943b681244008"
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\n{\n  \"command_id\": \"75944c4e-8c07-42a9-aed0-98ab1305cdda\",\n  \"status\": \"completed\",\n  \"exit_code\": 0,\n  \"output\": \"{\\n  \\\"code\\\": 200,\\n  \\\"msg\\\": \\\"OK\\\",\\n  \\\"data\\\": {\\n    \\\"field_id\\\": \\\"event_type_level1\\\",\\n    \\\"parent_id\\\": null,\\n    \\\"options\\\": [\\n      {\\n        \\\"id\\\": \\\"EVT001\\\",\\n        \\\"label\\\": \\\"道路救援\\\",\\n        \\\"value\\\": \\\"EVT001\\\"\\n      },\\n      {\\n        \\\"id\\\": \\\"EVT002\\\",\\n        \\\"label\\\": \\\"保养预约\\\",\\n        \\\"value\\\": \\\"EVT002\\\"\\n      },\\n      {\\n        \\\"id\\\": \\\"EVT003\\\",\\n        \\\"label\\\": \\\"质量问题\\\",\\n        \\\"value\\\": \\\"EVT003\\\"\\n      }\\n    ]\\n  }\\n}\\n\",\n  \"error\": null\n}\n</toolcall_result>",
+      "tool_call_id": "call_71132a53a3d240bbb9336179"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_834203c2a24349069494dbaf",
+          "type": "function",
+          "function": {
+            "name": "TodoWrite",
+            "arguments": "{\"todos\": [{\"content\": \"\\u83b7\\u53d6\\u5b57\\u6bb5\\u5217\\u8868\", \"id\": \"1\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e00\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"id\": \"2\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e8c\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"id\": \"3\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e09\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"id\": \"4\", \"status\": \"pending\", \"priority\": \"high\"}, {\"content\": \"\\u9009\\u62e9\\u670d\\u52a1\\u8bb0\\u5f55\\u6a21\\u677f\", \"id\": \"5\", \"status\": \"pending\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u670d\\u52a1\\u8bb0\\u5f55\\u603b\\u7ed3\", \"id\": \"6\", \"status\": \"pending\", \"priority\": \"high\"}, {\"content\": \"\\u63d0\\u4ea4\\u8868\\u5355\", \"id\": \"7\", \"status\": \"pending\", \"priority\": \"high\"}], \"merge\": false, \"conversation_id\": \"test_rescue_1781698182\"}"
+          }
+        },
+        {
+          "id": "call_a903fe600fef411e8c8606b0",
+          "type": "function",
+          "function": {
+            "name": "RunCommand",
+            "arguments": "{\"command\": \"python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level2 --parent_id EVT001 --format json\", \"blocking\": true, \"requires_approval\": false}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\nTodos have been modified successfully. Ensure you continue to use the todo list to track your progress. Please proceed with your current tasks if applicable\n\n<system-reminder>\nYour todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:\n\n{\"todos\":[{\"id\": \"1\", \"content\": \"获取字段列表\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"2\", \"content\": \"填写一级事件类型\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"3\", \"content\": \"填写二级事件类型\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"id\": \"4\", \"content\": \"填写三级事件类型\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"5\", \"content\": \"选择服务记录模板\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"6\", \"content\": \"填写服务记录总结\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"7\", \"content\": \"提交表单\", \"status\": \"pending\", \"priority\": \"high\"}]}.\n</system-reminder>\n</toolcall_result>",
+      "tool_call_id": "call_834203c2a24349069494dbaf"
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\n{\n  \"command_id\": \"f53f1848-1916-4b51-bd3a-2c501a2c21da\",\n  \"status\": \"completed\",\n  \"exit_code\": 0,\n  \"output\": \"{\\n  \\\"code\\\": 200,\\n  \\\"msg\\\": \\\"OK\\\",\\n  \\\"data\\\": {\\n    \\\"field_id\\\": \\\"event_type_level2\\\",\\n    \\\"parent_id\\\": \\\"EVT001\\\",\\n    \\\"options\\\": [\\n      {\\n        \\\"id\\\": \\\"EVT001001\\\",\\n        \\\"label\\\": \\\"拖车服务\\\",\\n        \\\"value\\\": \\\"EVT001001\\\"\\n      },\\n      {\\n        \\\"id\\\": \\\"EVT001002\\\",\\n        \\\"label\\\": \\\"现场维修\\\",\\n        \\\"value\\\": \\\"EVT001002\\\"\\n      }\\n    ]\\n  }\\n}\\n\",\n  \"error\": null\n}\n</toolcall_result>",
+      "tool_call_id": "call_a903fe600fef411e8c8606b0"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_04bec8c5334c40938ef164fb",
+          "type": "function",
+          "function": {
+            "name": "TodoWrite",
+            "arguments": "{\"todos\": [{\"content\": \"\\u83b7\\u53d6\\u5b57\\u6bb5\\u5217\\u8868\", \"id\": \"1\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e00\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"id\": \"2\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e8c\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"id\": \"3\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e09\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b\", \"id\": \"4\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"content\": \"\\u9009\\u62e9\\u670d\\u52a1\\u8bb0\\u5f55\\u6a21\\u677f\", \"id\": \"5\", \"status\": \"pending\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u670d\\u52a1\\u8bb0\\u5f55\\u603b\\u7ed3\", \"id\": \"6\", \"status\": \"pending\", \"priority\": \"high\"}, {\"content\": \"\\u63d0\\u4ea4\\u8868\\u5355\", \"id\": \"7\", \"status\": \"pending\", \"priority\": \"high\"}], \"merge\": false, \"conversation_id\": \"test_rescue_1781698182\"}"
+          }
+        },
+        {
+          "id": "call_dfe1dddafb5d4c739c7a542e",
+          "type": "function",
+          "function": {
+            "name": "RunCommand",
+            "arguments": "{\"command\": \"python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level3 --parent_id EVT001001 --format json\", \"blocking\": true, \"requires_approval\": false}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\nTodos have been modified successfully. Ensure you continue to use the todo list to track your progress. Please proceed with your current tasks if applicable\n\n<system-reminder>\nYour todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:\n\n{\"todos\":[{\"id\": \"1\", \"content\": \"获取字段列表\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"2\", \"content\": \"填写一级事件类型\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"3\", \"content\": \"填写二级事件类型\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"4\", \"content\": \"填写三级事件类型\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"id\": \"5\", \"content\": \"选择服务记录模板\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"6\", \"content\": \"填写服务记录总结\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"7\", \"content\": \"提交表单\", \"status\": \"pending\", \"priority\": \"high\"}]}.\n</system-reminder>\n</toolcall_result>",
+      "tool_call_id": "call_04bec8c5334c40938ef164fb"
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\n{\n  \"command_id\": \"2301d9d0-2a7f-44fa-988f-06ee5fa11627\",\n  \"status\": \"completed\",\n  \"exit_code\": 0,\n  \"output\": \"{\\n  \\\"code\\\": 200,\\n  \\\"msg\\\": \\\"OK\\\",\\n  \\\"data\\\": {\\n    \\\"field_id\\\": \\\"event_type_level3\\\",\\n    \\\"parent_id\\\": \\\"EVT001001\\\",\\n    \\\"options\\\": [\\n      {\\n        \\\"id\\\": \\\"EVT001001001\\\",\\n        \\\"label\\\": \\\"标准拖车\\\",\\n        \\\"value\\\": \\\"EVT001001001\\\"\\n      },\\n      {\\n        \\\"id\\\": \\\"EVT001001002\\\",\\n        \\\"label\\\": \\\"紧急拖车\\\",\\n        \\\"value\\\": \\\"EVT001001002\\\"\\n      }\\n    ]\\n  }\\n}\\n\",\n  \"error\": null\n}\n</toolcall_result>",
+      "tool_call_id": "call_dfe1dddafb5d4c739c7a542e"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_a225457c02714bf2b71f99d5",
+          "type": "function",
+          "function": {
+            "name": "TodoWrite",
+            "arguments": "{\"todos\": [{\"content\": \"\\u83b7\\u53d6\\u5b57\\u6bb5\\u5217\\u8868\", \"id\": \"1\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e00\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001 - \\u9053\\u8def\\u6551\\u63f4)\", \"id\": \"2\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e8c\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001001 - \\u62d6\\u8f66\\u670d\\u52a1)\", \"id\": \"3\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e09\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001001002 - \\u7d27\\u6025\\u62d6\\u8f66)\", \"id\": \"4\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u9009\\u62e9\\u670d\\u52a1\\u8bb0\\u5f55\\u6a21\\u677f\", \"id\": \"5\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u670d\\u52a1\\u8bb0\\u5f55\\u603b\\u7ed3\", \"id\": \"6\", \"status\": \"pending\", \"priority\": \"high\"}, {\"content\": \"\\u63d0\\u4ea4\\u8868\\u5355\", \"id\": \"7\", \"status\": \"pending\", \"priority\": \"high\"}], \"merge\": false, \"conversation_id\": \"test_rescue_1781698182\"}"
+          }
+        },
+        {
+          "id": "call_e278b50cb44d4365830c2971",
+          "type": "function",
+          "function": {
+            "name": "RunCommand",
+            "arguments": "{\"command\": \"python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py service_summary --list_templates EVT001 --format json\", \"blocking\": true, \"requires_approval\": false}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\nTodos have been modified successfully. Ensure you continue to use the todo list to track your progress. Please proceed with your current tasks if applicable\n\n<system-reminder>\nYour todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:\n\n{\"todos\":[{\"id\": \"1\", \"content\": \"获取字段列表\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"2\", \"content\": \"填写一级事件类型 (EVT001 - 道路救援)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"3\", \"content\": \"填写二级事件类型 (EVT001001 - 拖车服务)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"4\", \"content\": \"填写三级事件类型 (EVT001001002 - 紧急拖车)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"5\", \"content\": \"选择服务记录模板\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"id\": \"6\", \"content\": \"填写服务记录总结\", \"status\": \"pending\", \"priority\": \"high\"}, {\"id\": \"7\", \"content\": \"提交表单\", \"status\": \"pending\", \"priority\": \"high\"}]}.\n</system-reminder>\n</toolcall_result>",
+      "tool_call_id": "call_a225457c02714bf2b71f99d5"
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\n{\n  \"command_id\": \"413242d0-bdd5-4504-9cfe-1bd59048b890\",\n  \"status\": \"completed\",\n  \"exit_code\": 0,\n  \"output\": \"{\\n  \\\"code\\\": 200,\\n  \\\"msg\\\": \\\"OK\\\",\\n  \\\"data\\\": {\\n    \\\"level1_id\\\": \\\"EVT001\\\",\\n    \\\"template_count\\\": 2,\\n    \\\"templates\\\": [\\n      {\\n        \\\"template_id\\\": \\\"1\\\",\\n        \\\"template_name\\\": \\\"道路救援请求\\\",\\n        \\\"summary\\\": \\\"用户车辆发生故障无法行驶，请求紧急道路救援服务\\\",\\n        \\\"variable_count\\\": 16\\n      },\\n      {\\n        \\\"template_id\\\": \\\"5\\\",\\n        \\\"template_name\\\": \\\"车辆无法启动\\\",\\n        \\\"summary\\\": \\\"用户反馈车辆无法启动或启动后立即熄火\\\",\\n        \\\"variable_count\\\": 18\\n      }\\n    ]\\n  }\\n}\\n\",\n  \"error\": null\n}\n</toolcall_result>",
+      "tool_call_id": "call_e278b50cb44d4365830c2971"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_0c9b475a84534802b8a92672",
+          "type": "function",
+          "function": {
+            "name": "RunCommand",
+            "arguments": "{\"command\": \"python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py service_summary --template_id 1 --format json\", \"blocking\": true, \"requires_approval\": false}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\n{\n  \"command_id\": \"152b873a-bb0d-42c0-9541-bf64fba49c4e\",\n  \"status\": \"completed\",\n  \"exit_code\": 0,\n  \"output\": \"{\\n  \\\"code\\\": 200,\\n  \\\"msg\\\": \\\"OK\\\",\\n  \\\"data\\\": {\\n    \\\"template_id\\\": \\\"1\\\",\\n    \\\"template_name\\\": \\\"道路救援请求\\\",\\n    \\\"summary\\\": \\\"用户车辆发生故障无法行驶，请求紧急道路救援服务\\\",\\n    \\\"template_content\\\": \\\"【客户信息】${customer_name}，联系电话：${contact_phone}\\\\n【车辆信息】车系：${vehicle_system}，车架号：${vin_code}，行驶里程：${mileage}公里\\\\n【故障现象】${fault_description}\\\\n【车辆位置】${vehicle_location}\\\\n【救援需求】${rescue_type}，期望到达时间：${expected_time}\\\\n【现场情况】是否安全停放：${is_safe_parked}，是否影响交通：${affect_traffic}，车上人数：${passenger_count}人\\\\n【处理措施】已安排${rescue_arrangement}，预计到达时间：${eta}，拖车目的地：${destination}\\\\n【客服备注】${remarks}\\\",\\n    \\\"variables\\\": [\\n      {\\n        \\\"name\\\": \\\"customer_name\\\",\\n        \\\"description\\\": \\\"客户姓名\\\",\\n        \\\"required\\\": true\\n      },\\n      {\\n        \\\"name\\\": \\\"contact_phone\\\",\\n        \\\"description\\\": \\\"联系电话\\\",\\n        \\\"required\\\": true\\n      },\\n      {\\n        \\\"name\\\": \\\"vehicle_system\\\",\\n        \\\"description\\\": \\\"车系\\\",\\n        \\\"required\\\": true\\n      },\\n      {\\n        \\\"name\\\": \\\"vin_code\\\",\\n        \\\"description\\\": \\\"车架号\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"mileage\\\",\\n        \\\"description\\\": \\\"行驶里程\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"fault_description\\\",\\n        \\\"description\\\": \\\"故障现象\\\",\\n        \\\"required\\\": true\\n      },\\n      {\\n        \\\"name\\\": \\\"vehicle_location\\\",\\n        \\\"description\\\": \\\"车辆位置\\\",\\n        \\\"required\\\": true\\n      },\\n      {\\n        \\\"name\\\": \\\"rescue_type\\\",\\n        \\\"description\\\": \\\"救援需求\\\",\\n        \\\"required\\\": true\\n      },\\n      {\\n        \\\"name\\\": \\\"expected_time\\\",\\n        \\\"description\\\": \\\"期望到达时间\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"is_safe_parked\\\",\\n        \\\"description\\\": \\\"是否安全停放\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"affect_traffic\\\",\\n        \\\"description\\\": \\\"是否影响交通\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"passenger_count\\\",\\n        \\\"description\\\": \\\"车上人数\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"rescue_arrangement\\\",\\n        \\\"description\\\": \\\"救援安排\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"eta\\\",\\n        \\\"description\\\": \\\"预计到达时间\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"destination\\\",\\n        \\\"description\\\": \\\"拖车目的地\\\",\\n        \\\"required\\\": false\\n      },\\n      {\\n        \\\"name\\\": \\\"remarks\\\",\\n        \\\"description\\\": \\\"客服备注\\\",\\n        \\\"required\\\": false\\n      }\\n    ],\\n    \\\"variable_count\\\": 16\\n  }\\n}\\n\",\n  \"error\": null\n}\n</toolcall_result>",
+      "tool_call_id": "call_0c9b475a84534802b8a92672"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_9849715a8fc04773b49c3cad",
+          "type": "function",
+          "function": {
+            "name": "TodoWrite",
+            "arguments": "{\"todos\": [{\"content\": \"\\u83b7\\u53d6\\u5b57\\u6bb5\\u5217\\u8868\", \"id\": \"1\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e00\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001 - \\u9053\\u8def\\u6551\\u63f4)\", \"id\": \"2\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e8c\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001001 - \\u62d6\\u8f66\\u670d\\u52a1)\", \"id\": \"3\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e09\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001001002 - \\u7d27\\u6025\\u62d6\\u8f66)\", \"id\": \"4\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u9009\\u62e9\\u670d\\u52a1\\u8bb0\\u5f55\\u6a21\\u677f (\\u6a21\\u677f1 - \\u9053\\u8def\\u6551\\u63f4\\u8bf7\\u6c42)\", \"id\": \"5\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u670d\\u52a1\\u8bb0\\u5f55\\u603b\\u7ed3\", \"id\": \"6\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"content\": \"\\u63d0\\u4ea4\\u8868\\u5355\", \"id\": \"7\", \"status\": \"pending\", \"priority\": \"high\"}], \"merge\": false, \"conversation_id\": \"test_rescue_1781698182\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\nTodos have been modified successfully. Ensure you continue to use the todo list to track your progress. Please proceed with your current tasks if applicable\n\n<system-reminder>\nYour todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:\n\n{\"todos\":[{\"id\": \"1\", \"content\": \"获取字段列表\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"2\", \"content\": \"填写一级事件类型 (EVT001 - 道路救援)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"3\", \"content\": \"填写二级事件类型 (EVT001001 - 拖车服务)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"4\", \"content\": \"填写三级事件类型 (EVT001001002 - 紧急拖车)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"5\", \"content\": \"选择服务记录模板 (模板1 - 道路救援请求)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"6\", \"content\": \"填写服务记录总结\", \"status\": \"in_progress\", \"priority\": \"high\"}, {\"id\": \"7\", \"content\": \"提交表单\", \"status\": \"pending\", \"priority\": \"high\"}]}.\n</system-reminder>\n</toolcall_result>",
+      "tool_call_id": "call_9849715a8fc04773b49c3cad"
+    },
+    {
+      "role": "assistant",
+      "content": "根据对话内容填充模板变量：\n\n- **customer_name**: 李四\n- **contact_phone**: 13900139000\n- **vehicle_system**: 未提供\n- **vin_code**: 未提供\n- **mileage**: 未提供\n- **fault_description**: 车辆在高速公路抛锚，发动机无法启动\n- **vehicle_location**: G15沈海高速K1234处\n- **rescue_type**: 紧急拖车\n- **expected_time**: 尽快\n- **is_safe_parked**: 未确认\n- **affect_traffic**: 未确认\n- **passenger_count**: 未确认\n- **rescue_arrangement**: 待安排\n- **eta**: 待确认\n- **destination**: 待确认\n- **remarks**: 高速公路紧急救援，请尽快处理\n\n",
+      "tool_calls": [
+        {
+          "id": "call_201249b6b8f14d8ca4910285",
+          "type": "function",
+          "function": {
+            "name": "RunCommand",
+            "arguments": "{\"command\": \"python /Users/lu/code/code/py/autofill/scripts/cli/submit_form.py '{\\\"event_type_level1\\\":\\\"EVT001\\\",\\\"event_type_level2\\\":\\\"EVT001001\\\",\\\"event_type_level3\\\":\\\"EVT001001002\\\",\\\"service_summary\\\":\\\"\\u3010\\u5ba2\\u6237\\u4fe1\\u606f\\u3011\\u674e\\u56db\\uff0c\\u8054\\u7cfb\\u7535\\u8bdd\\uff1a13900139000\\\\n\\u3010\\u8f66\\u8f86\\u4fe1\\u606f\\u3011\\u8f66\\u7cfb\\uff1a\\u672a\\u63d0\\u4f9b\\uff0c\\u8f66\\u67b6\\u53f7\\uff1a\\u672a\\u63d0\\u4f9b\\uff0c\\u884c\\u9a76\\u91cc\\u7a0b\\uff1a\\u672a\\u63d0\\u4f9b\\u516c\\u91cc\\\\n\\u3010\\u6545\\u969c\\u73b0\\u8c61\\u3011\\u8f66\\u8f86\\u5728\\u9ad8\\u901f\\u516c\\u8def\\u629b\\u951a\\uff0c\\u53d1\\u52a8\\u673a\\u65e0\\u6cd5\\u542f\\u52a8\\\\n\\u3010\\u8f66\\u8f86\\u4f4d\\u7f6e\\u3011G15\\u6c88\\u6d77\\u9ad8\\u901fK1234\\u5904\\\\n\\u3010\\u6551\\u63f4\\u9700\\u6c42\\u3011\\u7d27\\u6025\\u62d6\\u8f66\\uff0c\\u671f\\u671b\\u5230\\u8fbe\\u65f6\\u95f4\\uff1a\\u5c3d\\u5feb\\\\n\\u3010\\u73b0\\u573a\\u60c5\\u51b5\\u3011\\u662f\\u5426\\u5b89\\u5168\\u505c\\u653e\\uff1a\\u672a\\u786e\\u8ba4\\uff0c\\u662f\\u5426\\u5f71\\u54cd\\u4ea4\\u901a\\uff1a\\u672a\\u786e\\u8ba4\\uff0c\\u8f66\\u4e0a\\u4eba\\u6570\\uff1a\\u672a\\u786e\\u8ba4\\u4eba\\\\n\\u3010\\u5904\\u7406\\u63aa\\u65bd\\u3011\\u5df2\\u5b89\\u6392\\u5f85\\u5b89\\u6392\\uff0c\\u9884\\u8ba1\\u5230\\u8fbe\\u65f6\\u95f4\\uff1a\\u5f85\\u786e\\u8ba4\\uff0c\\u62d6\\u8f66\\u76ee\\u7684\\u5730\\uff1a\\u5f85\\u786e\\u8ba4\\\\n\\u3010\\u5ba2\\u670d\\u5907\\u6ce8\\u3011\\u9ad8\\u901f\\u516c\\u8def\\u7d27\\u6025\\u6551\\u63f4\\uff0c\\u8bf7\\u5c3d\\u5feb\\u5904\\u7406\\\"}' --format json\", \"blocking\": true, \"requires_approval\": false}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\n{\n  \"command_id\": \"010528ff-cab8-49ae-a671-7a2eaad3095d\",\n  \"status\": \"completed\",\n  \"exit_code\": 0,\n  \"output\": \"{\\n  \\\"code\\\": 200,\\n  \\\"msg\\\": \\\"Form submitted successfully\\\",\\n  \\\"data\\\": {\\n    \\\"form_id\\\": \\\"FORM_5ACCB17E7E26\\\",\\n    \\\"app_id\\\": \\\"default\\\",\\n    \\\"submitted_at\\\": \\\"2024-01-01T00:00:00Z\\\",\\n    \\\"field_count\\\": 4,\\n    \\\"summary\\\": {\\n      \\\"event_type\\\": \\\"EVT001 > EVT001001 > EVT001001002\\\",\\n      \\\"service_summary_length\\\": 215\\n    }\\n  }\\n}\\n\",\n  \"error\": null\n}\n</toolcall_result>",
+      "tool_call_id": "call_201249b6b8f14d8ca4910285"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_a6583b64cfc940e9a5dc62a8",
+          "type": "function",
+          "function": {
+            "name": "TodoWrite",
+            "arguments": "{\"todos\": [{\"content\": \"\\u83b7\\u53d6\\u5b57\\u6bb5\\u5217\\u8868\", \"id\": \"1\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e00\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001 - \\u9053\\u8def\\u6551\\u63f4)\", \"id\": \"2\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e8c\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001001 - \\u62d6\\u8f66\\u670d\\u52a1)\", \"id\": \"3\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u4e09\\u7ea7\\u4e8b\\u4ef6\\u7c7b\\u578b (EVT001001002 - \\u7d27\\u6025\\u62d6\\u8f66)\", \"id\": \"4\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u9009\\u62e9\\u670d\\u52a1\\u8bb0\\u5f55\\u6a21\\u677f (\\u6a21\\u677f1 - \\u9053\\u8def\\u6551\\u63f4\\u8bf7\\u6c42)\", \"id\": \"5\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u586b\\u5199\\u670d\\u52a1\\u8bb0\\u5f55\\u603b\\u7ed3\", \"id\": \"6\", \"status\": \"completed\", \"priority\": \"high\"}, {\"content\": \"\\u63d0\\u4ea4\\u8868\\u5355\", \"id\": \"7\", \"status\": \"completed\", \"priority\": \"high\"}], \"merge\": false, \"conversation_id\": \"test_rescue_1781698182\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "<toolcall_status>done</toolcall_status>\n<toolcall_result>\nTodos have been modified successfully. Ensure you continue to use the todo list to track your progress. Please proceed with your current tasks if applicable\n\n<system-reminder>\nYour todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:\n\n{\"todos\":[{\"id\": \"1\", \"content\": \"获取字段列表\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"2\", \"content\": \"填写一级事件类型 (EVT001 - 道路救援)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"3\", \"content\": \"填写二级事件类型 (EVT001001 - 拖车服务)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"4\", \"content\": \"填写三级事件类型 (EVT001001002 - 紧急拖车)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"5\", \"content\": \"选择服务记录模板 (模板1 - 道路救援请求)\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"6\", \"content\": \"填写服务记录总结\", \"status\": \"completed\", \"priority\": \"high\"}, {\"id\": \"7\", \"content\": \"提交表单\", \"status\": \"completed\", \"priority\": \"high\"}]}.\n</system-reminder>\n</toolcall_result>",
+      "tool_call_id": "call_a6583b64cfc940e9a5dc62a8"
+    }
+  ],
+  "metadata": {
+    "headers": {
+      "host": "localhost:4000",
+      "accept": "application/json",
+      "connection": "keep-alive",
+      "user-agent": "AsyncOpenAI/Python 2.37.0",
+      "content-type": "application/json",
+      "content-length": "77908",
+      "x-stainless-os": "MacOS",
+      "accept-encoding": "gzip, deflate, zstd",
+      "x-stainless-arch": "arm64",
+      "x-stainless-lang": "python",
+      "x-stainless-async": "async:asyncio",
+      "x-stainless-runtime": "CPython",
+      "x-stainless-retry-count": "0",
+      "x-stainless-package-version": "2.37.0",
+      "x-stainless-runtime-version": "3.12.13"
+    },
+    "agent_id": null,
+    "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "endpoint": "http://localhost:4000/chat/completions",
+    "deployment": "openai/qwen3.6-27b",
+    "model_info": {
+      "id": "be21475b-d61b-4c97-b7ad-56745b33ca13",
+      "mode": "chat",
+      "db_model": true,
+      "max_tokens": 4096,
+      "supports_vision": false,
+      "supports_function_calling": true
+    },
+    "user_agent": "AsyncOpenAI/Python 2.37.0",
+    "max_retries": 2,
+    "model_group": "qwen3.6-27b",
+    "user_api_key": "9d26d597a80422db5b345c22d4b3daca43c0941e7118231791839fd52d6f2c15",
+    "hidden_params": {
+      "usage": "Usage(completion_tokens=317, prompt_tokens=13990, total_tokens=14307, completion_tokens_details=CompletionTokensDetailsWrapper(accepted_prediction_tokens=None, audio_tokens=None, reasoning_tokens=16, rejected_prediction_tokens=None, text_tokens=None, image_tokens=None, video_tokens=None), prompt_tokens_details=None)",
+      "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model_id": "be21475b-d61b-4c97-b7ad-56745b33ca13",
+      "created_at": 1781698248.2422774,
+      "_response_ms": 1344.53,
+      "response_cost": null,
+      "litellm_call_id": "adc50da1-8445-4ff8-b133-43d8c54352f9",
+      "optional_params": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "Skill",
+              "parameters": {},
+              "description": "Execute a skill within the main conversation\n<skills_instructions>\nWhen users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.\nHow to use skills:\n- Invoke skills using this tool with the skill name only (no arguments)\n- When you invoke a skill, you will see <command-message>The \"{{name}}\" skill is loading</command-message>\n- The skill's prompt will expand and provide detailed instructions on how to complete the task\n- Examples:\n  - `command: \"autofill-form\"` - invoke the autofill-form skill\nImportant:\n- When a skill is relevant, you must invoke this tool IMMEDIATELY as your first action\n- NEVER just announce or mention a skill in your text response without actually calling this tool\n- This is a BLOCKING REQUIREMENT: invoke the relevant Skill tool BEFORE generating any other response about the task\n- Only use skills listed in <available_skills> below\n- Do not invoke a skill that is already running\n- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)\n</skills_instructions>\n<available_skills>\n<skill>\n<name>\nautofill-form\n</name>\n<description>\n执行自动填单流程，根据对话内容智能填写表单字段，包括三级事件类型选择和服务记录总结生成。Invoke when user needs to fill a form, process service records, or complete event type classification.\n</description>\n</skill>\n</available_skills>"
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "Glob",
+              "parameters": {},
+              "description": "Fast file pattern matching tool that works with any codebase size\n\nUsage:\n  - Supports glob patterns like \"/*.js\" or \"src//*.ts\"\n  - Returns matching file paths sorted by modification time\n  - Use this tool when you need to find files by name patterns\n  - When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the `SearchCodebase` tool instead\n  - You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful."
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "LS",
+              "parameters": {},
+              "description": "Lists files and directories in a given path.\nThe path parameter must be an absolute path, not a relative path.\nYou can optionally provide an array of glob patterns to ignore with the ignore parameter."
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "Grep",
+              "parameters": {},
+              "description": "A powerful search tool built on ripgrep\n\n  Usage:\n  - NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.\n  - Supports full regex syntax (e.g., \"log.*Error\", \"function\\s+\\w+\")\n  - Filter files with glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type parameter (e.g., \"js\", \"py\", \"rust\")\n  - Output modes: \"content\" shows matching lines, \"files_with_matches\" shows only file paths (default), \"count\" shows match counts\n  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code)\n  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`\n  - Prefer `SearchCodebase` tool when precise code keywords are missing"
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "Read",
+              "parameters": {},
+              "description": "Reads a file from the local filesystem. You can access any file directly by using this tool.\nAssume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n  - The file_path parameter must be an absolute path, not a relative path\n  - You can optionally specify a line offset and limit (especially handy for long files)\n  - Results are returned using cat -n format, with line numbers starting at 1\n  -  When you already know which part of the file you need, only read that part. This can be important for larger files.\n  - You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.\n  - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.\nImage Support:\n- This tool can also read image files when called with the appropriate path.\n- Supported image formats: PNG, JPG, JPEG, GIF, WEBP.\n- Image files have a size limit of 10MB. The offset and limit parameters are ignored for image files.\n\n\nVideo Support:\n- This tool can also read video files. When a video file is provided, it will be processed and analyzed by a vision model, returning a detailed text description of the video content instead of raw file bytes.\n- Supported video formats: MP4, MPEG, MOV, AVI, FLV, MPG, WEBM, WMV, 3GPP. The offset and limit parameters are ignored for video files.\n- The returned description covers visual content, actions, scene transitions, and any visible text in the video.\n- You MUST always provide the `target` parameter when reading a video file. Use `target` to clearly describe what aspect of the video you want the tool to focus on, such as UI interactions, error messages on screen, the data flow shown in an animation, or the code changes demonstrated in a screen recording.\n- For longer videos, you MUST call this tool multiple times on the same file before making a final judgment. Start from the full timeline and overall workflow, then narrow down to specific time windows, then to local screen regions or components, and finally to the exact visual details that matter for the task.\n- All understanding of video content MUST be grounded in what this tool has actually confirmed from the video. Do NOT guess, imagine, infer, or fill in missing details from prior knowledge or common patterns. If a detail has not been visually confirmed yet, call this tool again with a narrower `target`, or explicitly state that the detail is unknown.\n- **IMPORTANT — Multi-pass requirement for detail-sensitive tasks**: When the task is detail-sensitive — such as debugging a visual issue, reproducing a UI flow, analyzing an error state, replicating a design, recreating an animation, or implementing a demonstrated feature — you MUST analyze the video in multiple passes along both the time axis and the screen-detail axis. First, split the video by timeline to understand the full sequence and identify key stages or suspicious time windows. Then split those specific time windows into full-screen states, major regions, local components, and finally the exact detail level needed, including text, visual states, interactions, and motion changes. Do not stop at a high-level summary when the task depends on precise evidence.\n- **IMPORTANT — Time-aware and screen-aware narrowing**: Video analysis must respect both temporal structure and visual structure. Your follow-up passes should narrow from full video -> key time segment -> smaller time window, and also from full screen -> region -> component -> local detail. If motion or interaction is important, further narrow the analysis to the exact trigger moment, transition process, and final visual state.\n- **Requesting structured output via `target`**: When you need implementation-ready details, you can instruct the vision model through the `target` parameter to return structured descriptions such as HTML/CSS for layout and styling, SVG for icons and vector graphics, CSS @keyframes for motion and transitions, or design token tables for colors, typography, and spacing.\n\nBAD (too vague, missing time scope, screen scope, or motion scope):\n  \"analyze the video\"\n  \"describe what happens\"\n  \"look at the UI\"\n  \"check whether there is a bug\"\n  \"look at the problematic part\"\n\nGOOD (specific, time-split, screen-split, motion-split, produces actionable output):\n  \"First analyze the full timeline of the video and split it into major stages. Identify the exact time window where the abnormal behavior first appears. Then focus only on that time window and describe the full-screen UI state, the major regions on screen, and which local component appears to be involved. Finally, zoom in on that component and explain the trigger action, the state before the interaction, the transition process, any animation or visual change during the interaction, and the final resulting state. Explicitly compare expected behavior vs actual behavior, and mark any unconfirmed details as unknown.\"\n  \"Break this screen recording into timeline segments. For each key segment, describe the full-page layout first, then the relevant region, then the specific component being interacted with. For the critical interaction segment, describe exactly when the interaction starts, what visual changes happen frame-by-frame or step-by-step, whether motion is smooth or abnormal, what text or status changes appear, and what the final rendered result looks like.\"\n  \"Analyze this video for implementation-ready design details in three layers: (1) timeline layer — what the user sees at the start, during each transition, and at the end; (2) screen layer — overall layout, then header / content / footer or other major regions, then the target component; (3) motion layer — trigger condition, animation phases, duration, easing, visual state changes, and final resting appearance. Return only visually confirmed details.\""
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "RunCommand",
+              "parameters": {},
+              "description": "Execute a command in a terminal session on behalf of the user.\nEnsure the command is compatible with the current operating system (macos).\n\n\n\nIMPORTANT: This tool is for terminal operations like git, npm, docker, build scripts, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) — use the specialized tools for these instead.\n\nBefore executing the command, follow these steps:\n1. Directory Verification:\n  - If the command creates new directories or files, first verify the parent directory exists.\n  - Use the `cwd` parameter to specify the working directory rather than prepending `cd`.\n\n2. Command Execution:\n  - Always quote file paths that contain spaces with double quotes (e.g., cd \"path with spaces/file.txt\").\n  - You MUST avoid generating interactive commands unless the command only supports interactive input. For example, run `npm create vite@latest . -- --template react` instead of `npm create vite@latest .`.\n\nUsage notes:\n  - Terminals are stateful across sequential calls. Current working directory, environment variables, and state persist between calls within the same terminal.\n  - For performance, prefer reusing existing idle terminals. The system will automatically find and reuse an idle AI terminal when `target_terminal` is not specified.\n  - Commands will be run with PAGER=cat. You may want to limit the length of output for commands that usually rely on paging and may contain very long output (e.g. for git log, use git log -n <N> ; for man ls, man ls | head -n <N>).\n  - VERY IMPORTANT: You MUST avoid using search commands like `find` and `grep`. Use Grep, Glob,SearchCodebase tools instead. You MUST avoid read commands like `cat`, `head`, `tail`. Use the Read tool instead. Avoid editing files with `sed` and `awk`. Use the Edit tool instead.\n  - If you need to observe real-time output from a non-blocking command (blocking: false), use the CheckCommandStatus tool with the command's ID. Do not re-run the command — CheckCommandStatus lets you retrieve the latest output on demand.\n  - To stop a running command, use the StopCommand tool with the command's ID. Do not use `kill`, `pkill`, or other shell commands to terminate processes — StopCommand is the dedicated way.\n  - When issuing multiple commands:\n    - If the commands are independent and can run in parallel, make multiple RunCommand tool calls in a single message. For example, if you need to run \"git status\" and \"git diff\", send a single message with two RunCommand tool calls in parallel.\n    - If the commands depend on each other and must run sequentially, use a single RunCommand call with '&&' to chain them together (e.g., `git add . && git commit -m \"message\" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp,Write before RunCommand for git operations, or git add before git commit), run these operations sequentially instead.\n    - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail\n    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)\n\n### Git Safety Protocol:\n  - NEVER update the git config\n  - NEVER run destructive git commands (push --force, reset --hard, checkout ., restore ., clean -f, branch -D) unless the user explicitly requests these actions. Taking unauthorized destructive actions is unhelpful and can result in lost work, so it's best to ONLY run these commands when given direct instructions \n  - NEVER run force push to main/master, warn the user if they request it\n  - When staging files, prefer adding specific files by name rather than using \"git add -A\" or \"git add .\", which can accidentally include sensitive files (.env, credentials) or large binaries\n  - NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive\n\n### Committing changes with git\n\nOnly create commits when requested by the user. If unclear, ask first. When the user asks you to create a new git commit, follow these steps carefully:\n\n1. Run the following commands in parallel, each using the RunCommand tool:\n  - Run a git status command to see all untracked files. IMPORTANT: Never use the -uall flag as it can cause memory issues on large repos.\n  - Run a git diff command to see both staged and unstaged changes that will be committed.\n  - Run a git log command to see recent commit messages, so that you can follow this repository's commit message style.\n2. Analyze all staged changes (both previously staged and newly added) and draft a commit message:\n  - Summarize the nature of the changes (eg. new feature, enhancement to an existing feature, bug fix, refactoring, test, docs, etc.). Ensure the message accurately reflects the changes and their purpose (i.e. \"add\" means a wholly new feature, \"update\" means an enhancement to an existing feature, \"fix\" means a bug fix, etc.).\n  - Do not commit files that likely contain secrets (.env, credentials.json, etc). Warn the user if they specifically request to commit those files\n  - Draft a concise (1-2 sentences) commit message that focuses on the \"why\" rather than the \"what\"\n  - Ensure it accurately reflects the changes and their purpose\n3. Run the following commands in parallel:\n  - Add relevant untracked files to the staging area.\n  - Run git status after the commit completes to verify success.\n  Note: git status depends on the commit completing, so run it sequentially after the commit.\n\nImportant notes:\n- NEVER run additional commands to read or explore code, besides git  commands\n- NEVER use the TodoWrite or Task tools\n- DO NOT push to the remote repository unless the user explicitly asks you to do so\n- IMPORTANT: Never use git commands with the -i flag (like git rebase -i or git add -i) since they require interactive input which is not supported.\n- IMPORTANT: Do not use --no-edit with git rebase commands, as the --no-edit flag is not a valid option for git rebase.\n- If there are no changes to commit (i.e., no untracked files and no modifications), do not create an empty commit\n- In order to ensure good formatting, ALWAYS pass the commit message via a HEREDOC, a la this example:\n<example>\ngit commit -m \"$(cat <<'EOF'\n  Commit message here.\n\n  EOF\n  )\"\n</example>\n\n### Pushing changes to remote\n\nWhen the user asks you to push changes, follow these steps:\n\n1. Run the following commands in parallel to understand the current state:\n  - `git status` to see all untracked and modified files (never use the -uall flag)\n  - `git log --oneline -5` to see recent commits\n  - `git branch -vv` to check if the current branch tracks a remote and is up to date\n\n2. Based on the results:\n  - If there are uncommitted changes, ask the user whether to commit first (do NOT commit automatically unless explicitly requested)\n  - If the branch has no upstream, use `git push -u origin <branch>` to set tracking\n  - If the branch already tracks a remote, use `git push`\n\nImportant:\n- NEVER use `git push --force` or `git push --force-with-lease` unless the user explicitly requests it\n- NEVER push to main/master directly — warn the user if they request it\n- If the push fails due to remote changes, suggest `git pull --rebase` first rather than force pushing\n- DO NOT use the TodoWrite or Task tools\n- Return merge request/pr/pull request link if available"
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "TodoWrite",
+              "parameters": {},
+              "description": "Use this tool to create and manage a structured task list for your current coding session. This helps track progress, organize complex tasks, and demonstrate thoroughness to the user.\nNote: Other than when first creating todos, don't tell the user you're updating todos, just do it.\n### When to Use\nUse for complex tasks with 3+ distinct steps, or when the user explicitly requests a todo list.\nSkip for simple tasks (< 3 steps) or purely conversational requests.\n### merge Parameter\n- merge=false: Replace the entire todo list. Use when creating a fresh plan.\n- merge=true: Merge into the existing list by id. Only id and changed fields are required for updates; all fields required for new items.\n### Task States & Display Order\n- pending / in_progress / completed\n- Only ONE task may be in_progress at a time.\n- Mark tasks complete IMMEDIATELY after finishing, before starting the next.\n- Todos are displayed sorted by: status (in_progress > pending > completed), then priority (high > medium > low), then creation time. Assign priority based on actual importance to the user.\n### Summary Field\nInclude `summary` only when marking tasks as completed. Describe what was done and the outcomes.\n### Parallel Tool Calls\n- Prefer creating the first todo as in_progress.\n- Start working on todos by using tool calls in the same tool call batch as the todo write.\n- Batch todo updates with other tool calls for better latency and lower costs for the user.\n### IMPORTANT\n- When the user sends a new task that supersedes the current todo_list, use merge=false to replace the todo list instead of merging.\n- Do not end your turn before all todos are completed.\n- All required fields (content, status, id, priority) must be provided when creating new items. When updating existing items via merge=true, content and priority can be omitted to preserve their current values."
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "Write",
+              "parameters": {},
+              "description": "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided path.\n- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.\n- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked."
+            }
+          }
+        ],
+        "stream": true,
+        "extra_body": {},
+        "max_retries": 0,
+        "temperature": 0.7
+      },
+      "received_model_id": "chatcmpl-6af2b1d6-aaff-9535-9aef-f25dc9fc1989",
+      "additional_headers": {
+        "llm_provider-date": "Wed, 17 Jun 2026 12:10:48 GMT",
+        "llm_provider-vary": "Origin",
+        "llm_provider-server": "istio-envoy",
+        "llm_provider-content-type": "text/event-stream;charset=utf-8",
+        "llm_provider-x-request-id": "6af2b1d6-aaff-9535-9aef-f25dc9fc1989",
+        "llm_provider-req-cost-time": "960",
+        "llm_provider-req-arrive-time": "1781698247928",
+        "llm_provider-resp-start-time": "1781698248889",
+        "llm_provider-transfer-encoding": "chunked",
+        "llm_provider-x-dashscope-call-gateway": "true",
+        "llm_provider-x-envoy-upstream-service-time": "854"
+      },
+      "litellm_model_name": "openai/qwen3.6-27b",
+      "custom_llm_provider": "openai",
+      "callback_duration_ms": 0,
+      "litellm_overhead_time_ms": 175.519
+    },
+    "caching_groups": null,
+    "model_group_size": 1,
+    "attempted_retries": 0,
+    "model_group_alias": null,
+    "user_api_key_auth": "token='9d26d597a80422db5b345c22d4b3daca43c0941e7118231791839fd52d6f2c15' key_name=None key_alias=None spend=0.0 max_budget=None expires=None models=[] aliases={} config={} user_id='default_user_id' team_id=None agent_id=None project_id=None max_parallel_requests=None metadata={} tpm_limit=None rpm_limit=None budget_duration=None budget_reset_at=None allowed_cache_controls=[] allowed_routes=[] permissions={} model_spend={} model_max_budget={} soft_budget_cooldown=False blocked=None litellm_budget_table=None org_id=None created_at=None created_by=None updated_at=None updated_by=None last_active=None object_permission_id=None object_permission=None access_group_ids=None rotation_count=0 auto_rotate=False rotation_interval=None last_rotation_at=None key_rotation_at=None router_settings=None team_spend=None team_alias=None team_tpm_limit=None team_rpm_limit=None team_max_budget=None team_soft_budget=None team_models=[] team_blocked=False soft_budget=None team_model_aliases=None team_member=None team_metadata=None team_object_permission_id=None team_member_spend=None team_member_tpm_limit=None team_member_rpm_limit=None end_user_id=None end_user_tpm_limit=None end_user_rpm_limit=None end_user_max_budget=None end_user_model_max_budget=None organization_max_budget=None organization_tpm_limit=None organization_rpm_limit=None organization_metadata=None project_metadata=None last_refreshed_at=1781698213.6324878 api_key='9d26d597a80422db5b345c22d4b3daca43c0941e7118231791839fd52d6f2c15' user_role=<LitellmUserRoles.PROXY_ADMIN: 'proxy_admin'> allowed_model_region=None parent_otel_span=None rpm_limit_per_model=None tpm_limit_per_model=None user_tpm_limit=None user_rpm_limit=None user_email=None user_spend=None user_max_budget=None request_route='/chat/completions' user=None created_by_user=None end_user_object_permission=None jwt_claims=None",
+    "user_api_key_hash": "9d26d597a80422db5b345c22d4b3daca43c0941e7118231791839fd52d6f2c15",
+    "queue_time_seconds": 0.2302250862121582,
+    "requester_metadata": {
+      "headers": {
+        "host": "localhost:4000",
+        "accept": "application/json",
+        "connection": "keep-alive",
+        "user-agent": "AsyncOpenAI/Python 2.37.0",
+        "content-type": "application/json",
+        "content-length": "77908",
+        "x-stainless-os": "MacOS",
+        "accept-encoding": "gzip, deflate, zstd",
+        "x-stainless-arch": "arm64",
+        "x-stainless-lang": "python",
+        "x-stainless-async": "async:asyncio",
+        "x-stainless-runtime": "CPython",
+        "x-stainless-retry-count": "0",
+        "x-stainless-package-version": "2.37.0",
+        "x-stainless-runtime-version": "3.12.13"
+      },
+      "user_api_key_user_id": "default_user_id"
+    },
+    "user_api_key_alias": null,
+    "user_api_key_spend": 0,
+    "litellm_api_version": "1.82.6",
+    "user_api_key_org_id": null,
+    "requester_ip_address": "172.23.0.1",
+    "user_api_key_team_id": null,
+    "user_api_key_user_id": "default_user_id",
+    "deployment_model_name": "qwen3.6-27b",
+    "user_api_key_metadata": {},
+    "user_api_key_max_budget": null,
+    "user_api_key_project_id": null,
+    "user_api_key_team_alias": null,
+    "user_api_key_team_spend": null,
+    "user_api_key_user_email": null,
+    "user_api_key_user_spend": null,
+    "litellm_parent_otel_span": null,
+    "user_api_key_end_user_id": null,
+    "user_api_key_auth_metadata": {},
+    "user_api_key_request_route": "/chat/completions",
+    "user_api_key_team_metadata": null,
+    "global_max_parallel_requests": null,
+    "user_api_end_user_max_budget": null,
+    "user_api_key_budget_reset_at": null,
+    "user_api_key_team_max_budget": null,
+    "user_api_key_user_max_budget": null,
+    "user_api_key_model_max_budget": {},
+    "user_api_key_object_permission_id": null,
+    "user_api_key_end_user_model_max_budget": null,
+    "user_api_key_team_object_permission_id": null
+  },
+  "temperature": 0.7
+}

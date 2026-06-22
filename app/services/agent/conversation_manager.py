@@ -1,58 +1,39 @@
 """
 ConversationManager - 对话历史管理器
 
-按 (session_id, agent_name, tenant_id) 维度隔离会话历史。
-默认存储在进程内存中，预留持久化接入点。
+每个 AgentRuntime 持有独立的 ConversationManager 实例，直接维护单一会话的消息列表。
 """
-from typing import Dict, List, Optional, Tuple
+from typing import List
 
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import BaseMessage
 
 
 class ConversationManager:
     """对话上下文管理器 - 管理多轮对话历史"""
 
     def __init__(self, max_history: int = 20):
-        self._conversations: Dict[Tuple[str, str, str], List[BaseMessage]] = {}
-        self._max_history = max_history
+        self._messages: List[BaseMessage] = []
 
-    def _key(self, session_id: str, agent_name: str, tenant_id: str) -> Tuple[str, str, str]:
-        return (session_id, agent_name, tenant_id)
+    def get_messages(self) -> List[BaseMessage]:
+        """获取当前会话的消息列表（内部引用）"""
+        return self._messages
 
-    def get_or_create(self, session_id: str, agent_name: str, tenant_id: str) -> List[BaseMessage]:
-        """获取或创建对话"""
-        key = self._key(session_id, agent_name, tenant_id)
-        if key not in self._conversations:
-            self._conversations[key] = []
-        return self._conversations[key]
-
-    def add_message(self, session_id: str, agent_name: str, tenant_id: str, message: BaseMessage) -> None:
+    def add_message(self, message: BaseMessage) -> None:
         """添加消息到对话历史"""
-        self.add_messages(session_id, agent_name, tenant_id, [message])
+        self.add_messages([message])
 
-    def add_messages(self, session_id: str, agent_name: str, tenant_id: str, messages: List[BaseMessage]) -> None:
-        """批量添加消息到对话历史并触发截断"""
-        history = self.get_or_create(session_id, agent_name, tenant_id)
-        history.extend(messages)
+    def add_messages(self, messages: List[BaseMessage]) -> None:
+        """批量添加消息到对话历史"""
+        self._messages.extend(messages)
 
-        # 限制历史长度
-        if len(history) > self._max_history:
-            # 保留系统消息和最近的对话
-            system_msgs = [m for m in history if isinstance(m, SystemMessage)]
-            other_msgs = [m for m in history if not isinstance(m, SystemMessage)]
-            other_msgs = other_msgs[-(self._max_history - len(system_msgs)):]
-            self._conversations[self._key(session_id, agent_name, tenant_id)] = system_msgs + other_msgs
-
-    def clear(self, session_id: str, agent_name: str, tenant_id: str) -> None:
+    def clear(self) -> None:
         """清空对话"""
-        key = self._key(session_id, agent_name, tenant_id)
-        if key in self._conversations:
-            del self._conversations[key]
+        self._messages.clear()
 
-    def get_history(self, session_id: str, agent_name: str, tenant_id: str) -> List[BaseMessage]:
+    def get_history(self) -> List[BaseMessage]:
         """获取对话历史副本"""
-        return list(self.get_or_create(session_id, agent_name, tenant_id))
+        return list(self._messages)
 
-    def set_history(self, session_id: str, agent_name: str, tenant_id: str, history: List[BaseMessage]) -> None:
+    def set_history(self, history: List[BaseMessage]) -> None:
         """设置对话历史（预留持久化恢复使用）"""
-        self._conversations[self._key(session_id, agent_name, tenant_id)] = history
+        self._messages = history

@@ -169,3 +169,14 @@ python /Users/lu/code/code/py/autofill/scripts/cli/submit_form.py '{"event_type_
 3. **级联查询**：二级传一级ID，三级传二级ID
 4. **并行执行**：相互独立的命令（如第2步的选项列表与规则）可以在同一次响应中并行调用
 5. **所有调用**使用 RunCommand 工具执行
+
+## 禁止行为
+
+执行本 Skill 时，**禁止**进行以下操作：
+
+- **禁止**使用 `cat`、`head`、`less`、`tail`、`grep` 等命令查看 CLI 脚本源码（如 `cat .../get_field.py`）
+- **禁止**读取 `.env`、`config.toml` 或其他配置文件
+- **禁止**通过 `ls`、`find` 等命令探索项目目录结构
+- **禁止**反复确认脚本用法，本 SKILL.md 已经提供了完整用法
+
+**正确做法**：直接复制并执行上方 `## 完整执行流程` 中的命令，根据实际情况替换 `EVT001`、`EVT001001` 等示例 ID。

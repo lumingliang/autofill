@@ -69,7 +69,6 @@ class AgentRuntime:
         self,
         query: str,
         session_id: str,
-        tenant_id: str,
         user_id: str = "default",
         inputs: Optional[Dict[str, Any]] = None,
         max_iterations: Optional[int] = None,
@@ -77,7 +76,6 @@ class AgentRuntime:
         """非流式对话"""
         return await self.loop.run(
             session_id=session_id,
-            tenant_id=tenant_id,
             query=query,
             user_id=user_id,
             inputs=inputs,
@@ -88,7 +86,6 @@ class AgentRuntime:
         self,
         query: str,
         session_id: str,
-        tenant_id: str,
         user_id: str = "default",
         inputs: Optional[Dict[str, Any]] = None,
         max_iterations: Optional[int] = None,
@@ -96,7 +93,6 @@ class AgentRuntime:
         """流式对话"""
         async for event in self.loop.run_stream(
             session_id=session_id,
-            tenant_id=tenant_id,
             query=query,
             user_id=user_id,
             inputs=inputs,

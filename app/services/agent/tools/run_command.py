@@ -93,8 +93,8 @@ async def execute_run_command(
         wait_ms=wait_ms_before_async
     )
 
-    if not blocking and wait_ms_before_async > 0:
-        await asyncio.sleep(wait_ms_before_async / 1000)
+    # if not blocking and wait_ms_before_async > 0:
+        # await asyncio.sleep(wait_ms_before_async / 1000)
 
     try:
         command_manager.update_command(

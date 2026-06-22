@@ -134,6 +134,9 @@ class MessageBuilder:
         """构建环境信息和重要指令 reminder - 对应 1.json 第三个 content 元素"""
         sections = []
 
+        # 前缀行
+        sections.append("As you answer the user's questions, you can use the following context:")
+
         # <env> 部分
         if self.env_info:
             sections.append(self.env_info.to_env_text())
@@ -145,16 +148,17 @@ class MessageBuilder:
         sections.append("ALWAYS prefer editing an existing file to creating a new one.")
         sections.append("NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.")
 
-        # Skill 触发提醒
-        if self.skill_reminder:
-            sections.append("- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action.")
-
         content = "\n\n".join(sections)
 
-        # 注意：这里有两个 system-reminder，第二个是 Skill 提醒
-        skill_reminder = "- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action."
+        result = f"\n<system-reminder>\n{content}\n</system-reminder>\n"
 
-        return f"\n<system-reminder>\n{content}\n</system-reminder>\n\n<system-reminder>\n{skill_reminder}\n</system-reminder>\n\n\n"
+        # Skill 触发提醒（单独的 <system-reminder>）
+        if self.skill_reminder:
+            skill_reminder = "- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action."
+            result += f"\n<system-reminder>\n{skill_reminder}\n</system-reminder>\n"
+
+        result += "\n\n\n"
+        return result
 
     def _build_language_reminder(self) -> Optional[str]:
         """构建语言设置 reminder - 对应 1.json 第四个 content 元素"""
@@ -170,7 +174,7 @@ class MessageBuilder:
         ]
 
         content = "\n".join(sections)
-        return f"\n<system-reminder>\n\n{content}\n</system-reminder>\n"
+        return f"\n<system-reminder>\n\n{content}\n</system-reminder>\n\n"
 
     def _build_tool_reminder(self) -> Optional[str]:
         """构建工具说明 reminder"""
@@ -195,7 +199,7 @@ class MessageBuilder:
         # Skill 触发提醒（在 user_input 后面）
         skill_reminder = "- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action."
 
-        return f"\n<user_input>\n{user_input_content}\n</user_input>\n\n<system-reminder>\n{skill_reminder}\n</system-reminder>\n\n\n"
+        return f"\n<user_input>\n{user_input_content}\n</user_input>\n\n<system-reminder>\n{skill_reminder}\n</system-reminder>\n\n\n\n"
 
     def build_user_message(
         self,

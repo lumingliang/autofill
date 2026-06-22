@@ -240,8 +240,7 @@ class SystemPromptService:
         1. 直接传入的 system_prompt
         2. 根据 system_prompt_name 查询数据库
         3. 查询默认提示词
-        4. 从JSON配置文件读取
-        5. 返回空字符串
+        4. 返回空字符串
 
         Args:
             system_prompt: 直接传入的提示词
@@ -267,12 +266,7 @@ class SystemPromptService:
         if default_prompt:
             return self._render_template(default_prompt.content, variables)
 
-        # 4. 从JSON配置文件读取默认提示词
-        default_prompt_content = self._get_default_prompt_from_config(category)
-        if default_prompt_content:
-            return self._render_template(default_prompt_content, variables)
-
-        # 5. 返回空字符串
+        # 4. 返回空字符串
         return ""
 
     def _render_template(self, template: str, variables: Optional[Dict[str, Any]] = None) -> str:
@@ -298,35 +292,6 @@ class SystemPromptService:
                 else:
                     result = result.replace(placeholder, str(value))
         return result
-
-    def _get_default_prompt_from_config(self, category: str) -> str:
-        """
-        从JSON配置文件读取默认提示词
-
-        Args:
-            category: 分类
-
-        Returns:
-            提示词内容或空字符串
-        """
-        try:
-            import json
-            from pathlib import Path
-
-            config_path = Path(__file__).parent.parent / "config" / "system_prompts.json"
-            if not config_path.exists():
-                return ""
-
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-            for prompt_data in config.get("prompts", []):
-                if prompt_data.get("category") == category and prompt_data.get("is_default", False):
-                    return prompt_data.get("content", "")
-
-            return ""
-        except Exception:
-            return ""
 
 
 # 服务实例

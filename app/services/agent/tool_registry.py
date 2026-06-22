@@ -3,6 +3,7 @@ ToolRegistry - 统一工具注册表
 
 支持按名称注册、查询、批量获取 LangChain Tool 实例。
 """
+import functools
 from typing import Dict, List, Optional
 
 from langchain_core.tools import BaseTool
@@ -90,13 +91,7 @@ def _build_default_registry() -> ToolRegistry:
     return registry
 
 
-# 全局默认工具注册表实例
-_default_tool_registry: Optional[ToolRegistry] = None
-
-
+@functools.cache
 def get_tool_registry() -> ToolRegistry:
-    """获取全局默认工具注册表（懒加载）"""
-    global _default_tool_registry
-    if _default_tool_registry is None:
-        _default_tool_registry = _build_default_registry()
-    return _default_tool_registry
+    """获取全局默认工具注册表（懒加载、缓存）"""
+    return _build_default_registry()
