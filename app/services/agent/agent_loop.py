@@ -65,13 +65,18 @@ class AgentLoop:
             tool_descriptions.append(f"- {tool.name}: {tool.description[:200]}")
         variables["tool_descriptions"] = "\n".join(tool_descriptions)
 
-        # 可用 Skill 列表（不含 XML，仅作提示词变量）
-        available_skills = []
+        # 可用 Skill 列表（从 Skill 工具描述中提取 <available_skills> XML）
+        available_skills_xml = ""
         for tool in self.tools:
             if tool.name == "Skill":
-                available_skills = [n.strip() for n in re.findall(r"<name>\s*(.*?)\s*</name>", tool.description)]
+                match = re.search(r"<available_skills>.*?</available_skills>", tool.description, re.DOTALL)
+                if match:
+                    available_skills_xml = match.group(0)
                 break
-        variables["available_skills"] = ", ".join(available_skills) if available_skills else "All available skills"
+        variables["available_skills_xml"] = available_skills_xml
+        variables["available_skills"] = ", ".join(
+            [n.strip() for n in re.findall(r"<name>\s*(.*?)\s*</name>", available_skills_xml)]
+        ) if available_skills_xml else "All available skills"
 
         return self.prompt_renderer.render(
             sections=self.config.system_prompt_sections,

@@ -44,60 +44,56 @@ python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py --format json
 
 ### 第2步：填写一级事件类型
 
-**2.1 获取下拉选项**
+**2.1 并行获取下拉选项与字段规则**
+
+一级事件类型的选项列表和对应规则相互独立，可以在同一次工具调用中并行执行，以减少等待时间：
+
 ```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level1 --format json
-```
-
-**2.2 获取字段填写规则（必须执行！用于指导选项选择）**
-```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level1 --format json
 ```
-默认返回该字段下所有选项的规则。如果只想查看单个选项，可传入 option_id：
+
+如果后续需要查看单个选项的详细规则，可再执行：
 ```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level1 EVT001 --format json
 ```
 
-**2.3 根据用户对话选择**
+**2.2 根据用户对话选择**
 - 从对话提取关键词匹配选项
 - 记录选择的一级ID（如 EVT001）
 
 ### 第3步：填写二级事件类型
 
-**3.1 获取下拉选项（传入一级ID）**
+**3.1 并行获取下拉选项与字段规则（传入一级ID）**
+
 ```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level2 --parent_id EVT001 --format json
-```
-
-**3.2 获取字段填写规则（必须执行！用于指导选项选择）**
-```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level2 --parent_id EVT001 --format json
 ```
-传入 `--parent_id` 返回该父级下所有子选项的规则。如果只想查看单个选项，可传入 option_id：
+
+如果只想查看单个选项规则，可再执行：
 ```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level2 EVT001001 --format json
 ```
 
-**3.3 根据用户对话选择**
+**3.2 根据用户对话选择**
 - 记录选择的二级ID（如 EVT001001）
 
 ### 第4步：填写三级事件类型
 
-**4.1 获取下拉选项（传入二级ID）**
+**4.1 并行获取下拉选项与字段规则（传入二级ID）**
+
 ```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level3 --parent_id EVT001001 --format json
-```
-
-**4.2 获取字段填写规则（必须执行！用于指导选项选择）**
-```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level3 --parent_id EVT001001 --format json
 ```
-传入 `--parent_id` 返回该父级下所有子选项的规则。如果只想查看单个选项，可传入 option_id：
+
+如果只想查看单个选项规则，可再执行：
 ```bash
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level3 EVT001001001 --format json
 ```
 
-**4.3 根据用户对话选择**
+**4.2 根据用户对话选择**
 - 记录选择的三级ID（如 EVT001001002）
 
 ### 第5步：选择服务记录模板
@@ -143,15 +139,15 @@ python /Users/lu/code/code/py/autofill/scripts/cli/submit_form.py '{"event_type_
 # ========== 第1步：获取字段列表 ==========
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py --format json
 
-# ========== 第2步：填写一级事件类型 ==========
+# ========== 第2步：填写一级事件类型（并行执行） ==========
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level1 --format json
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level1 --format json
 
-# ========== 第3步：填写二级事件类型 ==========
+# ========== 第3步：填写二级事件类型（并行执行） ==========
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level2 --parent_id EVT001 --format json
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level2 --parent_id EVT001 --format json
 
-# ========== 第4步：填写三级事件类型 ==========
+# ========== 第4步：填写三级事件类型（并行执行） ==========
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field.py event_type_level3 --parent_id EVT001001 --format json
 python /Users/lu/code/code/py/autofill/scripts/cli/get_field_rules.py event_type_level3 --parent_id EVT001001 --format json
 
@@ -171,4 +167,5 @@ python /Users/lu/code/code/py/autofill/scripts/cli/submit_form.py '{"event_type_
 1. **必须严格按顺序执行**：第1步 → 第2步 → 第3步 → 第4步 → 第5步 → 第6步 → 第7步
 2. **每个步骤都必须调用规则获取**：`get_field.py` 之后**必须**调用 `get_field_rules.py`
 3. **级联查询**：二级传一级ID，三级传二级ID
-4. **所有调用**使用 RunCommand 工具执行
+4. **并行执行**：相互独立的命令（如第2步的选项列表与规则）可以在同一次响应中并行调用
+5. **所有调用**使用 RunCommand 工具执行

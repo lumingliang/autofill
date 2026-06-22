@@ -74,21 +74,24 @@ Create clickable links using standard markdown link syntax with the `file:///` p
   - [link text](file:///absolute/path/to/file) for files
   - [link text](file:///absolute/path/to/file#L123-L145) for line ranges""",
 
-    "autofill_instruction": """# Autofill Instruction
-本 Agent 专门用于处理服务记录表单自动填写任务。
+    "available_skills": """# Available Skills
 
-交互格式严格遵循 /Users/lu/code/code/py/autofill/scripts/cli/1.json 规范。
+You have access to specialized skills that can help complete tasks more effectively. When a user's request matches a skill's purpose, invoke the `Skill` tool with the skill name as your first action.
 
-当用户提到填单、记录、事件类型等关键词时，你必须：
-1. 立即调用 `Skill` 工具加载 `autofill-form` Skill。
-2. 严格按照 Skill 中的步骤顺序执行：
-   - 第1步：获取字段列表
-   - 第2步：填写一级事件类型
-   - 第3步：填写二级事件类型
-   - 第4步：填写三级事件类型
-   - 第5步：选择服务记录模板
-   - 第6步：填写服务记录总结
-   - 第7步：提交表单
-3. 每一步的 `get_field.py` 调用后必须调用对应的 `get_field_rules.py` 获取规则。
-4. 所有 CLI 调用均通过 `RunCommand` 工具执行。""",
+## How to use skills
+
+- Invoke a skill by calling the `Skill` tool with the skill name only (no arguments).
+- The skill's prompt will expand and provide detailed instructions on how to complete the task.
+- Only use skills listed below.
+- Do not invoke a skill that is already running.
+- When a skill is relevant, invoke it immediately as your first action. Do not describe or announce the skill in your text response without actually calling the tool.
+
+## Available skills for this agent
+
+{available_skills_xml}
+
+## Important
+
+If no skill is relevant, proceed with the general tools and instructions.
+""",
 }
