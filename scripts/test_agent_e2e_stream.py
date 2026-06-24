@@ -43,27 +43,29 @@ async def test_roadside_rescue_form_filling_stream():
     print("测试：道路救援填单场景（流式响应）")
     print("=" * 70)
 
-    conversation_id = f"test_rescue_stream_{int(time.time())}"
+    session_id = f"test_rescue_stream_{int(time.time())}"
 
     # 道路救援场景的用户输入
     payload = {
         "query": "我的车在高速公路抛锚了，需要紧急拖车。我叫李四，电话13900139000，车在G15沈海高速K1234处。请帮我填单记录。",
-        "conversation_id": conversation_id,
+        "agent_name": "autofill",
+        "session_id": session_id,
         "user_id": "test_user",
         "stream": True,
         "max_iterations": 50
     }
 
     print(f"\n用户输入: {payload['query']}")
-    print(f"对话ID: {conversation_id}")
+    print(f"会话ID: {session_id}")
     print(f"\n{'-' * 70}")
     print("开始流式接收响应...")
     print('-' * 70)
 
     tool_calls = []
     full_answer = ""
+    full_reasoning = ""
     finish_reason = ""
-    event_count = {"content": 0, "tool_start": 0, "tool_use": 0, "tool_result": 0, "done": 0}
+    event_count = {"content": 0, "reasoning": 0, "tool_start": 0, "tool_use": 0, "tool_result": 0, "done": 0}
 
     async with httpx.AsyncClient(timeout=300.0) as client:
         async with client.stream(
@@ -92,20 +94,21 @@ async def test_roadside_rescue_form_filling_stream():
                 event_type = data.get("type")
 
                 if event_type == "start":
-                    print(f"\n[事件] 对话开始 - ID: {data.get('conversation_id')}")
+                    print(f"\n[事件] 对话开始 - ID: {data.get('session_id')}")
 
                 elif event_type == "content":
                     content = data.get("content", "")
                     full_answer += content
                     event_count["content"] += 1
-                    if event_count["content"] <= 5:  # 只打印前5个内容片段
-                        print(f"[内容] {content[:100]}...")
-                    elif event_count["content"] == 6:
-                        print("[内容] ... (后续内容省略)")
+                    # 实时连续输出完整内容，不换行，立即刷新
+                    print(content, end="", flush=True)
 
                 elif event_type == "reasoning":
                     reasoning = data.get("content", "")
-                    print(f"[推理] {reasoning[:150]}...")
+                    full_reasoning += reasoning
+                    event_count["reasoning"] += 1
+                    # 实时连续输出完整推理内容
+                    print(f"\n[reasoning] {reasoning}", end="", flush=True)
 
                 elif event_type == "tool_start":
                     event_count["tool_start"] += 1
@@ -126,6 +129,10 @@ async def test_roadside_rescue_form_filling_stream():
                     status = data.get("status")
                     print(f"[结果] {tool_name} - 状态: {status}")
 
+                elif event_type == "error":
+                    error_msg = data.get("error", "Unknown error")
+                    print(f"\n❌ [错误] {error_msg[:300]}...")
+
                 elif event_type == "done":
                     event_count["done"] += 1
                     finish_reason = data.get("finish_reason", "")
@@ -140,12 +147,22 @@ async def test_roadside_rescue_form_filling_stream():
 
     checks = []
 
+    print(f"\n{'-' * 70}")
+    print("完整回答内容:")
+    print('-' * 70)
+    print(full_answer)
+    if full_reasoning:
+        print(f"\n{'-' * 70}")
+        print("完整推理内容:")
+        print('-' * 70)
+        print(full_reasoning)
+
     # 检查1: 是否有内容返回
     if full_answer and len(full_answer) > 10:
-        print(f"   ✅ 有有效回答内容 ({len(full_answer)} 字符)")
+        print(f"\n   ✅ 有有效回答内容 ({len(full_answer)} 字符)")
         checks.append(True)
     else:
-        print(f"   ⚠️ 回答内容较短: {full_answer[:100]}")
+        print(f"\n   ⚠️ 回答内容较短: {full_answer[:100]}")
         checks.append(False)
 
     # 检查2: 是否有工具调用
@@ -167,6 +184,7 @@ async def test_roadside_rescue_form_filling_stream():
     # 检查4: 事件统计
     print(f"\n   事件统计:")
     print(f"      - 内容片段: {event_count['content']}")
+    print(f"      - 推理片段: {event_count['reasoning']}")
     print(f"      - 工具开始: {event_count['tool_start']}")
     print(f"      - 工具调用: {event_count['tool_use']}")
     print(f"      - 工具结果: {event_count['tool_result']}")

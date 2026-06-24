@@ -1,7 +1,6 @@
 import os
 import toml
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Any, Dict
 
 
 class Settings(BaseSettings):
@@ -74,7 +73,10 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = ""
     AGENT_TEMPERATURE: float = 0.7
     AGENT_MAX_ITERATIONS: int = 10
-    
+
+    # Agent 配置（skill 和 mcp 基础路径）
+    AGENT_BASE_DIR: str = ".trae"
+
     # 上传配置
     UPLOAD_DIR: str = "./uploads"
     AVATAR_DIR: str = "./uploads/avatars"
@@ -225,7 +227,12 @@ class Settings(BaseSettings):
                 if "dify" in config:
                     dify_config = config["dify"]
                     instance.DIFY_TIMEOUT = dify_config.get("dify_timeout", instance.DIFY_TIMEOUT)
-                
+
+                # 加载 Agent 配置
+                if "agent" in config:
+                    agent_config = config["agent"]
+                    instance.AGENT_BASE_DIR = agent_config.get("base_dir", instance.AGENT_BASE_DIR)
+
                 # 加载日志配置
                 if "logging" in config:
                     log_config = config["logging"]

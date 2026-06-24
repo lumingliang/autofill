@@ -72,6 +72,7 @@ class AgentRuntime:
         user_id: str = "default",
         inputs: Optional[Dict[str, Any]] = None,
         max_iterations: Optional[int] = None,
+        debug: bool = False,
     ) -> Dict[str, Any]:
         """非流式对话"""
         return await self.loop.run(
@@ -80,6 +81,7 @@ class AgentRuntime:
             user_id=user_id,
             inputs=inputs,
             max_iterations=max_iterations,
+            debug=debug,
         )
 
     async def chat_stream(
@@ -89,6 +91,7 @@ class AgentRuntime:
         user_id: str = "default",
         inputs: Optional[Dict[str, Any]] = None,
         max_iterations: Optional[int] = None,
+        debug: bool = False,
     ) -> AsyncGenerator[str, None]:
         """流式对话"""
         async for event in self.loop.run_stream(
@@ -97,5 +100,6 @@ class AgentRuntime:
             user_id=user_id,
             inputs=inputs,
             max_iterations=max_iterations,
+            debug=debug,
         ):
             yield event

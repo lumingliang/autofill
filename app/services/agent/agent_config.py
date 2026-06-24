@@ -23,6 +23,7 @@ class AgentConfig(BaseModel):
     system_prompt_variables: Dict[str, Any] = Field(default_factory=dict, description="模板额外变量")
 
     tools: List[str] = Field(default_factory=list, description="允许使用的工具名列表")
+    mcp_servers: List[str] = Field(default_factory=list, description="启用的 MCP 服务器名列表（可选，默认全部）")
     skills: List[str] = Field(default_factory=list, description="允许使用的 Skill 名列表（可选，默认全部）")
     model: str = Field(default="qwen3.6-plus-2026-04-02", description="模型名")
     api_key: Optional[str] = Field(default=None, description="API Key（可选，默认从环境/配置读取）")

@@ -17,7 +17,7 @@ class GlobInput(BaseModel):
         default=None,
         description=(
             "The directory to search in. If not specified, the current working directory will\n"
-            "be used. Omit this field to use the default behavior. DO NOT enter \"undefined\"\n"
+            "be used. Omit this field to use the default directory. DO NOT enter \"undefined\"\n"
             "or \"null\" - simply omit it for the default behavior. Must be a valid absolute\n"
             "directory path if provided."
         )

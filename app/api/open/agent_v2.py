@@ -41,6 +41,7 @@ class AgentChatRequest(BaseModel):
     inputs: Optional[Dict[str, Any]] = Field(None, description="输入参数")
     stream: bool = Field(True, description="是否流式返回")
     max_iterations: int = Field(10, description="最大迭代次数", ge=1, le=50)
+    debug: bool = Field(False, description="调试模式：不请求大模型，仅导出请求体")
 
 
 class AgentChatResponse(BaseModel):
@@ -90,6 +91,7 @@ async def agent_chat_v2(request: AgentChatRequest, http_request: Request):
                     user_id=request.user_id,
                     inputs=request.inputs,
                     max_iterations=request.max_iterations,
+                    debug=request.debug,
                 ):
                     yield event
 
@@ -111,6 +113,7 @@ async def agent_chat_v2(request: AgentChatRequest, http_request: Request):
                 user_id=request.user_id,
                 inputs=request.inputs,
                 max_iterations=request.max_iterations,
+                debug=request.debug,
             )
 
             logger.info({

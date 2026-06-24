@@ -109,6 +109,7 @@ async def chat(
     user_id: str = "default",
     inputs: Optional[Dict[str, Any]] = None,
     max_iterations: Optional[int] = None,
+    debug: bool = False,
 ) -> Dict[str, Any]:
     """按名称调用 Agent（非流式）"""
     tenant_id = str(Ctx.get_effective_tenant_id())
@@ -119,6 +120,7 @@ async def chat(
         user_id=user_id,
         inputs=inputs,
         max_iterations=max_iterations,
+        debug=debug,
     )
 
 
@@ -129,6 +131,7 @@ async def chat_stream(
     user_id: str = "default",
     inputs: Optional[Dict[str, Any]] = None,
     max_iterations: Optional[int] = None,
+    debug: bool = False,
 ):
     """按名称调用 Agent（流式）"""
     tenant_id = str(Ctx.get_effective_tenant_id())
@@ -139,5 +142,6 @@ async def chat_stream(
         user_id=user_id,
         inputs=inputs,
         max_iterations=max_iterations,
+        debug=debug,
     ):
         yield event

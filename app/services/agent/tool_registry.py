@@ -10,14 +10,17 @@ from langchain_core.tools import BaseTool
 
 from app.services.agent.tools import (
     get_ask_user_question_tool,
+    get_check_command_status_tool,
     get_delete_file_tool,
     get_glob_tool,
     get_grep_tool,
     get_ls_tool,
     get_read_tool,
     get_run_command_tool,
+    get_run_mcp_tool,
     get_search_replace_tool,
     get_skill_tool,
+    get_stop_command_tool,
     get_todo_write_tool,
     get_write_tool,
 )
@@ -31,6 +34,9 @@ _TOOL_FACTORIES = {
     "Grep": get_grep_tool,
     "Read": get_read_tool,
     "RunCommand": get_run_command_tool,
+    "CheckCommandStatus": get_check_command_status_tool,
+    "StopCommand": get_stop_command_tool,
+    "run_mcp": get_run_mcp_tool,
     "TodoWrite": get_todo_write_tool,
     "SearchReplace": get_search_replace_tool,
     "Write": get_write_tool,

@@ -3,9 +3,6 @@ RunCommand 工具 - 执行命令
 """
 import asyncio
 import os
-import shlex
-import subprocess
-from datetime import datetime
 from typing import Optional
 
 from langchain_core.tools import BaseTool, StructuredTool
@@ -69,6 +66,71 @@ def _validate_command(command: str) -> tuple[bool, Optional[str]]:
     return True, None
 
 
+async def _execute_blocking(
+    command: str,
+    cwd: Optional[str] = None,
+) -> str:
+    """同步阻塞执行命令并返回结果（受全局 Semaphore 限流）。"""
+    work_dir = cwd or os.getcwd()
+
+    command_id = command_manager.create_command(
+        command=command,
+        cwd=work_dir,
+        blocking=True,
+    )
+
+    result = await command_manager.run_blocking(
+        command_id=command_id,
+        command=command,
+        cwd=work_dir,
+    )
+
+    if result.get("status") == "error" and result.get("exit_code") is None:
+        return format_tool_result("error", {
+            "command_id": command_id,
+            "status": "error",
+            "error": result.get("error", "Unknown error"),
+        })
+
+    return format_tool_result("done" if result.get("status") == "completed" else "error", {
+        "command_id": command_id,
+        "status": result.get("status"),
+        "exit_code": result.get("exit_code"),
+        "output": (result.get("output") or "")[:5000],
+        "error": (result.get("error") or "")[:2000] if result.get("error") else None,
+    })
+
+
+async def _execute_async(
+    command: str,
+    cwd: Optional[str] = None,
+    wait_ms_before_async: int = 0,
+) -> str:
+    """非阻塞执行命令，立即返回 command_id（受全局 Semaphore 限流）。"""
+    work_dir = cwd or os.getcwd()
+
+    command_id = command_manager.create_command(
+        command=command,
+        cwd=work_dir,
+        blocking=False,
+        wait_ms=wait_ms_before_async,
+    )
+
+    pid = await command_manager.start_command(
+        command_id=command_id,
+        command=command,
+        cwd=work_dir,
+        wait_ms=wait_ms_before_async,
+    )
+
+    return format_tool_result("running", {
+        "command_id": command_id,
+        "status": "running",
+        "pid": pid,
+        "message": "Command is running asynchronously",
+    })
+
+
 async def execute_run_command(
     command: str,
     cwd: Optional[str] = None,
@@ -78,82 +140,15 @@ async def execute_run_command(
     requires_approval: bool = False,
     wait_ms_before_async: int = 0,
 ) -> str:
-    """执行 RunCommand 工具 - 与 1.json 一致"""
-    work_dir = cwd or os.getcwd()
-
+    """执行 RunCommand 工具"""
     safe, reason = _validate_command(command)
     if not safe:
         return format_tool_result("error", {"error": reason})
 
-    # 创建命令记录
-    command_id = command_manager.create_command(
-        command=command,
-        cwd=work_dir,
-        blocking=blocking,
-        wait_ms=wait_ms_before_async
-    )
-
-    # if not blocking and wait_ms_before_async > 0:
-        # await asyncio.sleep(wait_ms_before_async / 1000)
-
-    try:
-        command_manager.update_command(
-            command_id,
-            status="running",
-            started_at=datetime.now().isoformat()
-        )
-
-        # 使用 shell=False 安全执行，通过 shlex.split 解析命令
-        cmd_args = shlex.split(command)
-        result = subprocess.run(
-            cmd_args,
-            shell=False,
-            cwd=work_dir,
-            capture_output=True,
-            text=True,
-            timeout=300 if blocking else 1
-        )
-
-        command_manager.update_command(
-            command_id,
-            status="completed",
-            exit_code=result.returncode,
-            output=result.stdout,
-            error=result.stderr,
-            completed_at=datetime.now().isoformat()
-        )
-
-        return format_tool_result("done", {
-            "command_id": command_id,
-            "status": "completed",
-            "exit_code": result.returncode,
-            "output": result.stdout[:5000],
-            "error": result.stderr[:2000] if result.stderr else None,
-        })
-
-    except subprocess.TimeoutExpired:
-        command_manager.update_command(
-            command_id,
-            status="running",
-            output="Command is still running..."
-        )
-        return format_tool_result("running", {
-            "command_id": command_id,
-            "status": "running",
-            "message": "Command is running asynchronously"
-        })
-
-    except Exception as e:
-        command_manager.update_command(
-            command_id,
-            status="error",
-            error=str(e)
-        )
-        return format_tool_result("error", {
-            "command_id": command_id,
-            "status": "error",
-            "error": str(e)
-        })
+    if blocking:
+        return await _execute_blocking(command, cwd)
+    else:
+        return await _execute_async(command, cwd, wait_ms_before_async)
 
 
 def get_run_command_tool() -> BaseTool:
@@ -200,12 +195,14 @@ def get_run_command_tool() -> BaseTool:
             "\n"
             "Only create commits when requested by the user. If unclear, ask first. When the user asks you to create a new git commit, follow these steps carefully:\n"
             "\n"
-            "You can call multiple commands in parallel, each using the RunCommand tool:\n"
+            "You can call multiple tools in a single response. When multiple independent pieces of information are requested and all commands are likely to succeed, run multiple tool calls in parallel for optimal performance. The numbered steps below indicate which commands should be batched in parallel.\n"
+            "\n"
+            "1. Run the following commands in parallel, each using the RunCommand tool:\n"
             "  - Run a git status command to see all untracked files. IMPORTANT: Never use the -uall flag as it can cause memory issues on large repos.\n"
             "  - Run a git diff command to see both staged and unstaged changes that will be committed.\n"
             "  - Run a git log command to see recent commit messages, so that you can follow this repository's commit message style.\n"
             "2. Analyze all staged changes (both previously staged and newly added) and draft a commit message:\n"
-            "  - Summarize the nature of the changes (eg. new feature, enhancement to an existing feature, bug fix, refactoring, test, docs, etc.). Ensure the message accurately reflects the changes and their purpose (i.e. \"add\" means a wholly new feature, \"update\" means an enhancement to an existing feature, \"fix\" means a bug fix, etc.)\n"
+            "  - Summarize the nature of the changes (eg. new feature, enhancement to an existing feature, bug fix, refactoring, test, docs, etc.). Ensure the message accurately reflects the changes and their purpose (i.e. \"add\" means a wholly new feature, \"update\" means an enhancement to an existing feature, \"fix\" means a bug fix, etc.).\n"
             "  - Do not commit files that likely contain secrets (.env, credentials.json, etc). Warn the user if they specifically request to commit those files\n"
             "  - Draft a concise (1-2 sentences) commit message that focuses on the \"why\" rather than the \"what\"\n"
             "  - Ensure it accurately reflects the changes and their purpose\n"

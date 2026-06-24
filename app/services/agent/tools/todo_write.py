@@ -2,7 +2,7 @@
 TodoWrite 工具 - 任务管理
 """
 import uuid
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
@@ -14,12 +14,12 @@ from app.services.agent.tool_executor import format_tool_result, format_todo_wri
 
 class TodoItem(BaseModel):
     id: str = Field(description="Unique identifier for the todo item")
-    content: str = Field(description=(
+    content: Optional[str] = Field(default=None, description=(
         "The description/content of the todo item. Make sure the language of todo item\n"
         "content is consistent with the language of <user_input>!"
     ))
-    status: Literal["pending", "in_progress", "completed"] = Field(description="The current status of the todo item")
-    priority: Literal["high", "medium", "low"] = Field(description="The priority of the todo item")
+    status: Literal["pending", "in_progress", "completed"] = Field(default="pending", description="The current status of the todo item")
+    priority: Optional[Literal["high", "medium", "low"]] = Field(default=None, description="The priority of the todo item")
 
 
 class TodoWriteInput(BaseModel):
@@ -28,7 +28,7 @@ class TodoWriteInput(BaseModel):
         "merged into the existing todos based on the id field. You can leave unchanged\n"
         "properties undefined. If false, the new todos will replace the existing todos."
     ))
-    todos: List[TodoItem] = Field(min_length=3, max_length=10, description="Array of todo items to write to the workspace")
+    todos: List[TodoItem] = Field(min_length=1, max_length=10, description="Array of todo items to write to the workspace")
 
 
 async def execute_todo_write(todos: List[TodoItem], merge: bool, config: RunnableConfig = None) -> str:
@@ -63,10 +63,15 @@ async def execute_todo_write(todos: List[TodoItem], merge: bool, config: Runnabl
         for todo in todos:
             validated_todo = {
                 "id": getattr(todo, "id", None) or str(uuid.uuid4()),
-                "content": getattr(todo, "content", "") or "",
                 "status": getattr(todo, "status", "pending") or "pending",
-                "priority": getattr(todo, "priority", "medium") or "medium"
             }
+            # merge=true 时若未提供 content/priority，应保留旧值，因此仅当非 None 时才写入
+            content = getattr(todo, "content", None)
+            if content is not None:
+                validated_todo["content"] = content
+            priority = getattr(todo, "priority", None)
+            if priority is not None:
+                validated_todo["priority"] = priority
             validated_todos.append(validated_todo)
 
         # 写入任务列表

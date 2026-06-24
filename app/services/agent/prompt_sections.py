@@ -73,4 +73,6 @@ Create clickable links using standard markdown link syntax with the `file:///` p
 
   - [link text](file:///absolute/path/to/file) for files
   - [link text](file:///absolute/path/to/file#L123-L145) for line ranges""",
+
+    "mcp": "{mcp_section_content}",
 }
