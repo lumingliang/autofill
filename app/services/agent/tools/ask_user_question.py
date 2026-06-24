@@ -47,7 +47,6 @@ class AskUserQuestionInput(BaseModel):
 
 
 async def execute_ask_user_question(questions: List[dict]) -> str:
-    """执行 AskUserQuestion 工具 - 与 1.json 一致"""
     return format_tool_result("done", {
         "questions": questions,
         "status": "waiting_for_user"

@@ -18,7 +18,6 @@ class WriteInput(BaseModel):
 
 
 async def execute_write(file_path: str, content: str) -> str:
-    """执行 Write 工具 - 与 1.json 一致"""
     try:
         parent_dir = os.path.dirname(file_path)
         if parent_dir and not os.path.exists(parent_dir):

@@ -1,11 +1,8 @@
 """
 MCP 系统提示词段落动态生成器
 
-根据 .trae/mcp.json 中配置的 schema 路径，扫描工具描述文件，
-生成 <mcp_file_system> 段落供系统提示词使用。
-
-如果本地 schema 目录不存在或为空，会尝试通过 SSE 连接 MCP server，
-调用 tools/list 获取工具列表并缓存到本地 schema 目录。
+扫描 MCP server 工具描述文件，生成 <mcp_file_system> 段落。
+本地 schema 缺失时通过 SSE 调用 tools/list 拉取并缓存。
 """
 import asyncio
 import json
@@ -148,7 +145,6 @@ async def _ensure_server_schema(server_url: str, schema_dir_abs: str) -> List[st
 
 
 def _load_mcp_config() -> Dict[str, Any]:
-    """加载 .trae/mcp.json 配置。"""
     mcp_json_path = os.path.abspath(
         os.path.join(settings.BASE_DIR, settings.AGENT_BASE_DIR, "mcp.json")
     )
@@ -163,7 +159,6 @@ def _load_mcp_config() -> Dict[str, Any]:
 
 
 def _resolve_mcp_server_name(server_name: str, servers: Dict[str, Any]) -> Optional[str]:
-    """将 system-prompt 风格的 server_name 解析为 mcp.json 中的 key。"""
     if server_name in servers:
         return server_name
     if server_name.startswith("mcp_"):
@@ -186,7 +181,6 @@ def _scan_tool_names(schema_dir: str) -> List[str]:
 
 
 def _to_public_server_name(mcp_key: str) -> str:
-    """将 mcp.json 中的 key 转换为对外暴露的 server_name。"""
     if not mcp_key.startswith("mcp_"):
         return f"mcp_{mcp_key}"
     return mcp_key

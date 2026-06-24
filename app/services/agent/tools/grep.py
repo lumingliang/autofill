@@ -59,7 +59,6 @@ class GrepInput(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _accept_cli_aliases(cls, data):
-        """允许 LLM 使用与原始 1.json 一致的 -A/-B/-C/-i/-n 参数名。"""
         if not isinstance(data, dict):
             return data
         rename = {"-A": "A", "-B": "B", "-C": "C", "-i": "i", "-n": "n"}
@@ -70,7 +69,6 @@ class GrepInput(BaseModel):
 
     @classmethod
     def model_json_schema(cls, *args, **kwargs):
-        """生成与 1.json 一致的参数名（-A/-B/-C/-i/-n）。"""
         schema = super().model_json_schema(*args, **kwargs)
         rename = {"A": "-A", "B": "-B", "C": "-C", "i": "-i", "n": "-n"}
         properties = schema.get("properties", {})
@@ -98,10 +96,8 @@ async def execute_grep(
     i: bool = False,
     n: bool = True,
 ) -> str:
-    """执行 Grep 工具 - 与 1.json 一致"""
     search_path = path or os.getcwd()
 
-    # 构建 ripgrep 命令
     cmd = ["rg", pattern]
 
     if output_mode == "files_with_matches":
@@ -139,11 +135,9 @@ async def execute_grep(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         stdout = result.stdout.rstrip("\n")
 
-        # 与 1.json 一致：content 模式空结果返回 "No matches found"
         if output_mode == "content" and not stdout:
             return format_tool_result("done", "No matches found", is_json=False)
 
-        # content / files_with_matches / count 均直接返回纯文本
         return format_tool_result("done", stdout, is_json=False)
     except Exception as e:
         return format_tool_result("error", {"error": str(e)})

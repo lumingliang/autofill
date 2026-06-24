@@ -23,7 +23,6 @@ class ReadInput(BaseModel):
 
 
 async def execute_read(file_path: str, limit: int, offset: Optional[int] = None) -> str:
-    """执行 Read 工具 - 与 1.json 一致"""
     try:
         if not os.path.exists(file_path):
             return format_tool_result("error", f"File not found: {file_path}", is_json=False)
@@ -41,7 +40,6 @@ async def execute_read(file_path: str, limit: int, offset: Optional[int] = None)
 
         content = "".join(selected_lines)
 
-        # 与 1.json 一致：超过 20KB 时截断
         size_limit = 20 * 1024
         truncated_prefix = ""
         if len(content.encode('utf-8')) > size_limit:

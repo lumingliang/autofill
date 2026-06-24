@@ -17,7 +17,6 @@ class LSInput(BaseModel):
 
 
 def _build_tree(path: str, prefix: str = "", ignore: Optional[List[str]] = None) -> str:
-    """递归构建与 1.json 一致的目录树文本。"""
     name = os.path.basename(path) or path
     lines = [f"{prefix}- {name}"]
     if os.path.isdir(path):
@@ -25,7 +24,6 @@ def _build_tree(path: str, prefix: str = "", ignore: Optional[List[str]] = None)
             items = sorted(os.listdir(path))
         except OSError:
             items = []
-        # 过滤
         filtered = []
         for item in items:
             if ignore:
@@ -42,7 +40,6 @@ def _build_tree(path: str, prefix: str = "", ignore: Optional[List[str]] = None)
 
 
 async def execute_ls(path: str, ignore: Optional[List[str]] = None) -> str:
-    """执行 LS 工具 - 与 1.json 一致"""
     try:
         if not os.path.exists(path):
             return format_tool_result("error", f"Path not found: {path}", is_json=False)

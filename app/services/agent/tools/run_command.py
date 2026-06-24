@@ -91,14 +91,12 @@ async def _execute_blocking(
     status = "done" if result.get("status") == "completed" else "error"
     output = result.get("output") or ""
     error = result.get("error") or ""
-    # 与 1.json/mcp.json 一致：直接返回终端输出文本
     text = output
     if error:
         if text:
             text += "\n" + error
         else:
             text = error
-    # 限制长度避免消息过大
     text = text[:7000]
     return format_tool_result(status, text, is_json=False)
 

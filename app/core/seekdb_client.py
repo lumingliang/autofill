@@ -55,7 +55,6 @@ class SeekDBClient:
             # 这里只做连接测试
             try:
                 client = self._get_client()
-                logger.info(f"seekdb 远程连接成功: {self._host}:{self._port}/{self._database}")
             except Exception as e:
                 logger.error(f"seekdb 远程连接失败: {e}")
                 raise

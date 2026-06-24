@@ -17,7 +17,6 @@ from app.settings.config import settings
 
 @lru_cache(maxsize=1)
 def _load_mcp_servers() -> Dict[str, Any]:
-    """从 AGENT_BASE_DIR/mcp.json 加载 MCP 服务器配置。"""
     mcp_json_path = os.path.abspath(
         os.path.join(settings.BASE_DIR, settings.AGENT_BASE_DIR, "mcp.json")
     )
@@ -207,7 +206,6 @@ async def execute_run_mcp(
             text = item.get("text", "")
             break
 
-    # 与 mcp.json 一致：直接返回 MCP 工具结果（尽量解析为 JSON）
     try:
         parsed = json.loads(text) if text else {}
     except Exception:

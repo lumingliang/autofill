@@ -78,7 +78,6 @@ def _load_skills_xml(skills_base_path: Optional[str] = None) -> str:
 
 
 def _skill_description(allowed_skills: Optional[List[str]] = None) -> str:
-    """生成 Skill 工具的完整 description（与 1.json 一致）"""
     available_skills_xml = _load_skills_xml()
     # 如果指定了允许的技能列表，仅保留被授权的技能
     if allowed_skills:

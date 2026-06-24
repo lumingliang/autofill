@@ -18,7 +18,6 @@ class DeleteFileInput(BaseModel):
 
 
 async def execute_delete_file(file_paths: List[str]) -> str:
-    """执行 DeleteFile 工具 - 与 1.json 一致"""
     try:
         deleted = []
         errors = []
