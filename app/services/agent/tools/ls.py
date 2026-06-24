@@ -16,34 +16,43 @@ class LSInput(BaseModel):
     ignore: Optional[List[str]] = Field(default=None, description="List of glob patterns to ignore.")
 
 
+def _build_tree(path: str, prefix: str = "", ignore: Optional[List[str]] = None) -> str:
+    """递归构建与 1.json 一致的目录树文本。"""
+    name = os.path.basename(path) or path
+    lines = [f"{prefix}- {name}"]
+    if os.path.isdir(path):
+        try:
+            items = sorted(os.listdir(path))
+        except OSError:
+            items = []
+        # 过滤
+        filtered = []
+        for item in items:
+            if ignore:
+                skip = any(fnmatch.fnmatch(item, p) for p in ignore)
+                if skip:
+                    continue
+            filtered.append(item)
+        for idx, item in enumerate(filtered):
+            full_path = os.path.join(path, item)
+            is_last = idx == len(filtered) - 1
+            child_prefix = prefix + ("  " if is_last else "| ")
+            lines.append(_build_tree(full_path, child_prefix + " ", ignore=None))
+    return "\n".join(lines)
+
+
 async def execute_ls(path: str, ignore: Optional[List[str]] = None) -> str:
     """执行 LS 工具 - 与 1.json 一致"""
     try:
-        items = []
-        for item in os.listdir(path):
-            # 检查是否被忽略
-            if ignore:
-                skip = False
-                for pattern in ignore:
-                    if fnmatch.fnmatch(item, pattern):
-                        skip = True
-                        break
-                if skip:
-                    continue
+        if not os.path.exists(path):
+            return format_tool_result("error", f"Path not found: {path}", is_json=False)
+        if not os.path.isdir(path):
+            return format_tool_result("error", f"Not a directory: {path}", is_json=False)
 
-            full_path = os.path.join(path, item)
-            items.append({
-                "name": item,
-                "path": full_path,
-                "type": "directory" if os.path.isdir(full_path) else "file"
-            })
-
-        return format_tool_result("done", {
-            "path": path,
-            "items": items
-        })
+        tree = _build_tree(path, ignore=ignore)
+        return format_tool_result("done", tree, is_json=False)
     except Exception as e:
-        return format_tool_result("error", {"error": str(e)})
+        return format_tool_result("error", str(e), is_json=False)
 
 
 def get_ls_tool() -> BaseTool:

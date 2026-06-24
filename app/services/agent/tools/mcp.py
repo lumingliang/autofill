@@ -201,11 +201,21 @@ async def execute_run_mcp(
         )
 
     content = result.get("content", [])
-    return format_tool_result(
-        "done",
-        f"The MCP server responded with: {json.dumps(content, ensure_ascii=False)}",
-        is_json=False,
-    )
+    text = ""
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == "text":
+            text = item.get("text", "")
+            break
+
+    # 与 mcp.json 一致：直接返回 MCP 工具结果（尽量解析为 JSON）
+    try:
+        parsed = json.loads(text) if text else {}
+    except Exception:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        return format_tool_result("done", parsed)
+    return format_tool_result("done", text, is_json=False)
 
 
 def get_run_mcp_tool() -> BaseTool:

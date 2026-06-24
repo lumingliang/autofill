@@ -24,12 +24,26 @@ async def execute_write(file_path: str, content: str) -> str:
         if parent_dir and not os.path.exists(parent_dir):
             os.makedirs(parent_dir, exist_ok=True)
 
+        old_content = ""
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                old_content = f.read()
+
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
-        return format_tool_result("done", {
-            "file_path": file_path,
-            "status": "written"
-        })
+
+        if old_content:
+            from app.services.agent.tools.search_replace import _format_file_changes
+            changes = _format_file_changes(file_path, old_content, content)
+        else:
+            changes = f"""<file_changes>
+The toolcall created the file `{file_path}`:
+```
+{content}
+```
+</file_changes>"""
+
+        return format_tool_result("done", changes, is_json=False)
     except Exception as e:
         return format_tool_result("error", {"error": str(e)})
 

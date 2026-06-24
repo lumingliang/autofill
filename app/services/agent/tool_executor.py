@@ -43,7 +43,7 @@ def format_todo_write_result(status: str, todos: list[dict[str, Any]]) -> str:
 
     return f"""<toolcall_status>{status}</toolcall_status>
 <toolcall_result>
-Todos have been changed successfully. Keep working on your tasks and plan your next steps.
+Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable
 
 <system-reminder>
 Your todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:

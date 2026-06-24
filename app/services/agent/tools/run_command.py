@@ -86,19 +86,21 @@ async def _execute_blocking(
     )
 
     if result.get("status") == "error" and result.get("exit_code") is None:
-        return format_tool_result("error", {
-            "command_id": command_id,
-            "status": "error",
-            "error": result.get("error", "Unknown error"),
-        })
+        return format_tool_result("error", result.get("error", "Unknown error"), is_json=False)
 
-    return format_tool_result("done" if result.get("status") == "completed" else "error", {
-        "command_id": command_id,
-        "status": result.get("status"),
-        "exit_code": result.get("exit_code"),
-        "output": (result.get("output") or "")[:5000],
-        "error": (result.get("error") or "")[:2000] if result.get("error") else None,
-    })
+    status = "done" if result.get("status") == "completed" else "error"
+    output = result.get("output") or ""
+    error = result.get("error") or ""
+    # 与 1.json/mcp.json 一致：直接返回终端输出文本
+    text = output
+    if error:
+        if text:
+            text += "\n" + error
+        else:
+            text = error
+    # 限制长度避免消息过大
+    text = text[:7000]
+    return format_tool_result(status, text, is_json=False)
 
 
 async def _execute_async(

@@ -23,10 +23,7 @@ class ReadInput(BaseModel):
 
 
 async def execute_read(file_path: str, limit: int, offset: Optional[int] = None) -> str:
-    """执行 Read 工具 - 与 1.json 一致
-
-    返回文件内容（文本格式），与 cat -n 格式一致
-    """
+    """执行 Read 工具 - 与 1.json 一致"""
     try:
         if not os.path.exists(file_path):
             return format_tool_result("error", f"File not found: {file_path}", is_json=False)
@@ -34,15 +31,25 @@ async def execute_read(file_path: str, limit: int, offset: Optional[int] = None)
         with open(file_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
 
+        total_lines = len(lines)
         start = (offset - 1) if offset else 0
         end = start + limit
         selected_lines = lines[start:end]
 
-        # 添加行号，与 cat -n 格式一致
-        content = "".join(f"{start + i + 1:6}\t{line}" for i, line in enumerate(selected_lines))
+        actual_end = start + len(selected_lines)
+        start_line = start + 1
 
-        # 返回纯文本内容
-        return format_tool_result("done", content, is_json=False)
+        content = "".join(selected_lines)
+
+        # 与 1.json 一致：超过 20KB 时截断
+        size_limit = 20 * 1024
+        truncated_prefix = ""
+        if len(content.encode('utf-8')) > size_limit:
+            truncated_prefix = "File content truncated due to size limit (20KB). First 20KB included below:\n\n"
+            content = content.encode('utf-8')[:size_limit].decode('utf-8', errors='ignore')
+
+        result = f"{truncated_prefix}Content from line {start_line} to line {actual_end}:\n{content}"
+        return format_tool_result("done", result, is_json=False)
     except Exception as e:
         return format_tool_result("error", str(e), is_json=False)
 

@@ -33,12 +33,12 @@ async def execute_glob(pattern: str, path: Optional[str] = None) -> str:
         files = glob_module.glob(full_pattern, recursive=True)
         # 按修改时间排序
         files.sort(key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
-        return format_tool_result("done", {
-            "files": files[:100],  # 限制返回数量
-            "count": len(files)
-        })
+        files = files[:100]  # 限制返回数量
+        if not files:
+            return format_tool_result("done", "No matches found", is_json=False)
+        return format_tool_result("done", "\n".join(files), is_json=False)
     except Exception as e:
-        return format_tool_result("error", {"error": str(e)})
+        return format_tool_result("error", str(e), is_json=False)
 
 
 def get_glob_tool() -> BaseTool:

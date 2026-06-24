@@ -51,7 +51,7 @@ class GrepInput(BaseModel):
         "output_mode: \"content\", ignored otherwise."
     ))
     i: Optional[bool] = Field(default=False, description="Case insensitive search (rg -i)")
-    n: Optional[bool] = Field(default=False, description=(
+    n: bool = Field(default=True, description=(
         "Show line numbers in output (rg -n). Requires output_mode: \"content\", ignored\n"
         "otherwise."
     ))
@@ -96,7 +96,7 @@ async def execute_grep(
     B: Optional[int] = None,
     C: Optional[int] = None,
     i: bool = False,
-    n: bool = False,
+    n: bool = True,
 ) -> str:
     """执行 Grep 工具 - 与 1.json 一致"""
     search_path = path or os.getcwd()
@@ -137,11 +137,14 @@ async def execute_grep(
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        return format_tool_result("done", {
-            "output": result.stdout,
-            "error": result.stderr if result.stderr else None,
-            "exit_code": result.returncode
-        })
+        stdout = result.stdout.rstrip("\n")
+
+        # 与 1.json 一致：content 模式空结果返回 "No matches found"
+        if output_mode == "content" and not stdout:
+            return format_tool_result("done", "No matches found", is_json=False)
+
+        # content / files_with_matches / count 均直接返回纯文本
+        return format_tool_result("done", stdout, is_json=False)
     except Exception as e:
         return format_tool_result("error", {"error": str(e)})
 
@@ -153,17 +156,12 @@ def get_grep_tool() -> BaseTool:
             "A powerful search tool built on ripgrep\n"
             "\n"
             "  Usage:\n"
-            "  - NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been\n"
-            "optimized for correct permissions and access.\n"
+            "  - NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.\n"
             "  - Supports full regex syntax (e.g., \"log.*Error\", \"function\\s+\\w+\")\n"
-            "  - Filter files with glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type\n"
-            "parameter (e.g., \"js\", \"py\", \"rust\")\n"
-            "  - Output modes: \"content\" shows matching lines, \"files_with_matches\" shows\n"
-            "only file paths (default), \"count\" shows match counts\n"
-            "  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use\n"
-            "`interface\\{\\}` to find `interface{}` in Go code)\n"
-            "  - Multiline matching: By default patterns match within single lines only. For\n"
-            "cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`\n"
+            "  - Filter files with glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type parameter (e.g., \"js\", \"py\", \"rust\")\n"
+            "  - Output modes: \"content\" shows matching lines, \"files_with_matches\" shows only file paths (default), \"count\" shows match counts\n"
+            "  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code)\n"
+            "  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`\n"
             "  - Prefer `SearchCodebase` tool when precise code keywords are missing\n"
         ),
         func=None,
