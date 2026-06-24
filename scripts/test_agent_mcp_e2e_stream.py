@@ -118,7 +118,7 @@ async def test_agent_mcp_seekdb_tables():
                     tool_name = data.get("name")
                     arguments = data.get("arguments", {})
                     print(f"\n[工具] {tool_name}")
-                    if tool_name == "RunMCP":
+                    if tool_name == "run_mcp":
                         runmcp_called = True
                     if arguments:
                         args_str = json.dumps(arguments, ensure_ascii=False)[:300]
@@ -130,7 +130,7 @@ async def test_agent_mcp_seekdb_tables():
                     status = data.get("status")
                     result = data.get("result", "")
                     print(f"[结果] {tool_name} - 状态: {status}")
-                    if tool_name == "RunMCP" and status == "done":
+                    if tool_name == "run_mcp" and status in ("done", "success"):
                         runmcp_success = True
                     if result:
                         result_str = json.dumps(result, ensure_ascii=False)[:300]
