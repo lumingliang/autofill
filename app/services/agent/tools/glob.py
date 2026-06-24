@@ -34,10 +34,12 @@ async def execute_glob(pattern: str, path: Optional[str] = None) -> str:
         # 按修改时间降序排列
         files.sort(key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
         # 限制返回数量，避免消息过大
+        total_count = len(files)
         files = files[:100]
         if not files:
             return format_tool_result("done", "No matches found", is_json=False)
-        return format_tool_result("done", "\n".join(files), is_json=False)
+        result_text = f"Found {total_count} lines\n\n" + "\n".join(files)
+        return format_tool_result("done", result_text, is_json=False)
     except Exception as e:
         return format_tool_result("error", str(e), is_json=False)
 

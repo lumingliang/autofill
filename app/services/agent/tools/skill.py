@@ -10,7 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.services.agent.skill_loader import load_skill
+from app.services.agent.skill_loader import load_skill, skill_loader
 from app.services.agent.skill_manager import skill_manager
 from app.services.agent.tool_executor import format_tool_result
 
@@ -136,7 +136,7 @@ async def execute_skill(name: str, config: Optional[RunnableConfig] = None) -> s
 
     skill_config = load_skill(name)
     if skill_config:
-        skill_path = f".trae/skills/{name}/SKILL.md"
+        skill_path = os.path.join(skill_loader.skills_base_path, name, "SKILL.md")
         skill_content = skill_config.get("content", "")
         result_text = f"""**Skill Path:** {skill_path}
 
