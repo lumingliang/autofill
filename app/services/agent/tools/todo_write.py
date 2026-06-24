@@ -32,6 +32,7 @@ class TodoWriteInput(BaseModel):
 
 
 async def execute_todo_write(todos: List[TodoItem], merge: bool, config: RunnableConfig = None) -> str:
+    """写入或更新任务列表。"""
     conversation_id = "default"
     if config and config.get("metadata"):
         context = config["metadata"].get("tool_context")
@@ -39,6 +40,8 @@ async def execute_todo_write(todos: List[TodoItem], merge: bool, config: Runnabl
             conversation_id = getattr(context, "session_id", "default")
 
     try:
+        # merge=false 时要求至少 3 个（新建完整计划）
+        # merge=true 时允许至少 1 个（局部更新状态）
         min_items = 1 if merge else 3
         if not todos or len(todos) < min_items:
             return format_tool_result("error", {

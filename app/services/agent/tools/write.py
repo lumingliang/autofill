@@ -18,6 +18,7 @@ class WriteInput(BaseModel):
 
 
 async def execute_write(file_path: str, content: str) -> str:
+    """写入文件内容，覆盖或新建文件并返回变更描述。"""
     try:
         parent_dir = os.path.dirname(file_path)
         if parent_dir and not os.path.exists(parent_dir):

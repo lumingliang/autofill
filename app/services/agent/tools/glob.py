@@ -25,12 +25,15 @@ class GlobInput(BaseModel):
 
 
 async def execute_glob(pattern: str, path: Optional[str] = None) -> str:
+    """按 glob 模式匹配文件路径并返回列表。"""
     search_path = path or os.getcwd()
     full_pattern = os.path.join(search_path, pattern) if not pattern.startswith("/") else pattern
 
     try:
         files = glob_module.glob(full_pattern, recursive=True)
+        # 按修改时间降序排列
         files.sort(key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
+        # 限制返回数量，避免消息过大
         files = files[:100]
         if not files:
             return format_tool_result("done", "No matches found", is_json=False)

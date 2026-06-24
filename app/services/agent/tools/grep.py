@@ -59,6 +59,7 @@ class GrepInput(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _accept_cli_aliases(cls, data):
+        """兼容 LLM 传入的 -A/-B/-C/-i/-n 等命令行风格参数名。"""
         if not isinstance(data, dict):
             return data
         rename = {"-A": "A", "-B": "B", "-C": "C", "-i": "i", "-n": "n"}
@@ -96,6 +97,7 @@ async def execute_grep(
     i: bool = False,
     n: bool = True,
 ) -> str:
+    """使用 ripgrep 执行文本搜索。"""
     search_path = path or os.getcwd()
 
     cmd = ["rg", pattern]
@@ -135,6 +137,7 @@ async def execute_grep(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         stdout = result.stdout.rstrip("\n")
 
+        # content 模式无匹配时返回统一提示
         if output_mode == "content" and not stdout:
             return format_tool_result("done", "No matches found", is_json=False)
 

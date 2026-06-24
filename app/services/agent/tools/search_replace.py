@@ -20,8 +20,10 @@ class SearchReplaceInput(BaseModel):
 
 
 def _format_file_changes(file_path: str, old_content: str, new_content: str) -> str:
+    """生成 <file_changes> 标签包裹的统一 diff 格式变更描述。"""
     old_lines = old_content.splitlines(keepends=True)
     new_lines = new_content.splitlines(keepends=True)
+    # 确保每行以 \n 结尾，使 difflib 输出更稳定
     if old_lines and not old_lines[-1].endswith("\n"):
         old_lines[-1] += "\n"
     if new_lines and not new_lines[-1].endswith("\n"):
@@ -34,6 +36,7 @@ def _format_file_changes(file_path: str, old_content: str, new_content: str) -> 
         tofile=file_path,
         n=3,
     ))
+    # 去掉 unified_diff 的文件头（--- / +++ 两行），匹配返回的 diff 格式
     if len(diff) >= 2 and diff[0].startswith("---") and diff[1].startswith("+++"):
         diff = diff[2:]
     diff_str = "".join(diff)
@@ -47,6 +50,7 @@ The toolcall made the following changes to the file `{file_path}`:
 
 
 async def execute_search_replace(file_path: str, old_str: str, new_str: str) -> str:
+    """按 SEARCH/REPLACE 规则替换文件内容。"""
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             old_content = f.read()

@@ -97,6 +97,7 @@ async def _execute_blocking(
             text += "\n" + error
         else:
             text = error
+    # 限制长度避免消息过大
     text = text[:7000]
     return format_tool_result(status, text, is_json=False)
 

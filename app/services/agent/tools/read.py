@@ -23,6 +23,7 @@ class ReadInput(BaseModel):
 
 
 async def execute_read(file_path: str, limit: int, offset: Optional[int] = None) -> str:
+    """读取文件内容并返回带行号范围的结果。"""
     try:
         if not os.path.exists(file_path):
             return format_tool_result("error", f"File not found: {file_path}", is_json=False)
@@ -40,6 +41,7 @@ async def execute_read(file_path: str, limit: int, offset: Optional[int] = None)
 
         content = "".join(selected_lines)
 
+        # 超过 20KB 时截断，避免消息过大
         size_limit = 20 * 1024
         truncated_prefix = ""
         if len(content.encode('utf-8')) > size_limit:

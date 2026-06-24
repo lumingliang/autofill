@@ -47,6 +47,7 @@ class AskUserQuestionInput(BaseModel):
 
 
 async def execute_ask_user_question(questions: List[dict]) -> str:
+    """向用户提出问题并返回等待状态。"""
     return format_tool_result("done", {
         "questions": questions,
         "status": "waiting_for_user"

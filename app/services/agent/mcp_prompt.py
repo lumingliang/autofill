@@ -145,6 +145,7 @@ async def _ensure_server_schema(server_url: str, schema_dir_abs: str) -> List[st
 
 
 def _load_mcp_config() -> Dict[str, Any]:
+    """加载 MCP 服务器配置。"""
     mcp_json_path = os.path.abspath(
         os.path.join(settings.BASE_DIR, settings.AGENT_BASE_DIR, "mcp.json")
     )
@@ -159,6 +160,7 @@ def _load_mcp_config() -> Dict[str, Any]:
 
 
 def _resolve_mcp_server_name(server_name: str, servers: Dict[str, Any]) -> Optional[str]:
+    """解析 MCP server 内部名称。"""
     if server_name in servers:
         return server_name
     if server_name.startswith("mcp_"):
@@ -181,6 +183,7 @@ def _scan_tool_names(schema_dir: str) -> List[str]:
 
 
 def _to_public_server_name(mcp_key: str) -> str:
+    """生成对外暴露的 server_name。"""
     if not mcp_key.startswith("mcp_"):
         return f"mcp_{mcp_key}"
     return mcp_key

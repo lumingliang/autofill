@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class EnvInfo:
+    """环境信息数据类。"""
     primary_working_directory: str = ""
     working_directories: List[str] = field(default_factory=list)
     operating_system: str = ""
@@ -23,6 +24,7 @@ class EnvInfo:
     model_name: str = ""
 
     def to_env_text(self) -> str:
+        """生成 <env> 标签内容。"""
         lines = [
             "<env>",
             "You have been invoked in the following environment:",
@@ -39,16 +41,19 @@ class EnvInfo:
 
 @dataclass
 class TerminalInfo:
+    """终端信息数据类。"""
     terminal_id: str = ""
     shell_type: str = "zsh"
     idle: bool = True
     cwd: str = ""
 
     def to_terminal_text(self) -> str:
+        """生成终端列表文本。"""
         return f"- terminal_id: {self.terminal_id}, shell_type: {self.shell_type}, idle: {self.idle}, cwd: {self.cwd}"
 
 
 class MessageBuilder:
+    """构建复合结构的用户消息。"""
     def __init__(self):
         self.env_info: Optional[EnvInfo] = None
         self.terminals: List[TerminalInfo] = []
@@ -59,26 +64,32 @@ class MessageBuilder:
         self.tool_descriptions: Optional[str] = None
 
     def set_env_info(self, env_info: EnvInfo) -> "MessageBuilder":
+        """设置环境信息。"""
         self.env_info = env_info
         return self
 
     def set_terminals(self, terminals: List[TerminalInfo]) -> "MessageBuilder":
+        """设置可用终端列表。"""
         self.terminals = terminals
         return self
 
     def set_todo_reminder(self, reminder: str) -> "MessageBuilder":
+        """设置 Todo 提醒。"""
         self.todo_reminder = reminder
         return self
 
     def enable_skill_reminder(self) -> "MessageBuilder":
+        """启用 Skill 触发提醒。"""
         self.skill_reminder = True
         return self
 
     def enable_language_settings(self) -> "MessageBuilder":
+        """启用语言设置提醒。"""
         self.language_settings = True
         return self
 
     def enable_tool_reminder(self, tool_descriptions: Optional[str] = None) -> "MessageBuilder":
+        """启用工具说明提醒。"""
         self.tool_reminder = True
         self.tool_descriptions = tool_descriptions
         return self
@@ -105,11 +116,14 @@ class MessageBuilder:
     def _build_env_and_instructions_reminder(self) -> str:
         sections = []
 
+        # 前缀行
         sections.append("As you answer the user's questions, you can use the following context:")
 
+        # <env> 部分
         if self.env_info:
             sections.append(self.env_info.to_env_text())
 
+        # 重要指令提醒
         sections.append("# important-instruction-reminders")
         sections.append("Do what has been asked; nothing more, nothing less.")
         sections.append("NEVER create files unless they're absolutely necessary for achieving your goal.")
@@ -120,6 +134,7 @@ class MessageBuilder:
 
         result = f"\n<system-reminder>\n{content}\n</system-reminder>\n"
 
+        # Skill 触发提醒（单独的 <system-reminder>）
         if self.skill_reminder:
             skill_reminder = "- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action."
             result += f"\n<system-reminder>\n{skill_reminder}\n</system-reminder>\n"
@@ -151,13 +166,16 @@ class MessageBuilder:
         return f"\n<system-reminder>\n\n{content}\n</system-reminder>\n"
 
     def _build_user_input_section(self, user_input: str, skill_path: Optional[str] = None, inputs: Optional[Dict[str, Any]] = None) -> str:
+        # 构建用户输入内容
         user_input_content = user_input
         if inputs:
             user_input_content += f"\n\n[输入参数]: {json.dumps(inputs, ensure_ascii=False)}"
 
+        # 添加 Skill 路径（如果有）
         if skill_path:
             user_input_content = f"**Skill Path:** {skill_path}\n\n{user_input_content}"
 
+        # Skill 触发提醒（在 user_input 后面）
         skill_reminder = "- Before starting any task, first review the Skill tool description to check if any skill in its <available_skills> is relevant to the <user_input> intent. When a skill is relevant, you must invoke the Skill tool IMMEDIATELY as your first action."
 
         return f"\n<user_input>\n{user_input_content}\n</user_input>\n\n<system-reminder>\n{skill_reminder}\n</system-reminder>\n\n\n\n"
@@ -168,27 +186,34 @@ class MessageBuilder:
         skill_path: Optional[str] = None,
         inputs: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, str]]:
+        """构建完整的复合用户消息。"""
         content_parts = []
 
+        # 1. 终端信息 reminder
         terminal_reminder = self._build_terminal_reminder()
         if terminal_reminder:
             content_parts.append({"type": "text", "text": terminal_reminder})
 
+        # 2. Todo reminder
         todo_reminder = self._build_todo_reminder()
         if todo_reminder:
             content_parts.append({"type": "text", "text": todo_reminder})
 
+        # 3. 环境信息和重要指令 reminder
         env_reminder = self._build_env_and_instructions_reminder()
         content_parts.append({"type": "text", "text": env_reminder})
 
+        # 4. 语言设置 reminder
         lang_reminder = self._build_language_reminder()
         if lang_reminder:
             content_parts.append({"type": "text", "text": lang_reminder})
 
+        # 5. 工具说明 reminder
         tool_reminder = self._build_tool_reminder()
         if tool_reminder:
             content_parts.append({"type": "text", "text": tool_reminder})
 
+        # 6. 用户输入 section
         user_input_section = self._build_user_input_section(user_input, skill_path, inputs)
         content_parts.append({"type": "text", "text": user_input_section})
 

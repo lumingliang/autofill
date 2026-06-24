@@ -17,6 +17,7 @@ from app.settings.config import settings
 
 @lru_cache(maxsize=1)
 def _load_mcp_servers() -> Dict[str, Any]:
+    """加载 MCP 服务器配置。"""
     mcp_json_path = os.path.abspath(
         os.path.join(settings.BASE_DIR, settings.AGENT_BASE_DIR, "mcp.json")
     )

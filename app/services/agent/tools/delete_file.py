@@ -18,6 +18,7 @@ class DeleteFileInput(BaseModel):
 
 
 async def execute_delete_file(file_paths: List[str]) -> str:
+    """删除指定路径的文件列表。"""
     try:
         deleted = []
         errors = []

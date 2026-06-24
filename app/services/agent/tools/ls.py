@@ -17,6 +17,7 @@ class LSInput(BaseModel):
 
 
 def _build_tree(path: str, prefix: str = "", ignore: Optional[List[str]] = None) -> str:
+    """递归构建目录树文本。"""
     name = os.path.basename(path) or path
     lines = [f"{prefix}- {name}"]
     if os.path.isdir(path):
@@ -24,6 +25,7 @@ def _build_tree(path: str, prefix: str = "", ignore: Optional[List[str]] = None)
             items = sorted(os.listdir(path))
         except OSError:
             items = []
+        # 按 ignore 模式过滤
         filtered = []
         for item in items:
             if ignore:
@@ -40,6 +42,7 @@ def _build_tree(path: str, prefix: str = "", ignore: Optional[List[str]] = None)
 
 
 async def execute_ls(path: str, ignore: Optional[List[str]] = None) -> str:
+    """列出目录内容并返回树形结构。"""
     try:
         if not os.path.exists(path):
             return format_tool_result("error", f"Path not found: {path}", is_json=False)
