@@ -1,0 +1,35 @@
+{
+  "id": "chatcmpl-855a6146-8971-9a59-903c-7648fb95204d",
+  "model": "qwen3.5-plus-2026-04-20",
+  "usage": {
+    "total_tokens": 4594,
+    "prompt_tokens": 4589,
+    "completion_tokens": 5,
+    "prompt_tokens_details": null,
+    "completion_tokens_details": {
+      "text_tokens": null,
+      "audio_tokens": null,
+      "image_tokens": null,
+      "video_tokens": null,
+      "reasoning_tokens": 51,
+      "accepted_prediction_tokens": null,
+      "rejected_prediction_tokens": null
+    }
+  },
+  "object": "chat.completion",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "所有任务已完成。",
+        "tool_calls": null,
+        "function_call": null,
+        "reasoning_content": "The todo list requires at least 3 items. Since all tasks are effectively done, I should just leave the list as-is. The error is not critical - all 4 tasks have been completed. Let me just inform the user that everything is done.\n"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "created": 1782213418,
+  "system_fingerprint": null
+}
