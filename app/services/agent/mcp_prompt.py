@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin
 
 import httpx
 
@@ -39,10 +40,9 @@ async def _call_mcp_method(
                     elif line.startswith("data: "):
                         data_str = line[6:]
                         if event_type == "endpoint" and not endpoint_future.done():
-                            ep = data_str
-                            if ep.startswith("/"):
-                                ep = f"{base_url}{ep}"
-                            endpoint_future.set_result(ep)
+                            # endpoint 可能是相对路径或从服务端根路径开始的绝对路径，
+                            # 使用 urljoin 基于 SSE URL 正确解析
+                            endpoint_future.set_result(urljoin(server_url + "/", data_str))
                         elif event_type == "message":
                             data = json.loads(data_str)
                             msg_id = data.get("id")
@@ -145,18 +145,22 @@ async def _ensure_server_schema(server_url: str, schema_dir_abs: str) -> List[st
 
 
 def _load_mcp_config() -> Dict[str, Any]:
-    """加载 MCP 服务器配置。"""
-    mcp_json_path = os.path.abspath(
-        os.path.join(settings.BASE_DIR, settings.AGENT_BASE_DIR, "mcp.json")
-    )
-    if not os.path.isfile(mcp_json_path):
-        return {}
-    try:
-        with open(mcp_json_path, "r", encoding="utf-8") as f:
-            return json.load(f).get("mcpServers", {}) or {}
-    except Exception as exc:
-        logger.warning({"event": "mcp_config_load_failed", "path": mcp_json_path, "error": str(exc)})
-        return {}
+    """加载 MCP 服务器配置，支持多个基础目录，按优先级合并（前面的覆盖后面的）。"""
+    servers: Dict[str, Any] = {}
+    base_dirs = settings.AGENT_BASE_DIR if isinstance(settings.AGENT_BASE_DIR, list) else [settings.AGENT_BASE_DIR]
+    # 按优先级从低到高加载，确保高优先级覆盖低优先级
+    for base_dir in reversed(base_dirs):
+        mcp_json_path = os.path.abspath(os.path.join(settings.BASE_DIR, base_dir, "mcp.json"))
+        if not os.path.isfile(mcp_json_path):
+            continue
+        try:
+            with open(mcp_json_path, "r", encoding="utf-8") as f:
+                config = json.load(f).get("mcpServers", {}) or {}
+                for name, cfg in config.items():
+                    servers[name] = cfg
+        except Exception as exc:
+            logger.warning({"event": "mcp_config_load_failed", "path": mcp_json_path, "error": str(exc)})
+    return servers
 
 
 def _resolve_mcp_server_name(server_name: str, servers: Dict[str, Any]) -> Optional[str]:

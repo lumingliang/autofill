@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "mcp_rule_engine": {
+      "type": "sse",
+      "url": "http://localhost:9999/mcp/rule_engine/sse",
+      "schemaDir": "agent_config/mcp/mcp_rule_engine",
+      "timeout": 60,
+      "autoApprove": []
+    },
+    "mcp_form_field": {
+      "type": "sse",
+      "url": "http://localhost:9999/mcp/form_field/sse",
+      "schemaDir": "agent_config/mcp/mcp_form_field",
+      "timeout": 60,
+      "autoApprove": []
+    }
+  }
+}

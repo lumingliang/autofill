@@ -1,0 +1,30 @@
+{
+  "name": "get_template",
+  "description": "\n    根据三级事件类型 ID 获取服务记录模板。\n\n    Args:\n        level3_event_type_id: 三级事件类型 ID，如 EVT001001001。\n\n    Returns:\n        JSON 字符串，包含模板内容、模板名称、变量列表等。\n    ",
+  "inputSchema": {
+    "properties": {
+      "level3_event_type_id": {
+        "title": "Level3 Event Type Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "level3_event_type_id"
+    ],
+    "title": "get_templateArguments",
+    "type": "object"
+  },
+  "outputSchema": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "get_templateOutput",
+    "type": "object"
+  }
+}

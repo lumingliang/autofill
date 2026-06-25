@@ -1,0 +1,59 @@
+{
+  "name": "rule_engine_manipulate",
+  "description": "\n    对规则引擎数据进行查询、更新或删除操作。\n\n    Args:\n        rule_name: 规则名称，用于定位 seekdb 集合。\n        op: 操作类型，可选 \"select\"、\"update\"、\"delete\"。\n        filters: 字段过滤条件，例如 {\"field_name\": \"xxx\", \"field_name2\": \"yyy\"}。\n        update_values: 更新操作时的字段值，仅在 op=\"update\" 时有效。\n        distinct: select 操作是否对结果去重，默认 True。\n\n    Returns:\n        JSON 字符串，包含操作结果或错误信息。\n    ",
+  "inputSchema": {
+    "properties": {
+      "rule_name": {
+        "title": "Rule Name",
+        "type": "string"
+      },
+      "op": {
+        "title": "Op",
+        "type": "string"
+      },
+      "filters": {
+        "additionalProperties": true,
+        "title": "Filters",
+        "type": "object"
+      },
+      "update_values": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Update Values"
+      },
+      "distinct": {
+        "default": true,
+        "title": "Distinct",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "rule_name",
+      "op",
+      "filters"
+    ],
+    "title": "rule_engine_manipulateArguments",
+    "type": "object"
+  },
+  "outputSchema": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "rule_engine_manipulateOutput",
+    "type": "object"
+  }
+}

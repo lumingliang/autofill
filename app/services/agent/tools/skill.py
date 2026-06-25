@@ -4,7 +4,7 @@ Skill 工具 - 执行技能
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.services.agent.skill_loader import load_skill, skill_loader
 from app.services.agent.skill_manager import skill_manager
 from app.services.agent.tool_executor import format_tool_result
+from app.settings.config import settings
 
 
 class SkillInput(BaseModel):
@@ -27,50 +28,58 @@ def _project_root() -> str:
     return str(current_file.parent.parent.parent.parent.parent)
 
 
-def _load_skills_xml(skills_base_path: Optional[str] = None) -> str:
-    """从 skill 目录加载本地技能定义，生成 <available_skills> XML 片段"""
-    if skills_base_path is None:
+def _load_skills_xml(skills_base_paths: Optional[Union[str, List[str]]] = None) -> str:
+    """从 skill 目录加载本地技能定义，生成 <available_skills> XML 片段，支持多目录合并。"""
+    if skills_base_paths is None:
         project_root = _project_root()
-        # 优先使用 .trae/skills，不存在则回退到 skill
-        skills_base_path = os.path.join(project_root, ".trae", "skills")
-        if not os.path.isdir(skills_base_path):
-            skills_base_path = os.path.join(project_root, "skill")
+        base_dirs = settings.AGENT_BASE_DIR if isinstance(settings.AGENT_BASE_DIR, list) else [settings.AGENT_BASE_DIR]
+        skills_base_paths = [os.path.join(project_root, base_dir, "skills") for base_dir in base_dirs]
+        # 如果都不存在，回退到 skill 目录
+        if not any(os.path.isdir(p) for p in skills_base_paths):
+            skills_base_paths = [os.path.join(project_root, "skill")]
+    elif isinstance(skills_base_paths, str):
+        skills_base_paths = [skills_base_paths]
 
-    if not os.path.isdir(skills_base_path):
-        return ""
+    # 按优先级收集技能（高优先级覆盖低优先级）
+    skills_info: Dict[str, Dict[str, str]] = {}
+    for base_path in reversed(skills_base_paths):
+        if not os.path.isdir(base_path):
+            continue
+        for entry in sorted(os.listdir(base_path)):
+            entry_path = os.path.join(base_path, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            skill_md = os.path.join(entry_path, "SKILL.md")
+            if not os.path.isfile(skill_md):
+                continue
+
+            with open(skill_md, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            fm_match = re.search(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
+            if not fm_match:
+                continue
+
+            name = None
+            description = None
+            for line in fm_match.group(1).split('\n'):
+                line = line.strip()
+                if line.startswith('name:'):
+                    name = line.split(':', 1)[1].strip().strip('"').strip("'")
+                elif line.startswith('description:'):
+                    description = line.split(':', 1)[1].strip().strip('"').strip("'")
+
+            if name and description:
+                skills_info[name] = {"name": name, "description": description}
 
     skills_xml = []
-    for entry in sorted(os.listdir(skills_base_path)):
-        entry_path = os.path.join(skills_base_path, entry)
-        if not os.path.isdir(entry_path):
-            continue
-        skill_md = os.path.join(entry_path, "SKILL.md")
-        if not os.path.isfile(skill_md):
-            continue
-
-        with open(skill_md, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        fm_match = re.search(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
-        if not fm_match:
-            continue
-
-        name = None
-        description = None
-        for line in fm_match.group(1).split('\n'):
-            line = line.strip()
-            if line.startswith('name:'):
-                name = line.split(':', 1)[1].strip().strip('"').strip("'")
-            elif line.startswith('description:'):
-                description = line.split(':', 1)[1].strip().strip('"').strip("'")
-
-        if name and description:
-            skills_xml.append(f"""<skill>
+    for info in skills_info.values():
+        skills_xml.append(f"""<skill>
 <name>
-{name}
+{info['name']}
 </name>
 <description>
-{description}
+{info['description']}
 </description>
 </skill>""")
 

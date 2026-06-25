@@ -1,0 +1,31 @@
+{
+  "name": "submit_form",
+  "description": "\n    提交表单。\n\n    Args:\n        data: 表单数据，必须包含 event_type_level1、event_type_level2、\n              event_type_level3、service_summary。\n\n    Returns:\n        JSON 字符串，包含提交结果或错误信息。\n    ",
+  "inputSchema": {
+    "properties": {
+      "data": {
+        "additionalProperties": true,
+        "title": "Data",
+        "type": "object"
+      }
+    },
+    "required": [
+      "data"
+    ],
+    "title": "submit_formArguments",
+    "type": "object"
+  },
+  "outputSchema": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "submit_formOutput",
+    "type": "object"
+  }
+}

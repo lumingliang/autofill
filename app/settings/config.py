@@ -74,8 +74,8 @@ class Settings(BaseSettings):
     AGENT_TEMPERATURE: float = 0.7
     AGENT_MAX_ITERATIONS: int = 10
 
-    # Agent 配置（skill 和 mcp 基础路径）
-    AGENT_BASE_DIR: str = ".trae"
+    # Agent 配置（skill 和 mcp 基础路径列表，按优先级从高到低）
+    AGENT_BASE_DIR: list = [".trae"]
 
     # 上传配置
     UPLOAD_DIR: str = "./uploads"
@@ -231,7 +231,14 @@ class Settings(BaseSettings):
                 # 加载 Agent 配置
                 if "agent" in config:
                     agent_config = config["agent"]
-                    instance.AGENT_BASE_DIR = agent_config.get("base_dir", instance.AGENT_BASE_DIR)
+                    base_dir = agent_config.get("base_dir", instance.AGENT_BASE_DIR)
+                    # 支持单个字符串或列表，统一为列表并按优先级排序
+                    if isinstance(base_dir, str):
+                        instance.AGENT_BASE_DIR = [base_dir]
+                    elif isinstance(base_dir, list):
+                        instance.AGENT_BASE_DIR = base_dir
+                    else:
+                        instance.AGENT_BASE_DIR = [".trae"]
 
                 # 加载日志配置
                 if "logging" in config:

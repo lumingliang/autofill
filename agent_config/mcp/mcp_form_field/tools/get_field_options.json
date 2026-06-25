@@ -1,0 +1,42 @@
+{
+  "name": "get_field_options",
+  "description": "\n    获取下拉字段选项。\n\n    Args:\n        field_id: 字段 ID，如 event_type_level1 / event_type_level2 / event_type_level3。\n        parent_id: 父级选项 ID，用于级联查询（如查二级时传一级 ID）。\n\n    Returns:\n        JSON 字符串，包含选项列表（label/value）。\n    ",
+  "inputSchema": {
+    "properties": {
+      "field_id": {
+        "title": "Field Id",
+        "type": "string"
+      },
+      "parent_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Parent Id"
+      }
+    },
+    "required": [
+      "field_id"
+    ],
+    "title": "get_field_optionsArguments",
+    "type": "object"
+  },
+  "outputSchema": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "get_field_optionsOutput",
+    "type": "object"
+  }
+}

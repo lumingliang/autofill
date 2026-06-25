@@ -1,0 +1,22 @@
+{
+  "name": "get_form_fields",
+  "description": "获取表单字段列表。",
+  "inputSchema": {
+    "properties": {},
+    "title": "get_form_fieldsArguments",
+    "type": "object"
+  },
+  "outputSchema": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "get_form_fieldsOutput",
+    "type": "object"
+  }
+}

@@ -1,5 +1,8 @@
 """
 RunMCP 工具 - 调用 MCP 工具
+
+使用 langchain MultiServerMCPClient 维护与各个 MCP 服务器的 SSE 连接，
+并按 server_name + tool_name 路由调用。
 """
 import asyncio
 import json
@@ -7,8 +10,8 @@ import os
 from functools import lru_cache
 from typing import Any, Dict, Optional
 
-import httpx
 from langchain_core.tools import BaseTool, StructuredTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import BaseModel, Field
 
 from app.services.agent.tool_executor import format_tool_result
@@ -17,18 +20,22 @@ from app.settings.config import settings
 
 @lru_cache(maxsize=1)
 def _load_mcp_servers() -> Dict[str, Any]:
-    """加载 MCP 服务器配置。"""
-    mcp_json_path = os.path.abspath(
-        os.path.join(settings.BASE_DIR, settings.AGENT_BASE_DIR, "mcp.json")
-    )
-    if not os.path.isfile(mcp_json_path):
-        return {}
-    try:
-        with open(mcp_json_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        return config.get("mcpServers", {}) or {}
-    except Exception:
-        return {}
+    """加载 MCP 服务器配置，支持多个基础目录，按优先级合并（前面的覆盖后面的）。"""
+    servers: Dict[str, Any] = {}
+    base_dirs = settings.AGENT_BASE_DIR if isinstance(settings.AGENT_BASE_DIR, list) else [settings.AGENT_BASE_DIR]
+    # 按优先级从低到高加载，确保高优先级覆盖低优先级
+    for base_dir in reversed(base_dirs):
+        mcp_json_path = os.path.abspath(os.path.join(settings.BASE_DIR, base_dir, "mcp.json"))
+        if not os.path.isfile(mcp_json_path):
+            continue
+        try:
+            with open(mcp_json_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            for name, cfg in config.get("mcpServers", {}).items():
+                servers[name] = cfg
+        except Exception:
+            continue
+    return servers
 
 
 def _resolve_server_config(server_name: str) -> Optional[Dict[str, Any]]:
@@ -46,6 +53,68 @@ def _resolve_server_config(server_name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+class _MCPClientManager:
+    """维护每个 MCP server 独立的 MultiServerMCPClient，按需初始化并复用连接。
+
+    使用单 server 的 MultiServerMCPClient 实例，避免某个 server 不可用时影响其它 server。
+    """
+
+    def __init__(self):
+        self._clients: Dict[str, MultiServerMCPClient] = {}
+        self._locks: Dict[str, asyncio.Lock] = {}
+        self._global_lock = asyncio.Lock()
+
+    async def _get_client(self, server_name: str) -> MultiServerMCPClient:
+        """获取或初始化指定 server 的 MultiServerMCPClient。"""
+        if server_name not in self._clients:
+            async with self._global_lock:
+                if server_name not in self._locks:
+                    self._locks[server_name] = asyncio.Lock()
+
+        async with self._locks[server_name]:
+            if server_name in self._clients:
+                return self._clients[server_name]
+
+            cfg = _resolve_server_config(server_name)
+            if not cfg:
+                raise ValueError(f"MCP server '{server_name}' is not configured.")
+            transport = cfg.get("type", "sse")
+            url = cfg.get("url")
+            if not url:
+                raise ValueError(f"MCP server '{server_name}' has no URL configured.")
+
+            if transport == "sse":
+                connections = {
+                    server_name: {
+                        "transport": "sse",
+                        "url": url,
+                        "timeout": cfg.get("timeout", 60),
+                    }
+                }
+            else:
+                raise ValueError(f"Unsupported MCP transport '{transport}' for server '{server_name}'.")
+
+            client = MultiServerMCPClient(connections)
+            await client.get_tools()
+            self._clients[server_name] = client
+            return client
+
+    async def call_tool(
+        self,
+        server_name: str,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> Any:
+        """在指定 MCP 服务器上调用指定工具。"""
+        client = await self._get_client(server_name)
+        async with client.session(server_name) as session:
+            return await session.call_tool(tool_name, arguments)
+
+
+# 全局 MCP 客户端管理器
+_mcp_client_manager = _MCPClientManager()
+
+
 class RunMCPInput(BaseModel):
     server_name: str = Field(description="Identifier of the MCP server hosting the tool.")
     tool_name: str = Field(description="Name of the MCP tool to invoke.")
@@ -56,88 +125,6 @@ class RunMCPInput(BaseModel):
             "Make sure all required arguments are provided according to the tool parameter schema."
         ),
     )
-
-
-async def _call_mcp_tool(server_url: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """通过 SSE 传输调用 MCP 工具并返回 JSON-RPC 结果。"""
-    base_url = server_url.rstrip("/")
-    if base_url.endswith("/sse"):
-        base_url = base_url[:-4]
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        pending: Dict[int, asyncio.Future] = {}
-        endpoint_future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-
-        async def sse_reader() -> None:
-            async with client.stream("GET", f"{base_url}/sse") as response:
-                event_type: Optional[str] = None
-                async for line in response.aiter_lines():
-                    if line.startswith("event: "):
-                        event_type = line[7:]
-                    elif line.startswith("data: "):
-                        data_str = line[6:]
-                        if event_type == "endpoint" and not endpoint_future.done():
-                            ep = data_str
-                            if ep.startswith("/"):
-                                ep = f"{base_url}{ep}"
-                            endpoint_future.set_result(ep)
-                        elif event_type == "message":
-                            data = json.loads(data_str)
-                            msg_id = data.get("id")
-                            if isinstance(msg_id, int) and msg_id in pending:
-                                pending[msg_id].set_result(data)
-                        event_type = None
-
-        reader_task = asyncio.create_task(sse_reader())
-
-        try:
-            endpoint = await asyncio.wait_for(endpoint_future, timeout=10.0)
-
-            # initialize 握手
-            init_id = 1
-            init_future: asyncio.Future = asyncio.get_running_loop().create_future()
-            pending[init_id] = init_future
-            await client.post(
-                endpoint,
-                json={
-                    "jsonrpc": "2.0",
-                    "id": init_id,
-                    "method": "initialize",
-                    "params": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {},
-                        "clientInfo": {"name": "autofill-agent", "version": "0.1.0"},
-                    },
-                },
-            )
-            await asyncio.wait_for(init_future, timeout=10.0)
-
-            # initialized 通知
-            await client.post(
-                endpoint,
-                json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-            )
-
-            # 工具调用
-            call_id = 2
-            call_future: asyncio.Future = asyncio.get_running_loop().create_future()
-            pending[call_id] = call_future
-            await client.post(
-                endpoint,
-                json={
-                    "jsonrpc": "2.0",
-                    "id": call_id,
-                    "method": "tools/call",
-                    "params": {"name": tool_name, "arguments": arguments},
-                },
-            )
-            return await asyncio.wait_for(call_future, timeout=30.0)
-        finally:
-            reader_task.cancel()
-            try:
-                await reader_task
-            except asyncio.CancelledError:
-                pass
 
 
 async def execute_run_mcp(
@@ -158,10 +145,8 @@ async def execute_run_mcp(
             },
         )
 
-    server_url = server_cfg["url"]
-
     try:
-        response = await _call_mcp_tool(server_url, tool_name, args)
+        result = await _mcp_client_manager.call_tool(server_name, tool_name, args)
     except Exception as exc:
         return format_tool_result(
             "error",
@@ -173,22 +158,22 @@ async def execute_run_mcp(
             },
         )
 
-    result = response.get("result") if isinstance(response, dict) else None
-    if not result:
+    if result is None:
         return format_tool_result(
             "error",
             {
                 "error": "MCP server returned an unexpected response.",
-                "response": response,
+                "response": result,
             },
         )
 
-    if result.get("isError"):
-        content = result.get("content", [])
+    # result 为 mcp.types.CallToolResult 结构
+    if getattr(result, "isError", False):
+        content = getattr(result, "content", [])
         error_text = ""
         for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                error_text = item.get("text", "")
+            if getattr(item, "type", None) == "text":
+                error_text = getattr(item, "text", "")
                 break
         return format_tool_result(
             "error",
@@ -200,11 +185,11 @@ async def execute_run_mcp(
             },
         )
 
-    content = result.get("content", [])
+    content = getattr(result, "content", [])
     text = ""
     for item in content:
-        if isinstance(item, dict) and item.get("type") == "text":
-            text = item.get("text", "")
+        if getattr(item, "type", None) == "text":
+            text = getattr(item, "text", "")
             break
 
     try:
