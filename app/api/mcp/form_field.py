@@ -5,13 +5,14 @@
 - 定义 FastMCP server 的 tools，暴露给 MCP 客户端
 - 调用 app.services.mcp.form_field_mcp_service 执行业务逻辑
 - 不直接访问 mock_api_server.py，只通过 service 层调用
-- 返回 mcp.sse_app() 供主应用在 /mcp/form_field 路径挂载
+- 通过 app.api.mcp.register_mcp 自动注册到 /mcp/form_field
 """
 import json
 from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from app.api.mcp import register_mcp
 from app.services.mcp.form_field_mcp_service import form_field_mcp_service
 
 
@@ -78,6 +79,7 @@ async def submit_form(data: Dict[str, Any]) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
+@register_mcp("form_field")
 def get_sse_app():
     """返回可挂载到 FastAPI 主应用的 SSE ASGI 应用。"""
     return mcp.sse_app()

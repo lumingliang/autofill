@@ -23,15 +23,10 @@ try:
 except ImportError:
     raise SettingNotFound("Can not import settings")
 
-from app.api.mcp.rule_engine import get_sse_app as get_rule_engine_mcp_app
-from app.api.mcp.form_field import get_sse_app as get_form_field_mcp_app
+from app.api.mcp import get_mcp_apps
 
 # 初始化日志配置（只执行一次）
 setup_logger()
-
-# MCP SSE 子应用（共享主服务端口）
-rule_engine_mcp_app = get_rule_engine_mcp_app()
-form_field_mcp_app = get_form_field_mcp_app()
 
 
 @asynccontextmanager
@@ -116,8 +111,9 @@ def create_app() -> FastAPI:
     app.mount("/api/v1", internal_app)
 
     # ============ 挂载 MCP SSE 端点（共享端口） ============
-    app.mount("/mcp/rule_engine", rule_engine_mcp_app)
-    app.mount("/mcp/form_field", form_field_mcp_app)
+    # 通过注册表自动挂载，新增 MCP 服务时无需修改此处
+    for mcp_name, mcp_factory in get_mcp_apps().items():
+        app.mount(f"/mcp/{mcp_name}", mcp_factory())
 
     # ============ 注册静态文件服务 ============
     upload_dir = os.path.abspath(settings.UPLOAD_DIR)

@@ -5,7 +5,7 @@
 - 定义 FastMCP server 的 tools，暴露给 MCP 客户端
 - 调用 app.services.mcp.rule_engine_mcp_service 执行业务逻辑
 - 不直接操作数据库或 seekdb，不初始化 Tortoise ORM
-- 返回 mcp.sse_app() 供主应用在 /mcp/rule_engine 路径挂载
+- 通过 app.api.mcp.register_mcp 自动注册到 /mcp/rule_engine
 
 设计原则：
 - MCP server 层保持薄，只负责协议适配和参数透传
@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from app.api.mcp import register_mcp
 from app.services.mcp.rule_engine_mcp_service import rule_engine_mcp_service
 
 
@@ -63,6 +64,7 @@ async def rule_engine_manipulate(
     return json.dumps(result, ensure_ascii=False)
 
 
+@register_mcp("rule_engine")
 def get_sse_app():
     """返回可挂载到 FastAPI 主应用的 SSE ASGI 应用。"""
     return mcp.sse_app()
