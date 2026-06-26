@@ -452,7 +452,9 @@ def output_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
                     final_answer = msg.content or ""
                     break
 
-    finish_reason = state.get("finish_reason") or "stop"
+    finish_reason = state.get("finish_reason")
+    if not finish_reason:
+        finish_reason = "loop_detected" if state.get("loop_detected") else "stop"
     return {
         "final_answer": final_answer,
         "finish_reason": finish_reason,

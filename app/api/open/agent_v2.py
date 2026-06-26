@@ -15,6 +15,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.log import logger
 from app.schemas.base import Fail, Success
 from app.services.agent import (
     AgentSpec,
@@ -181,7 +182,7 @@ async def list_agents():
     """列出当前已注册的所有 Agent"""
     try:
         agents = get_agent_registry().list_agents()
-        return Success(data={"agents": [a.model_dump() for a in agents]})
+        return Success(data={"agents": [a.model_dump(exclude={"api_key", "base_url"}) for a in agents]})
     except Exception as e:
         return Fail(msg=f"列出 Agent 失败: {str(e)}")
 
@@ -191,7 +192,7 @@ async def get_agent(name: str):
     """获取指定 Agent 规格"""
     try:
         spec = get_agent_registry().get(name)
-        return Success(data={"agent": spec.model_dump()})
+        return Success(data={"agent": spec.model_dump(exclude={"api_key", "base_url"})})
     except KeyError:
         return Fail(msg=f"Agent '{name}' 不存在")
     except Exception as e:
