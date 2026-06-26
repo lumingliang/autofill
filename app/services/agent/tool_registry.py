@@ -1,13 +1,16 @@
 """
-ToolRegistry - 统一工具注册表
+ToolRegistry - 工具注册表
 
-支持按名称注册、查询、批量获取 LangChain Tool 实例。
+维护全局工具工厂，并按 AgentSpec 构建 Agent 私有工具视图。
+优先复用现有 app/services/agent/tools/ 下的工具实现。
 """
 import functools
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, StructuredTool
 
+from app.log import logger
+from app.services.agent.models import AgentSpec
 from app.services.agent.tools import (
     get_ask_user_question_tool,
     get_check_command_status_tool,
@@ -24,10 +27,15 @@ from app.services.agent.tools import (
     get_todo_write_tool,
     get_write_tool,
 )
+from app.services.agent.tools.mcp import RunMCPInput, execute_run_mcp
+from app.services.agent.tools.run_agent import get_run_agent_tool
 
 
-# 工具名 -> 工厂函数映射
-_TOOL_FACTORIES = {
+ToolFactory = Callable[..., BaseTool]
+
+
+# 全局默认工具工厂映射
+_DEFAULT_TOOL_FACTORIES: Dict[str, ToolFactory] = {
     "Skill": get_skill_tool,
     "Glob": get_glob_tool,
     "LS": get_ls_tool,
@@ -45,59 +53,99 @@ _TOOL_FACTORIES = {
 }
 
 
+def _build_run_mcp_for_agent(spec: AgentSpec) -> BaseTool:
+    """为指定 Agent 构建带 MCP Server 白名单的 run_mcp 工具"""
+    allowed_servers = set(spec.mcp_servers or [])
+
+    async def execute_limited(
+        server_name: str,
+        tool_name: str,
+        args: Optional[Dict] = None,
+    ) -> str:
+        if allowed_servers and server_name not in allowed_servers:
+            from app.services.agent.tool_executor import format_tool_result
+
+            return format_tool_result(
+                "error",
+                {
+                    "error": f"MCP server '{server_name}' is not in the allowed list for agent '{spec.name}'.",
+                    "allowed_servers": sorted(allowed_servers),
+                },
+            )
+        return await execute_run_mcp(server_name, tool_name, args or {})
+
+    description = (
+        "Call an MCP tool by server identifier and tool name with arbitrary JSON arguments.\n"
+        "\n"
+        "IMPORTANT: Always obtain tool descriptor by calling LS and Read tool BEFORE calling this tool to ensure correct parameters.\n"
+        "\n"
+        "This tool is used to call MCP tools and NOT to get tool descriptors.\n"
+    )
+    if allowed_servers:
+        description += f"\nAllowed MCP servers for this agent: {', '.join(sorted(allowed_servers))}\n"
+
+    return StructuredTool.from_function(
+        name="run_mcp",
+        description=description,
+        func=None,
+        coroutine=execute_limited,
+        args_schema=RunMCPInput,
+    )
+
+
 class ToolRegistry:
     """工具注册表"""
 
     def __init__(self):
-        self._tools: Dict[str, BaseTool] = {}
+        self._factories: Dict[str, ToolFactory] = dict(_DEFAULT_TOOL_FACTORIES)
 
-    def register(self, name: str, tool: BaseTool) -> None:
-        """注册单个工具"""
-        self._tools[name] = tool
+    def register(self, name: str, factory: ToolFactory) -> None:
+        """注册全局工具工厂"""
+        self._factories[name] = factory
+        logger.info({"event": "tool_registered", "tool_name": name})
 
-    def get(self, name: str, allowed_skills: Optional[List[str]] = None) -> BaseTool:
-        """按名称获取工具实例
+    def unregister(self, name: str) -> bool:
+        """注销全局工具工厂"""
+        if name in self._factories:
+            del self._factories[name]
+            logger.info({"event": "tool_unregistered", "tool_name": name})
+            return True
+        return False
 
-        Args:
-            name: 工具名
-            allowed_skills: Skill 工具需要传入授权 Skill 列表
-
-        Returns:
-            BaseTool 实例
-
-        Raises:
-            KeyError: 工具未注册
-        """
-        if name == "Skill":
-            return get_skill_tool(allowed_skills)
-        if name not in self._tools:
-            raise KeyError(f"Tool not registered: {name}")
-        return self._tools[name]
-
-    def get_many(self, names: List[str], allowed_skills: Optional[List[str]] = None) -> List[BaseTool]:
-        """批量获取工具实例"""
-        return [self.get(name, allowed_skills=allowed_skills) for name in names]
-
-    def list_names(self) -> List[str]:
-        """列出所有已注册工具名"""
-        return list(self._tools.keys())
+    def list_global(self) -> List[str]:
+        """列出所有全局可用工具名"""
+        return list(self._factories.keys())
 
     def has(self, name: str) -> bool:
         """检查工具是否已注册"""
-        return name in self._tools or name == "Skill"
+        return name in self._factories
 
-
-def _build_default_registry() -> ToolRegistry:
-    """构建默认工具注册表"""
-    registry = ToolRegistry()
-    for name, factory in _TOOL_FACTORIES.items():
-        if name == "Skill":
-            continue
-        registry.register(name, factory())
-    return registry
+    def build_agent_tools(self, spec: AgentSpec) -> List[BaseTool]:
+        """根据 AgentSpec 构建该 Agent 的私有工具视图"""
+        tools: List[BaseTool] = []
+        for tool_name in spec.toolset:
+            if tool_name == "Skill":
+                tools.append(get_skill_tool(spec.skills or None))
+                continue
+            if tool_name == "run_mcp":
+                tools.append(_build_run_mcp_for_agent(spec))
+                continue
+            if tool_name == "run_agent":
+                tools.append(get_run_agent_tool())
+                continue
+            factory = self._factories.get(tool_name)
+            if factory is None:
+                logger.warning({
+                    "event": "tool_not_found",
+                    "tool_name": tool_name,
+                    "agent_name": spec.name,
+                })
+                continue
+            tools.append(factory())
+        return tools
 
 
 @functools.cache
 def get_tool_registry() -> ToolRegistry:
-    """获取全局默认工具注册表（懒加载、缓存）"""
-    return _build_default_registry()
+    """获取全局默认 ToolRegistry"""
+    return ToolRegistry()

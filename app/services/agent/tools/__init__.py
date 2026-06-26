@@ -11,6 +11,7 @@ from app.services.agent.tools.grep import get_grep_tool
 from app.services.agent.tools.ls import get_ls_tool
 from app.services.agent.tools.mcp import get_run_mcp_tool
 from app.services.agent.tools.read import get_read_tool
+from app.services.agent.tools.run_agent import get_run_agent_tool
 from app.services.agent.tools.run_command import get_run_command_tool
 from app.services.agent.tools.search_replace import get_search_replace_tool
 from app.services.agent.tools.skill import get_skill_tool
@@ -26,6 +27,7 @@ __all__ = [
     "get_grep_tool",
     "get_ls_tool",
     "get_read_tool",
+    "get_run_agent_tool",
     "get_run_command_tool",
     "get_run_mcp_tool",
     "get_search_replace_tool",

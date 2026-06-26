@@ -13,8 +13,6 @@ agents:
       - asking_questions
       - response_language
       - code_reference
-      - mcp
-      - autofill_instruction
     tools:
       - Skill
       - Glob
@@ -30,6 +28,7 @@ agents:
       - Write
       - DeleteFile
       - AskUserQuestion
+      - run_agent
     mcp_servers:
       - mcp_seekdb
       # - mcp_Chrome_DevTools_MCP
@@ -48,6 +47,7 @@ agents:
     message_builder_options:
       enable_skill_reminder: true
       enable_language_settings: true
+      enable_tool_reminder: true
 
   - name: autofill
     display_name: 自动填单助手
@@ -62,15 +62,21 @@ agents:
       - task_management
       - asking_questions
       - response_language
-      # - autofill_instruction
+      - code_reference
+      - mcp
+      - autofill_instruction
     tools:
       - Skill
       - run_mcp
       - RunCommand
       - TodoWrite
       - AskUserQuestion
+      - run_agent
     skills:
       - autofill-form
+    mcp_servers:
+      - mcp_form_field
+      - mcp_rule_engine
     #model: moonshotai/Kimi-K2.5
     #model: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
     model: Qwen/Qwen3-8B
@@ -83,3 +89,4 @@ agents:
     message_builder_options:
       enable_skill_reminder: true
       enable_language_settings: true
+      enable_tool_reminder: true
